@@ -1,0 +1,43 @@
+name: exp
+channels: [conda-forge]
+dependencies:
+  - python=3.11
+  - numpy
+  - scipy
+  - scikit-learn
+  - statsmodels
+  - xgboost
+  - pandas
+  - matplotlib
+  - networkx
+  - joblib
+  - tqdm
+  - ipykernel
+  - ipympl
+  - plotly
+  - nbformat
+  - dash
+  - hydra-core
+  - omegaconf
+  - mlflow
+  - optuna
+  - pymoo
+  - pip
+  - pip:
+      - deap
+      - dash-ag-grid
+      - dash-tabulator
+      - pgmpy
+      - paramiko
+      - python-dotenv
+      - httpx
+      - email_validator
+      - python-multipart
+      - websockets
+      - websocket-client
+      - PySocks
+      - watchfiles
+      - prometheus_flask_exporter
+      - grpcio-status
+      - h2
+      - httptools
