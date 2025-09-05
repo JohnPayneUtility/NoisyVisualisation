@@ -1,0 +1,19 @@
+/* assets/custom.css */
+.dash-scroll-container {
+    overflow-x: scroll;
+    scrollbar-gutter: stable;
+}
+
+/* For Webkit browsers, you might already have custom scrollbar styling */
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+::-webkit-scrollbar-track {
+    background: #f1f1f1;
+}
+::-webkit-scrollbar-thumb {
+    background-color: #007eee;
+    border-radius: 10px;
+    border: 2px solid #f1f1f1;
+}

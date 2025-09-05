@@ -1,0 +1,16 @@
+name: UMDA
+# arguments for determining popsize
+# static_pop_size: 100
+# use_dynamic_pop_size: false
+# pop_size_fn:
+#   _target_: ExperimentsHelpers.dynamic_pop_size_UMDA
+#   n_items: ${problem.dimensions}
+#   noise: ${problem.fitness_params.noise_intensity}
+# arguments for initialising UMDA class
+init_args:
+  _target_: Algorithms.UMDA
+  pop_size: 100
+    # _target_: ExperimentsHelpers.dynamic_pop_size_UMDA
+    # n_items: ${problem.dimensions}
+    # noise: ${problem.fitness_params.noise_intensity}
+  select_size: null      # default = pop_size/2

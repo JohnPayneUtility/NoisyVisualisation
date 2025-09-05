@@ -1,0 +1,82 @@
+# Flat config for UMDA on knapsack experiment
+# Based on exp1 but with UMDA algorithm settings
+
+# ==============================
+# Experiment Settings
+# ==============================
+experiment_name: "umda_knapsack_test_01"
+
+# ==============================
+# Run Configuration
+# ==============================
+run_max_gens: 100
+run_eval_limit: 10000
+run_use_noise_dependent_eval_limit: true
+run_eval_limit_for_noise_0: 38392
+run_eval_limit_for_noise_1: 38392
+run_eval_limit_for_noise_2: 41066
+run_eval_limit_for_noise_3: 44477
+run_eval_limit_for_noise_4: 50728
+run_eval_limit_for_noise_5: 56851
+run_eval_limit_for_noise_6: 64079
+run_eval_limit_for_noise_7: 70736
+run_eval_limit_for_noise_8: 790344
+run_eval_limit_for_noise_9: 86078
+run_eval_limit_for_noise_10: 93638
+run_seed: 1
+run_num_runs: 10
+run_parallel: true
+
+# ==============================
+# MLflow Configuration
+# ==============================
+mlflow_tracking_uri: "mlruns"
+
+# ==============================
+# Hydra Configuration
+# ==============================
+hydra_run_dir: "outputs"
+
+# ==============================
+# Algorithm Configuration (UMDA)
+# ==============================
+algo_name: UMDA
+algo_type: UMDA
+algo_use_dynamic_pop_size: false
+
+# UMDA specific parameters
+algo_pop_size: 100
+algo_select_size: 50
+
+# Algorithm initialization parameters
+algo_init_args_target: Algorithms.UMDA
+# Note: UMDA doesn't use mu, lam, mutate_function, or mutate_params
+
+# ==============================
+# Problem Configuration
+# ==============================
+problem_prob_name: knapsack
+problem_prob_type: discrete
+problem_opt_goal: maximise
+
+# Problem loading
+problem_loader_target: ProblemScripts.load_problem_KP
+problem_loader_filename: f1_l-d_kp_10_269
+
+# Problem info
+problem_dimensions: null
+problem_opt_global: null
+problem_capacity: null
+problem_mean_value: null
+problem_mean_weight: null
+problem_items_dict: null
+
+# Fitness
+problem_fitness_fn: eval_noisy_kp_v1
+problem_fitness_params_items_dict: null  # Will be set dynamically
+problem_fitness_params_capacity: null    # Will be set dynamically
+problem_fitness_params_noise_intensity: 3
+
+# Attributes and weights
+problem_attr_function: binary_attribute
+problem_weights: [1.0] 

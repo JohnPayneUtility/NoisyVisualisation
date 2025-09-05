@@ -1,0 +1,37 @@
+# conf/config.yaml
+defaults:
+  - problem: knapsack   # loads conf/problem/onemax.yaml
+  - algo:    one_plus_one_ea     # loads conf/algo/umda.yaml
+  - _self_
+
+experiment_name: "single_objective_onemax_test_01"
+
+run:
+  max_gens:   100      # gens per run
+  eval_limit: 10000    # max fitness calls
+
+  use_noise_dependent_eval_limit: true
+  eval_limit_for_noise:
+    "0":  38392
+    "1":  38392
+    "2":  41066
+    "3":  44477
+    "4":  50728
+    "5":  56851
+    "6":  64079
+    "7":  70736
+    "8":  790344
+    "9":  86078
+    "10": 93638
+
+  seed:       1        # base seed
+  num_runs:   10       # internal repeats
+  parallel: true
+
+mlflow:
+  tracking_uri:    "mlruns"
+
+hydra:
+  run:
+    # dir: outputs/${now:%Y-%m-%d_%H-%M-%S}
+    dir: outputs

@@ -1,0 +1,88 @@
+# Flat config combining config.yaml, one_plus_one_ea.yaml, and knapsack.yaml
+# This replaces the hierarchical config structure with a single flat file
+
+# ==============================
+# Experiment Settings
+# ==============================
+experiment_name: "single_objective_knapsack_test_01"
+
+# ==============================
+# Run Configuration
+# ==============================
+run_max_gens: 100
+run_eval_limit: 10000
+run_use_noise_dependent_eval_limit: true
+run_eval_limit_for_noise_0: 38392
+run_eval_limit_for_noise_1: 38392
+run_eval_limit_for_noise_2: 41066
+run_eval_limit_for_noise_3: 44477
+run_eval_limit_for_noise_4: 50728
+run_eval_limit_for_noise_5: 56851
+run_eval_limit_for_noise_6: 64079
+run_eval_limit_for_noise_7: 70736
+run_eval_limit_for_noise_8: 790344
+run_eval_limit_for_noise_9: 86078
+run_eval_limit_for_noise_10: 93638
+run_seed: 1
+run_num_runs: 10
+run_parallel: true
+
+# ==============================
+# MLflow Configuration
+# ==============================
+mlflow_tracking_uri: "mlruns"
+
+# ==============================
+# Hydra Configuration
+# ==============================
+hydra_run_dir: "outputs"
+
+# ==============================
+# Algorithm Configuration
+# ==============================
+algo_name: OnePlusOneEA
+algo_type: MuPlusLamdaEA
+algo_use_dynamic_pop_size: false
+
+# Mutation parameters
+algo_static_indpb: 0.01
+algo_use_dynamic_mutation: true
+algo_indpb_fn_target: run_helpers.inverse_n_mut_rate
+algo_indpb_fn_n_items: null  # Will be set dynamically
+algo_indpb_fn_noise: null
+
+# Algorithm initialization parameters
+algo_init_args_target: Algorithms.MuPlusLamdaEA
+algo_init_args_mu: 1
+algo_init_args_lam: 1
+algo_init_args_mutate_function: "probFlipBit"
+algo_init_args_mutate_params_indpb: null
+
+# ==============================
+# Problem Configuration
+# ==============================
+problem_prob_name: knapsack
+problem_prob_type: discrete
+problem_opt_goal: maximise
+
+# Problem loading
+problem_loader_target: ProblemScripts.load_problem_KP
+problem_loader_filename: f1_l-d_kp_10_269
+
+# Problem info
+problem_dimensions: null
+problem_opt_global: null
+problem_capacity: null
+problem_mean_value: null
+problem_mean_weight: null
+problem_items_dict: null
+
+# Fitness
+problem_fitness_fn: eval_noisy_kp_v1
+problem_fitness_params_items_dict: null  # Will be set dynamically
+problem_fitness_params_capacity: null    # Will be set dynamically
+problem_fitness_params_noise_intensity: 3
+
+# Attributes and weights
+problem_attr_function: binary_attribute
+problem_weights: [1.0] 

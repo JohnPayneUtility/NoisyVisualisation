@@ -1,0 +1,13 @@
+prob_name: onemax
+prob_type: discrete
+opt_goal: maximise
+dimensions: 100        # bit-string length
+opt_global: 100        # known optimum
+capacity: null
+mean_value: null
+mean_weight: null
+fitness_fn: OneMax_fitness
+fitness_params:
+  noise_intensity: 0
+attr_function: binary_attribute
+weights: [1.0]

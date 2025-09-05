@@ -1,0 +1,28 @@
+# Meta
+prob_name: knapsack
+prob_type: discrete
+opt_goal: maximise
+
+# Problem loading
+loader:
+  _target_: ProblemScripts.load_problem_KP
+  filename: f1_l-d_kp_10_269
+
+# Problem info
+dimensions: null        # bit-string length
+opt_global: null        # known optimum
+capacity: null
+mean_value: null
+mean_weight: null
+items_dict: null
+
+# Fitness
+fitness_fn:   eval_noisy_kp_v1
+fitness_params:
+  items_dict: ${problem.items_dict}
+  capacity:    ${problem.capacity}
+  noise_intensity: 3
+
+# Attributes and weights
+attr_function: binary_attribute
+weights: [1.0]
