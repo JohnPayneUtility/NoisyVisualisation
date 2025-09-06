@@ -52,7 +52,7 @@ algo_indpb_fn_n_items: null  # Will be set dynamically
 algo_indpb_fn_noise: null
 
 # Algorithm initialization parameters
-algo_init_args_target: Algorithms.MuPlusLamdaEA
+algo_init_args_target: src.algorithms.Algorithms.MuPlusLamdaEA
 algo_init_args_mu: 1
 algo_init_args_lam: 1
 algo_init_args_mutate_function: "probFlipBit"
@@ -66,7 +66,7 @@ problem_prob_type: discrete
 problem_opt_goal: maximise
 
 # Problem loading
-problem_loader_target: ProblemScripts.load_problem_KP
+problem_loader_target: src.problems.ProblemScripts.load_problem_KP
 problem_loader_filename: f1_l-d_kp_10_269
 
 # Problem info

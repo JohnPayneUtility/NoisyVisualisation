@@ -10,7 +10,7 @@ indpb_fn:
   noise: null
 # algorithm arguments for initialisation
 init_args:
-  _target_: Algorithms.MuPlusLamdaEA
+  _target_: src.algorithms.Algorithms.MuPlusLamdaEA
   mu: 1
   lam: 1
   mutate_function: "probFlipBit"

@@ -8,7 +8,7 @@ name: UMDA
 #   noise: ${problem.fitness_params.noise_intensity}
 # arguments for initialising UMDA class
 init_args:
-  _target_: Algorithms.UMDA
+  _target_: src.algorithms.Algorithms.UMDA
   pop_size: 100
     # _target_: ExperimentsHelpers.dynamic_pop_size_UMDA
     # n_items: ${problem.dimensions}

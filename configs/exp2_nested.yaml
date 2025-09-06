@@ -51,7 +51,7 @@ algo:
   
   # Algorithm initialization parameters
   init_args:
-    _target_: Algorithms.UMDA
+    _target_: src.algorithms.Algorithms.UMDA
     pop_size: 100
     select_size: 50
 
@@ -71,7 +71,7 @@ problem:
   
   # Problem loading
   loader:
-    _target_: ProblemScripts.load_problem_KP
+    _target_: src.problems.ProblemScripts.load_problem_KP
     filename: f1_l-d_kp_10_269
   
   # Fitness function

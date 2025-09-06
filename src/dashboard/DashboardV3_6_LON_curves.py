@@ -8,10 +8,10 @@ import numpy as np
 from sklearn.manifold import MDS as MDS_sklearn
 from sklearn.manifold import TSNE
 
-from DashboardHelpers import *
+from .DashboardHelpers import *
 
-from FitnessFunctions import *
-from ProblemScripts import load_problem_KP
+from ..problems.FitnessFunctions import *
+from ..problems.ProblemScripts import load_problem_KP
 
 import logging
 

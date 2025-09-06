@@ -1,5 +1,6 @@
 
 # IMPORTS
+import sys
 import random
 import pickle
 import pandas as pd
@@ -7,7 +8,8 @@ import hydra
 from hydra.utils import instantiate, call
 from omegaconf import OmegaConf, DictConfig
 import mlflow
-import Algorithms, FitnessFunctions, ExperimentsHelpers
+from src.algorithms import *
+from src.problems import *
 import random
 import numpy as np
 import pandas as pd
@@ -16,7 +18,7 @@ import itertools
 from tqdm import tqdm
 from typing import List, Tuple, Any, Dict, Type
 from deap import tools
-from Algorithms import *
+# Algorithms imported via src.algorithms above
 
 # -------------------------------
 # Helper Functions for Dependency Resolution
@@ -183,7 +185,7 @@ def hydra_algo_data_multi(prob_info: Dict[str, Any],
 # Hydra config management
 # -------------------------------
 
-@hydra.main(version_base=None, config_path="conf", config_name="exp1_nested")
+@hydra.main(version_base=None, config_path="configs", config_name="exp1_nested")
 def main(cfg: DictConfig):
     # Resolve dependencies in nested config structure
     cfg = resolve_config_dependencies(cfg)
@@ -205,7 +207,7 @@ def main(cfg: DictConfig):
     }
 
     # Instantiate fitness
-    fitness_fn = getattr(FitnessFunctions, cfg.problem.fitness_fn)
+    fitness_fn = getattr(sys.modules['src.problems'], cfg.problem.fitness_fn)
     fit_params = dict(cfg.problem.fitness_params)
 
     # Algorithm class and params
@@ -216,7 +218,7 @@ def main(cfg: DictConfig):
         'sol_length':            cfg.problem.dimensions,
         'opt_weights':           tuple(cfg.problem.weights),
         'eval_limit':            cfg.run.eval_limit,
-        'attr_function':         getattr(Algorithms, cfg.problem.attr_function),
+        'attr_function':         getattr(sys.modules['src.algorithms'], cfg.problem.attr_function),
         'starting_solution':     None,
         'target_stop':           cfg.problem.opt_global,
         'gen_limit':             None,

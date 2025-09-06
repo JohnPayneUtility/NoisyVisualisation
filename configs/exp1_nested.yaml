@@ -57,7 +57,7 @@ algo:
   
   # Algorithm initialization parameters
   init_args:
-    _target_: Algorithms.MuPlusLamdaEA
+    _target_: src.algorithms.Algorithms.MuPlusLamdaEA
     mu: 1
     lam: 1
     mutate_function: "probFlipBit"
@@ -80,7 +80,7 @@ problem:
   
   # Problem loading
   loader:
-    _target_: ProblemScripts.load_problem_KP
+    _target_: src.problems.ProblemScripts.load_problem_KP
     filename: f1_l-d_kp_10_269
   
   # Fitness function

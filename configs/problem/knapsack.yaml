@@ -5,7 +5,7 @@ opt_goal: maximise
 
 # Problem loading
 loader:
-  _target_: ProblemScripts.load_problem_KP
+  _target_: src.problems.ProblemScripts.load_problem_KP
   filename: f1_l-d_kp_10_269
 
 # Problem info
