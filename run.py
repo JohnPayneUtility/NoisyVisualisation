@@ -1,6 +1,7 @@
 
 # IMPORTS
 import sys
+import time
 import random
 import pickle
 import pandas as pd
@@ -187,6 +188,9 @@ def hydra_algo_data_multi(prob_info: Dict[str, Any],
 
 @hydra.main(version_base=None, config_path="configs", config_name="exp1_nested")
 def main(cfg: DictConfig):
+    # Record start time
+    start_time = time.perf_counter()
+
     # Resolve dependencies in nested config structure
     cfg = resolve_config_dependencies(cfg)
     
@@ -257,6 +261,9 @@ def main(cfg: DictConfig):
 
     # Print summary
     print(df[['seed', 'final_fit']])
+
+    compute_time = time.perf_counter() - start_time
+    print(compute_time)
 
 if __name__ == '__main__':
     main()

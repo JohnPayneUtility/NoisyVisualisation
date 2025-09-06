@@ -129,18 +129,18 @@ hydra:
   runtime:
     version: 1.3.2
     version_base: '1.3'
-    cwd: C:\Users\Admin\Documents\GitHub\NoisyVisualisation
+    cwd: /workspace
     config_sources:
     - path: hydra.conf
       schema: pkg
       provider: hydra
-    - path: C:\Users\Admin\Documents\GitHub\NoisyVisualisation\configs
+    - path: /workspace/configs
       schema: file
       provider: main
     - path: ''
       schema: structured
       provider: schema
-    output_dir: C:\Users\Admin\Documents\GitHub\NoisyVisualisation\outputs
+    output_dir: /workspace/outputs
     choices:
       hydra/env: default
       hydra/callbacks: null
