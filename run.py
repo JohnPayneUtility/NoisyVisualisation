@@ -7,7 +7,6 @@ import hydra
 from hydra.utils import instantiate, call
 from omegaconf import OmegaConf, DictConfig
 import mlflow
-from RunManager import algo_data_multi
 import Algorithms, FitnessFunctions, ExperimentsHelpers
 import random
 import numpy as np
