@@ -2290,4 +2290,4 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
 if __name__ == '__main__':
     # app.run_server(debug=True)
     # app.run(debug=True)
-    app.run(host="0.0.0.0", port=8050, debug=False, use_reloader=False)
+    app.run(host="0.0.0.0", port=8050, debug=True, use_reloader=False)
