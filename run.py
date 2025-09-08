@@ -186,7 +186,7 @@ def hydra_algo_data_multi(prob_info: Dict[str, Any],
 # Hydra config management
 # -------------------------------
 
-@hydra.main(version_base=None, config_path="configs", config_name="exp1_nested")
+@hydra.main(version_base=None, config_path="configs", config_name="test1_kp_1p1")
 def main(cfg: DictConfig):
     # Record start time
     start_time = time.perf_counter()
@@ -253,9 +253,9 @@ def main(cfg: DictConfig):
         # Log metrics and artifacts
         for row in df.itertuples():
             mlflow.log_metric('final_fitness', row.final_fit, step=row.seed)
-        df.to_csv('results.csv', index=False)
-        mlflow.log_artifact('results.csv')
-        mlflow.log_artifact("outputs/.hydra/config.yaml")
+        df.to_csv('data/results.csv', index=False)
+        mlflow.log_artifact('data/results.csv')
+        mlflow.log_artifact("data/outputs/.hydra/config.yaml")
     
     mlflow.end_run(status="FINISHED")
 
