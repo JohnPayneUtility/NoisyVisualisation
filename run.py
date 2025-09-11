@@ -19,8 +19,13 @@ import itertools
 from tqdm import tqdm
 from typing import List, Tuple, Any, Dict, Type
 from deap import tools
-# Algorithms imported via src.algorithms above
 
+from pathlib import Path
+base = Path(__file__).resolve().parents[1]  # project root
+mlruns_dir = base / "data" / "mlruns"
+mlflow.set_tracking_uri(f"file:{mlruns_dir}")
+
+print("RUN tracking:", mlflow.get_tracking_uri())
 # -------------------------------
 # Helper Functions for Dependency Resolution
 # -------------------------------
@@ -233,6 +238,7 @@ def main(cfg: DictConfig):
     # Run and log via MLflow
     with mlflow.start_run(run_name=cfg.algo.name):
         # Log parameters
+        print("RUN artifact root:", mlflow.get_artifact_uri())
         mlflow.log_params({
             'dimensions':  cfg.problem.dimensions,
             'seed':        cfg.run.seed,
