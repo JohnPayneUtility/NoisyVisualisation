@@ -52,7 +52,7 @@ RUN_COLS_DEFAULT = [
     "duration",
     # "artifact_uri",
     # Common params/metrics you might have — shown only if present:
-    "params.algo", "params.problem", "params.noise", "params.seed", "params.pop_size",
+    "params.algo", "params.dimensions", "params.problem", "params.noise", "params.seed", "params.pop_size",
     "metrics.best", "metrics.hv", "metrics.mean",
 ]
 
@@ -142,3 +142,10 @@ def render_runs_table(exp_data, selected_rows):
         style_cell={"padding": "6px", "fontFamily": "monospace", "fontSize": 13},
         style_header={"fontWeight": "bold"},
     )
+
+@callback(
+    Output("selected-run-ids", "data"),       # points to the global store
+    Input("runs-table", "selected_row_ids"),
+)
+def remember_runs(selected_ids):
+    return selected_ids or []

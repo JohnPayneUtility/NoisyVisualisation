@@ -259,8 +259,10 @@ def main(cfg: DictConfig):
         # Log metrics and artifacts
         for row in df.itertuples():
             mlflow.log_metric('final_fitness', row.final_fit, step=row.seed)
-        df.to_csv('data/results.csv', index=False)
-        mlflow.log_artifact('data/results.csv')
+        df.to_csv('data/temp/results.csv', index=False) # save csv
+        mlflow.log_artifact('data/temp/results.csv')
+        df.to_pickle("data/temp/results.pkl") # save pickle
+        mlflow.log_artifact("data/temp/results.pkl")
         mlflow.log_artifact("data/outputs/.hydra/config.yaml")
     
     mlflow.end_run(status="FINISHED")

@@ -1,7 +1,7 @@
-# Nested config for OnePlusOneEA on Knapsack experiment
+# Nested config for UMDA on Knapsack experiment
 # This shows how we could use nested structure with dependency resolution
 
-experiment_name: "single_objective_knapsack_test_01"
+experiment_name: "test01_knapsack"
 
 # ==============================
 # Run Configuration
@@ -40,29 +40,20 @@ hydra:
     dir: "data/outputs"
 
 # ==============================
-# Algorithm Configuration
+# Algorithm Configuration (UMDA)
 # ==============================
 algo:
-  name: OnePlusOneEA
-  type: MuPlusLamdaEA
+  name: UMDA
+  type: UMDA
   use_dynamic_pop_size: false
-  static_indpb: 0.01
-  use_dynamic_mutation: true
-  
-  # Dynamic mutation rate function
-  indpb_fn:
-    _target_: run_helpers.inverse_n_mut_rate
-    n_items: null  # Will be resolved after problem loading
-    noise: null
+  pop_size: 100
+  select_size: 50
   
   # Algorithm initialization parameters
   init_args:
-    _target_: src.algorithms.Algorithms.MuPlusLamdaEA
-    mu: 1
-    lam: 1
-    mutate_function: "probFlipBit"
-    mutate_params:
-      indpb: null  # Will be resolved dynamically
+    _target_: src.algorithms.Algorithms.UMDA
+    pop_size: 100
+    select_size: 50
 
 # ==============================
 # Problem Configuration

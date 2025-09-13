@@ -24,5 +24,4 @@ def convert_to_split_edges_format(lon_data):
     Convert LON data to split edges format.
     """
     # This is a placeholder implementation
-    # You may need to implement the actual conversion logic based on your needs
     return lon_data
