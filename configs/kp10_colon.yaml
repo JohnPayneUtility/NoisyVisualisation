@@ -45,6 +45,10 @@ problem:
   mean_value: null
   mean_weight: null
   items_dict: null
+  violation_fn: src.problems.ViolationFunctions.knap_violation
+  violation_params:
+    items_dict: null   # will be populated by loader
+    capacity: null     # will be populated by loader
 
   # Instance loader (like your EA config)
   loader:

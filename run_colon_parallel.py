@@ -4,7 +4,8 @@
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Optional
+import importlib
 
 import hydra
 from hydra.utils import call
@@ -17,8 +18,8 @@ import concurrent.futures
 import os
 import random as _rand
 
-from src.problems import *
-from src.algorithms import *
+from src.problems import *   # for fitness functions resolved by name
+from src.algorithms import * # for attribute generators, etc.
 
 # -------------------------------
 # MLflow defaults (local file store under repo/data/mlruns)
@@ -32,8 +33,17 @@ print("RUN(LON) tracking:", mlflow.get_tracking_uri())
 # Helpers
 # -------------------------------
 
+def _import_from_dotted(dotted: str):
+    """
+    Import a callable from a fully qualified dotted path. Example:
+    'src.problems.ViolationFunctions.knap_violation'
+    """
+    module_path, attr = dotted.rsplit(".", 1)
+    mod = importlib.import_module(module_path)
+    return getattr(mod, attr)
+
 def resolve_config_dependencies(cfg: DictConfig) -> DictConfig:
-    """Resolve loader-driven problem details and fitness params (like run.py)."""
+    """Resolve loader-driven problem details and fitness/violation params (like run.py)."""
     resolved = OmegaConf.create(OmegaConf.to_container(cfg, resolve=True))
 
     # Load problem if a loader is specified (e.g., knapsack instance)
@@ -41,6 +51,7 @@ def resolve_config_dependencies(cfg: DictConfig) -> DictConfig:
         outputs = call(resolved.problem.loader)
         n_items, capacity, optimal, values, weights, items_dict, _ = outputs
 
+        # normalise types
         items_dict = {int(k): (float(v[0]), float(v[1])) for k, v in items_dict.items()}
 
         # Attach to cfg
@@ -52,9 +63,14 @@ def resolve_config_dependencies(cfg: DictConfig) -> DictConfig:
         resolved.problem.items_dict = items_dict
 
         # Fitness params
-        if hasattr(resolved.problem, "fitness_params"):
+        if hasattr(resolved.problem, "fitness_params") and resolved.problem.fitness_params is not None:
             resolved.problem.fitness_params.items_dict = items_dict
             resolved.problem.fitness_params.capacity = float(capacity)
+
+        # Violation params (optional)
+        if hasattr(resolved.problem, "violation_params") and resolved.problem.violation_params is not None:
+            resolved.problem.violation_params.items_dict = items_dict
+            resolved.problem.violation_params.capacity = float(capacity)
     else:
         # OneMax-style problems (no loader)
         if not getattr(resolved.problem, "capacity", None):
@@ -81,7 +97,9 @@ def _run_single_lon_worker(
     pert_attempts: int,
     fitness_fn_name: str,
     fit_params: Dict[str, Any],
-    target_stop: float | int | None,
+    target_stop: Optional[float],
+    violation_fn_dotted: Optional[str],          # <-- NEW (optional)
+    viol_params: Optional[Dict[str, Any]],       # <-- NEW (optional)
 ) -> Tuple[List[Tuple[int, ...]], List[float], List[Tuple[Tuple[int, ...], Tuple[int, ...], float]]]:
     """
     Run one BinaryLON build with a specific seed. Only pass simple/serializable args.
@@ -91,12 +109,15 @@ def _run_single_lon_worker(
     _rand.seed(seed)
     np.random.seed(seed)
 
-    # Resolve the callables by name (avoid sending function objects)
+    # Resolve the callables
+    # fitness resolved by attribute on src.problems module (backwards compatible)
     fitness_fn = getattr(sys.modules['src.problems'], fitness_fn_name)
     attr_fn = getattr(sys.modules['src.algorithms'], attr_fn_name)
+
     fitness_tuple = (fitness_fn, fit_params)
 
-    local_optima, fitness_values, edges_list = BinaryLON(
+    # Build kwargs for BinaryLON call
+    lon_kwargs: Dict[str, Any] = dict(
         pert_attempts=pert_attempts,
         len_sol=len_sol,
         weights=weights,
@@ -111,6 +132,15 @@ def _run_single_lon_worker(
         true_fitness_function=None,
         target_stop=target_stop,
     )
+
+    # If a violation function is provided (dotted path), import and attach it.
+    if violation_fn_dotted:
+        violation_fn = _import_from_dotted(violation_fn_dotted)
+        violation_tuple = (violation_fn, viol_params or {})
+        lon_kwargs["violation_function"] = violation_tuple  # BinaryLON will use Deb’s preorder
+
+    # Call BinaryLON
+    local_optima, fitness_values, edges_list = BinaryCoLON(**lon_kwargs)
     return local_optima, fitness_values, edges_list
 
 
@@ -147,7 +177,11 @@ def main(cfg: DictConfig):
     attr_fn_name = cfg.problem.attr_function
     weights = tuple(cfg.problem.weights)
 
-    # Parallel controls (new): cfg.run.parallel (bool) and cfg.run.num_workers (int)
+    # OPTIONAL violation function (fully qualified dotted path)
+    violation_fn_dotted = getattr(cfg.problem, "violation_fn", None)
+    viol_params = dict(getattr(cfg.problem, "violation_params", {}) or {})
+
+    # Parallel controls
     parallel = bool(getattr(cfg.run, "parallel", False))
     num_workers = int(getattr(cfg.run, "num_workers", os.cpu_count() or 1))
 
@@ -164,7 +198,10 @@ def main(cfg: DictConfig):
             "pert_attempts": cfg.lon.pert_attempts,
             "n_flips_mut": cfg.lon.n_flips_mut,
             "n_flips_pert": cfg.lon.n_flips_pert,
+            "lon_constrained": bool(violation_fn_dotted),
+            "violation_fn": violation_fn_dotted or "None",
             **{f"fit_{k}": v for k, v in fit_params.items()},
+            **({f"viol_{k}": v for k, v in viol_params.items()} if violation_fn_dotted else {}),
         })
 
         # -------------------------------
@@ -187,7 +224,6 @@ def main(cfg: DictConfig):
         total = cfg.run.num_runs
 
         if parallel and total > 1:
-            # Use processes for CPU-bound work
             with concurrent.futures.ProcessPoolExecutor(max_workers=num_workers) as executor:
                 futures = []
                 for i in range(total):
@@ -205,13 +241,14 @@ def main(cfg: DictConfig):
                             fitness_fn_name,
                             fit_params,
                             cfg.problem.opt_global,
+                            violation_fn_dotted,  # OPTIONAL
+                            viol_params,          # OPTIONAL
                         )
                     )
                 for fut in concurrent.futures.as_completed(futures):
                     loc, fitv, edges = fut.result()
                     _merge(loc, fitv, edges)
         else:
-            # Sequential fallback
             for i in range(total):
                 seed = base_seed + i
                 loc, fitv, edges = _run_single_lon_worker(
@@ -225,10 +262,12 @@ def main(cfg: DictConfig):
                     fitness_fn_name,
                     fit_params,
                     cfg.problem.opt_global,
+                    violation_fn_dotted,  # OPTIONAL
+                    viol_params,          # OPTIONAL
                 )
                 _merge(loc, fitv, edges)
 
-        # For each compression setting, create a row
+        # Rows per compression setting
         rows: List[Dict[str, Any]] = []
         for comp in cfg.lon.compression_accs:
             if comp == 'None':

@@ -21,7 +21,8 @@ import logging
 
 # ---------- LON DATA ----------
 # Load local optima
-df_LONs = pd.read_pickle('results_LON.pkl')
+# df_LONs = pd.read_pickle('results_LON.pkl')
+df_LONs = pd.read_pickle('data/temp/lon_results.pkl')
 print(f'df_LON columns: {df_LONs.columns}')
 # print(df_LONs.head(10))
 LON_hidden_cols = ['problem_name', 
