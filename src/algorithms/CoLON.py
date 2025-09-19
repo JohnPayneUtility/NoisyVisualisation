@@ -190,9 +190,7 @@ def BinaryCoLON(pert_attempts, len_sol, weights,
                              f"v={individual.violation:.6g}")
 
         elif improv_method == 'first':
-            # TODO: first-improvement with Deb’s rule: iterate neighbours in random order,
-            #       move on the first that satisfies deb_better(neigh, current); then continue.
-            raise NotImplementedError("first-improvement with Deb’s preorder not implemented yet.")
+            raise NotImplementedError("first-improvement not implemented yet.")
 
     # 7) Pack edges
     edges_list = [(source, target, weight) for (source, target), weight in edges.items()]
