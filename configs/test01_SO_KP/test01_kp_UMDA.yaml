@@ -59,6 +59,7 @@ algo:
 # Problem Configuration
 # ==============================
 problem:
+  PID: f1_l-d_kp_10_269
   prob_name: knapsack
   prob_type: discrete
   opt_goal: maximise

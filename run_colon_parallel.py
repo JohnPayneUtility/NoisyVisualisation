@@ -20,6 +20,7 @@ import random as _rand
 
 from src.problems import *   # for fitness functions resolved by name
 from src.algorithms import * # for attribute generators, etc.
+from src.io.ExperimentsHelpers import save_or_append_results
 
 # -------------------------------
 # MLflow defaults (local file store under repo/data/mlruns)
@@ -168,7 +169,7 @@ def main(cfg: DictConfig):
         "opt_global": cfg.problem.opt_global,
         "mean_value": cfg.problem.mean_value,
         "mean_weight": cfg.problem.mean_weight,
-        "PID": f"{cfg.problem.prob_name}_{cfg.problem.dimensions}",
+        "PID": cfg.problem.PID,
     }
 
     # Fitness & attributes (names for worker resolution)
@@ -302,6 +303,7 @@ def main(cfg: DictConfig):
         out_dir = Path("data/temp")
         out_dir.mkdir(parents=True, exist_ok=True)
         df.to_pickle(out_dir / "lon_results.pkl")
+        save_or_append_results(df, 'data/dashboard_dw/lon_results.pkl')
         df.to_csv(out_dir / "lon_results.csv", index=False)
         mlflow.log_artifact(str(out_dir / "lon_results.pkl"))
         mlflow.log_artifact(str(out_dir / "lon_results.csv"))

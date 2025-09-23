@@ -20,6 +20,8 @@ from tqdm import tqdm
 from typing import List, Tuple, Any, Dict, Type
 from deap import tools
 
+from src.io.ExperimentsHelpers import save_or_append_results
+
 from pathlib import Path
 base = Path(__file__).resolve().parents[1]  # project root
 mlruns_dir = base / "data" / "mlruns"
@@ -212,7 +214,7 @@ def main(cfg: DictConfig):
         'opt_global': cfg.problem.opt_global,
         'mean_value': cfg.problem.mean_value,
         'mean_weight': cfg.problem.mean_weight,
-        'PID':        f"{cfg.problem.prob_name}_{cfg.problem.dimensions}"
+        'PID':        cfg.problem.PID,
     }
 
     # Instantiate fitness
@@ -262,6 +264,7 @@ def main(cfg: DictConfig):
         df.to_csv('data/temp/results.csv', index=False) # save csv
         mlflow.log_artifact('data/temp/results.csv')
         df.to_pickle("data/temp/results.pkl") # save pickle
+        save_or_append_results(df, 'data/dashboard_dw/algo_results.pkl')
         mlflow.log_artifact("data/temp/results.pkl")
         mlflow.log_artifact("data/outputs/.hydra/config.yaml")
     

@@ -1,0 +1,50 @@
+test01_SO_KP_LON:
+  experiment_name: test02_KP_LON
+  run:
+    num_runs: 1000
+    seed: 1
+    parallel: true
+    num_workers: 50
+  mlflow:
+    tracking_uri: data/mlruns
+  hydra:
+    run:
+      dir: data/outputs
+  lon:
+    name: BinaryLON
+    pert_attempts: 1500
+    n_flips_mut: 1
+    n_flips_pert: 2
+    compression_accs:
+    - None
+    - 0
+    - 1
+    - 2
+    - 5
+    - 10
+  problem:
+    PID: f1_l-d_kp_10_269
+    prob_name: knapsack
+    prob_type: discrete
+    opt_goal: maximise
+    dimensions: null
+    opt_global: null
+    capacity: null
+    mean_value: null
+    mean_weight: null
+    items_dict: null
+    violation_fn: src.problems.ViolationFunctions.knap_violation
+    violation_params:
+      items_dict: null
+      capacity: null
+    loader:
+      _target_: src.problems.ProblemScripts.load_problem_KP
+      filename: f1_l-d_kp_10_269
+    fitness_fn: eval_ind_kp
+    fitness_params:
+      items_dict: null
+      capacity: null
+      penalty: 1
+    attr_function: binary_attribute
+    weights:
+    - 1.0

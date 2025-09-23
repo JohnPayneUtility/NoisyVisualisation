@@ -289,6 +289,11 @@ def create_binary_LON(prob_info,
                       n_runs,
                       compression_accs = [None],
                       ):
+    """
+    Function unused.
+    Instead BinaryLON and compress_lon_aggregated functions
+    are called from run_lon.py directly
+    """
     n_items = base_params['sol_length']
     fit_weights = base_params['opt_weights']
     binary_attribute = base_params['attr_function']

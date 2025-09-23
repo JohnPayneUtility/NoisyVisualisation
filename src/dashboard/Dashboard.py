@@ -22,7 +22,7 @@ import logging
 # ---------- LON DATA ----------
 # Load local optima
 # df_LONs = pd.read_pickle('results_LON.pkl')
-df_LONs = pd.read_pickle('data/temp/lon_results.pkl')
+df_LONs = pd.read_pickle('data/dashboard_dw/lon_results.pkl')
 print(f'df_LON columns: {df_LONs.columns}')
 # print(df_LONs.head(10))
 LON_hidden_cols = ['problem_name', 
@@ -40,7 +40,7 @@ print(df_LONs['PID'].unique())
 # ----------
 
 # Load your data from the pickle file
-df = pd.read_pickle('results.pkl')
+df = pd.read_pickle('data/dashboard_dw/algo_results.pkl')
 df['opt_global'] = df['opt_global'].astype(float)
 # print(df.columns)
 
@@ -1833,7 +1833,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
             z1 = float(z1) if z1 is not None else 0
 
 
-            option_curve_edges_LON = True
+            option_curve_edges_LON = False
             # Process curved STN edges
             if option_curve_edges and edge_type == "STN" and (u, v) in color_indices_for_pair:
                  pair = (u, v)
@@ -2282,6 +2282,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
         margin=dict(l=0, r=0, t=0, b=0),
         template="plotly_white"
         )
+    fig.write_html('plots/3dplot.html')
     return fig, debug_summary_component
 
 # ==========
