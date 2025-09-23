@@ -32,7 +32,9 @@ LON_hidden_cols = ['problem_name',
                    'opt_global',
                    'local_optima',
                    'fitness_values',
-                   'edges'
+                   'edges',
+                   'optima_feasibility',
+                   'neighbour_feasibility',
                    ]
 LON_display_columns = [col for col in df_LONs.columns if col not in LON_hidden_cols]
 print(df_LONs['PID'].unique())
@@ -1773,7 +1775,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
         edge_labels = []
         edge_counts = {}
 
-        ### FIX: Pre-calculate color indices for STN edge pairs ###
+        ### Pre-calculate color indices for STN edge pairs
         stn_edges_by_pair_color = {}
         for u_pre, v_pre, key_pre, data_pre in G.edges(data=True, keys=True):
             if data_pre.get("edge_type") == "STN":
@@ -1790,7 +1792,6 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
             # Sort colors alphabetically or by appearance order if needed
             sorted_colors = sorted(colors_dict.keys())
             color_indices_for_pair[pair] = {color: idx for idx, color in enumerate(sorted_colors)}
-        ### END FIX ###
 
         # LOOP THROUGH ALL EDGES FOR PLOTTING
         print('Plotting edges...')
@@ -1845,7 +1846,6 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                  if current_edge_color in color_indices_map:
                      color_idx = color_indices_map[current_edge_color]
 
-                     ### FIX: Calculate curvature based on color index ###
                      base_curvature = 0.2  # Base amount of curve
                      max_offset_factor = 1.5 # How much to spread curves (adjust as needed)
 
@@ -1892,7 +1892,6 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                      mid_x = curve_xy[mid_index, 0]
                      mid_y = curve_xy[mid_index, 1]
                      mid_z = z_values[mid_index]
-                     ### END FIX ###
 
                  else:
                      # Should not happen if pre-calculation is correct, but handle defensively

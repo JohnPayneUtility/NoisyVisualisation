@@ -2,27 +2,30 @@ from deap import base, creator, tools
 from .LONs import random_bit_flip
 
 def BinaryCoLON(pert_attempts, len_sol, weights,
-              attr_function=None,
-              n_flips_mut=1,
-              n_flips_pert=2,
-              mutate_function=None,
-              perturb_function=None,
-              improv_method='best',
-              fitness_function=None,
-              violation_function=None,   # <-- NEW: (func, kwargs) returning scalar v(x)
-              starting_solution=None,
-              true_fitness_function=None,
-              target_stop=None):
+                attr_function=None,
+                n_flips_mut=1,
+                n_flips_pert=2,
+                mutate_function=None,
+                perturb_function=None,
+                improv_method='best',
+                fitness_function=None,
+                violation_function=None,   # (func, kwargs) returning scalar v(x); <=0 means feasible
+                starting_solution=None,
+                true_fitness_function=None,
+                target_stop=None):
     """
-    LON construction using Deb's constraint-handling preorder for comparisons.
-    Debs rule (a ⊲ b):
-      1) If v(a) <= 0 and v(b) > 0       -> a better
-      2) If v(a) > 0 and v(b) > 0        -> lower violation wins
-      3) If v(a) <= 0 and v(b) <= 0      -> higher objective f wins
-    """
+    Build a constrained LON (CoLON) using Deb's constraint-handling preorder.
 
+    Returns:
+      local_optima: List[Tuple[int,...]]
+      fitness_values: List[float]  (objective at each optimum)
+      edges_list: List[(src_tuple, dst_tuple, weight)]
+      optima_feasibility: List[int]   (1 if optimum feasible, else 0) aligned with local_optima
+      edge_feasibility: List[int]     (1 if edge target is feasible, else 0) aligned with edges_list
+      neighbour_feasibility: List[float] (proportion 0..1 of feasible neighbours at n_flips_mut), aligned with local_optima
+    """
     if violation_function is None:
-        raise ValueError("violation_function is required for Deb's preorder (returns scalar v(x); <=0 means feasible).")
+        raise ValueError("violation_function is required (returns scalar v(x); <=0 means feasible).")
 
     # 1) Create Fitness and Individual classes if not existing
     if not hasattr(creator, "CustomFitness"):
@@ -48,35 +51,26 @@ def BinaryCoLON(pert_attempts, len_sol, weights,
         return getattr(ind, "violation", None) is not None and ind.violation <= 0.0
 
     def deb_better(a, b):
-        # optional eps if you want numerical tolerance:
-        # eps = 0.0
         va, vb = a.violation, b.violation
         fa = a.fitness.values[0]
         fb = b.fitness.values[0]
-
         # 1) feasible beats infeasible
         if va <= 0.0 and vb > 0.0:
             return True
         if va > 0.0 and vb <= 0.0:
             return False
-
         # 2) both infeasible -> lower violation is better
         if va > 0.0 and vb > 0.0:
             return va < vb
-
         # 3) both feasible -> higher objective is better
-        # if abs(fa - fb) <= eps: return False
         return fa > fb
 
     # ---- Evaluators (objective & violation) ----
     def evaluate_objective(ind):
-        # expects fitness_function as (callable, kwargs) returning a tuple or a scalar
         val = fitness_function[0](ind, **fitness_function[1])
-        # Normalize to tuple for DEAP Fitness
         return val if isinstance(val, tuple) else (val,)
 
     def evaluate_violation(ind):
-        # expects violation_function as (callable, kwargs) returning scalar v(x)
         v = violation_function[0](ind, **violation_function[1])
         return float(v)
 
@@ -91,8 +85,10 @@ def BinaryCoLON(pert_attempts, len_sol, weights,
     toolbox.register("population", tools.initRepeat, list, toolbox.individual)
     toolbox.register("evaluate", evaluate_objective)
     toolbox.register("violate", evaluate_violation)
-    toolbox.register("mutate", lambda ind: mutate_function[0](ind, **mutate_function[1]))
-    toolbox.register("perturb", lambda ind: perturb_function[0](ind, **perturb_function[1]))
+    toolbox.register("mutate", (lambda ind: mutate_function[0](ind, **mutate_function[1]))
+                     if mutate_function else (lambda ind: ind))
+    toolbox.register("perturb", (lambda ind: perturb_function[0](ind, **perturb_function[1]))
+                     if perturb_function else (lambda ind: ind))
 
     # 4) Create and evaluate a starting solution
     if starting_solution is not None:
@@ -103,10 +99,33 @@ def BinaryCoLON(pert_attempts, len_sol, weights,
 
     # 5) Data
     local_optima = []
-    fitness_values = []   # still record objective f at attractor
+    fitness_values = []
     edges = {}
     prev_local_opt = None
     prev_fitness = None
+
+    # caches for feasibility annotations (avoid recomputation, keep consistency)
+    opt_index = {}                 # opt tuple -> index in local_optima
+    opt_feas_map = {}              # opt tuple -> 1/0 (feasible flag)
+    neigh_feas_prop_map = {}       # opt tuple -> float in [0,1]
+
+    # helper: compute & cache neighbour feasibility proportion (0..1)
+    def compute_neighbour_feasibility_prop(opt_tuple):
+        if opt_tuple in neigh_feas_prop_map:
+            return neigh_feas_prop_map[opt_tuple]
+        opt_ind = creator.Individual(list(opt_tuple))
+        neighbours = generate_bit_flip_combinations(opt_ind, n_flips_mut)
+        if len(neighbours) == 0:
+            prop = 0.0
+        else:
+            feas = 0
+            for nb in neighbours:
+                nb_violation = toolbox.violate(nb)
+                if nb_violation <= 0.0:
+                    feas += 1
+            prop = feas / float(len(neighbours))
+        neigh_feas_prop_map[opt_tuple] = prop
+        return prop
 
     # 6) Basin-hopping
     pert_attempt = 0
@@ -125,7 +144,7 @@ def BinaryCoLON(pert_attempts, len_sol, weights,
                     m.fitness.values = toolbox.evaluate(m)
                     m.violation = toolbox.violate(m)
 
-                # Pick the best among neighbours + current (Deb’s preorder)
+                # Pick the best among neighbours + current
                 candidates = mutants + [individual]
                 best_mutant = candidates[0]
                 for cand in candidates[1:]:
@@ -135,7 +154,6 @@ def BinaryCoLON(pert_attempts, len_sol, weights,
                 # Move only if strictly better under Deb
                 if deb_better(best_mutant, individual):
                     individual[:] = best_mutant
-                    # recompute f and v for the moved-to individual (safe after copy)
                     if hasattr(individual.fitness, "values"):
                         del individual.fitness.values
                     evaluate_both(individual)
@@ -146,22 +164,23 @@ def BinaryCoLON(pert_attempts, len_sol, weights,
             current_local_opt = tuple(individual)
             current_fitness = individual.fitness.values[0]
 
-            if prev_fitness is not None and current_fitness < prev_fitness and is_feasible(individual):
-                print("Alert: Non-monotonic transition (objective dropped but Deb may still allow via violation). "
-                      f"Prev f: {prev_fitness}, Curr f: {current_fitness}")
-
-            if current_local_opt not in local_optima:
+            # Add if new; also cache feasibility & neighbour feasibility
+            if current_local_opt not in opt_index:
+                idx = len(local_optima)
+                opt_index[current_local_opt] = idx
                 local_optima.append(current_local_opt)
                 fitness_values.append(current_fitness)
+                opt_feas_map[current_local_opt] = 1 if is_feasible(individual) else 0
+                _ = compute_neighbour_feasibility_prop(current_local_opt)
 
+            # Edge from previous optimum to current (if changed)
             if prev_local_opt is not None and prev_local_opt != current_local_opt:
                 edges[(prev_local_opt, current_local_opt)] = edges.get((prev_local_opt, current_local_opt), 0) + 1
 
             prev_local_opt = current_local_opt
             prev_fitness = current_fitness
 
-            if target_stop is not None and current_fitness >= target_stop and is_feasible(individual):
-                # Only early-stop if target achieved feasibly (usual practice)
+            if target_stop is not None and current_fitness >= target_stop and (opt_feas_map[current_local_opt] == 1):
                 import logging
                 logging.info(f"Target fitness reached feasibly: {current_fitness} >= {target_stop}")
                 break
@@ -192,7 +211,23 @@ def BinaryCoLON(pert_attempts, len_sol, weights,
         elif improv_method == 'first':
             raise NotImplementedError("first-improvement not implemented yet.")
 
-    # 7) Pack edges
-    edges_list = [(source, target, weight) for (source, target), weight in edges.items()]
+    # 7) Pack edges and edge feasibility (target feasibility)
+    edges_list = []
+    edge_feasibility = []
+    for (source, target), weight in edges.items():
+        edges_list.append((source, target, weight))
+        feas = opt_feas_map.get(target)
+        if feas is None:
+            # Shouldn't happen; compute once if needed
+            tmp_ind = creator.Individual(list(target))
+            tmp_violation = evaluate_violation(tmp_ind)
+            feas = 1 if tmp_violation <= 0.0 else 0
+            opt_feas_map[target] = feas
+        edge_feasibility.append(int(feas))
 
-    return local_optima, fitness_values, edges_list
+    # Align feasibility lists with local_optima order
+    optima_feasibility = [opt_feas_map[opt] for opt in local_optima]
+    neighbour_feasibility = [neigh_feas_prop_map[opt] for opt in local_optima]
+
+    return (local_optima, fitness_values, edges_list,
+            optima_feasibility, edge_feasibility, neighbour_feasibility)

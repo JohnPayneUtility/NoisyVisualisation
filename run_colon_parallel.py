@@ -1,5 +1,3 @@
-# `run_lon.py`
-
 # IMPORTS
 import sys
 import time
@@ -18,8 +16,8 @@ import concurrent.futures
 import os
 import random as _rand
 
-from src.problems import *   # for fitness functions resolved by name
-from src.algorithms import * # for attribute generators, etc.
+from src.problems import *    # fitness functions resolved by name
+from src.algorithms import *  # BinaryCoLON, compress_lon_aggregated, attribute gens, etc.
 from src.io.ExperimentsHelpers import save_or_append_results
 
 # -------------------------------
@@ -99,25 +97,38 @@ def _run_single_lon_worker(
     fitness_fn_name: str,
     fit_params: Dict[str, Any],
     target_stop: Optional[float],
-    violation_fn_dotted: Optional[str],          # <-- NEW (optional)
-    viol_params: Optional[Dict[str, Any]],       # <-- NEW (optional)
-) -> Tuple[List[Tuple[int, ...]], List[float], List[Tuple[Tuple[int, ...], Tuple[int, ...], float]]]:
+    violation_fn_dotted: Optional[str],          # OPTIONAL fully-qualified dotted path
+    viol_params: Optional[Dict[str, Any]],       # OPTIONAL params dict
+) -> Tuple[
+    List[Tuple[int, ...]],
+    List[float],
+    Dict[Tuple[Tuple[int, ...], Tuple[int, ...]], float],
+    List[int],
+    Dict[Tuple[Tuple[int, ...], Tuple[int, ...]], int],
+    List[float]
+]:
     """
-    Run one BinaryLON build with a specific seed. Only pass simple/serializable args.
-    Returns: (local_optima, fitness_values, edges_list)
+    Run one BinaryCoLON build with a specific seed. Only pass simple/serializable args.
+
+    Returns:
+      local_optima,
+      fitness_values,
+      edges_dict,            # (src,dst) -> weight
+      optima_feasibility,    # aligned with local_optima (1/0)
+      edge_feas_map,         # (src,dst) -> 1/0 based on dst feasibility
+      neighbour_feasibility  # aligned with local_optima (0..1)
     """
     # Seed per-process deterministically
     _rand.seed(seed)
     np.random.seed(seed)
 
     # Resolve the callables
-    # fitness resolved by attribute on src.problems module (backwards compatible)
     fitness_fn = getattr(sys.modules['src.problems'], fitness_fn_name)
     attr_fn = getattr(sys.modules['src.algorithms'], attr_fn_name)
 
     fitness_tuple = (fitness_fn, fit_params)
 
-    # Build kwargs for BinaryLON call
+    # Build kwargs for BinaryCoLON call
     lon_kwargs: Dict[str, Any] = dict(
         pert_attempts=pert_attempts,
         len_sol=len_sol,
@@ -138,11 +149,30 @@ def _run_single_lon_worker(
     if violation_fn_dotted:
         violation_fn = _import_from_dotted(violation_fn_dotted)
         violation_tuple = (violation_fn, viol_params or {})
-        lon_kwargs["violation_function"] = violation_tuple  # BinaryLON will use Deb’s preorder
+        lon_kwargs["violation_function"] = violation_tuple  # CoLON uses Deb’s preorder
 
-    # Call BinaryLON
-    local_optima, fitness_values, edges_list = BinaryCoLON(**lon_kwargs)
-    return local_optima, fitness_values, edges_list
+    # Call BinaryCoLON (returns 6 values; first 3 are list,list,list in your function,
+    # here we convert edges_list->dict and build edge_feas_map right here for convenience)
+    (local_optima,
+     fitness_values,
+     edges_list,
+     optima_feasibility,
+     edge_feasibility,
+     neighbour_feasibility) = BinaryCoLON(**lon_kwargs)
+
+    # Convert edges_list -> dict for consistent aggregation
+    edges_dict: Dict[Tuple[Tuple[int, ...], Tuple[int, ...]], float] = {}
+    for (src, dst, w) in edges_list:
+        edges_dict[(src, dst)] = edges_dict.get((src, dst), 0) + w
+
+    # Build edge_feas_map aligned to the dict keys (dst feasibility from edge_feasibility list)
+    # We rely on the same order used above; safe because we create the dict from edges_list here.
+    edge_feas_map: Dict[Tuple[Tuple[int, ...], Tuple[int, ...]], int] = {}
+    for (src, dst, _w), ef in zip(edges_list, edge_feasibility):
+        edge_feas_map[(src, dst)] = int(ef)
+
+    return (local_optima, fitness_values, edges_dict,
+            optima_feasibility, edge_feas_map, neighbour_feasibility)
 
 
 # -------------------------------
@@ -208,18 +238,38 @@ def main(cfg: DictConfig):
         # -------------------------------
         # Build aggregated LON (parallel or sequential)
         # -------------------------------
-        aggregated = {"local_optima": [], "fitness_values": [], "edges": {}}
+        aggregated = {
+            "local_optima": [],        # insertion-ordered unique optima
+            "fitness_values": [],      # aligned with local_optima
+            "edges": {},               # (src,dst) -> weight
 
-        def _merge(local_optima, fitness_values, edges_list):
-            # Merge optima/fitness
-            for opt, fit in zip(local_optima, fitness_values):
-                if opt not in aggregated["local_optima"]:
+            # NEW lookup caches
+            "opt_index": {},           # opt -> index
+            "opt_feas_map": {},        # opt -> 1/0
+            "neigh_feas_map": {},      # opt -> float (0..1)
+        }
+
+        def _merge(local_optima, fitness_values, edges_dict,
+                   optima_feasibility, edge_feas_map, neighbour_feasibility):
+            # Merge optima/fitness + per-optimum feasibility aligned by index
+            for opt, fit, of, nf in zip(local_optima, fitness_values,
+                                        optima_feasibility, neighbour_feasibility):
+                if opt not in aggregated["opt_index"]:
+                    idx = len(aggregated["local_optima"])
+                    aggregated["opt_index"][opt] = idx
                     aggregated["local_optima"].append(opt)
                     aggregated["fitness_values"].append(fit)
-            # Merge edges
-            for (src, dst, w) in edges_list:
-                key = (src, dst)
+                    aggregated["opt_feas_map"][opt] = int(of)
+                    aggregated["neigh_feas_map"][opt] = float(nf)
+                else:
+                    # Deterministic problems -> should match; keep first-seen.
+                    pass
+
+            # Merge edges: accumulate weights
+            for key, w in edges_dict.items():
                 aggregated["edges"][key] = aggregated["edges"].get(key, 0) + w
+            # We do NOT need to merge per-edge feasibility here; we will derive it
+            # for each row from the (possibly compressed) target node feasibility.
 
         base_seed = cfg.run.seed
         total = cfg.run.num_runs
@@ -247,12 +297,15 @@ def main(cfg: DictConfig):
                         )
                     )
                 for fut in concurrent.futures.as_completed(futures):
-                    loc, fitv, edges = fut.result()
-                    _merge(loc, fitv, edges)
+                    (loc, fitv, edges_dict,
+                     optf, edgef_map, neighf) = fut.result()
+                    # edgef_map is not needed during aggregation; we ignore it here
+                    _merge(loc, fitv, edges_dict, optf, edgef_map, neighf)
         else:
             for i in range(total):
                 seed = base_seed + i
-                loc, fitv, edges = _run_single_lon_worker(
+                (loc, fitv, edges_dict,
+                 optf, edgef_map, neighf) = _run_single_lon_worker(
                     seed,
                     cfg.problem.dimensions,
                     weights,
@@ -266,15 +319,43 @@ def main(cfg: DictConfig):
                     violation_fn_dotted,  # OPTIONAL
                     viol_params,          # OPTIONAL
                 )
-                _merge(loc, fitv, edges)
+                _merge(loc, fitv, edges_dict, optf, edgef_map, neighf)
 
+        # Helper: build edge_feas_map for any edges dict using feasibility of TARGET node
+        def _build_edge_feas_map(edges_dict: Dict[Tuple[Tuple[int,...], Tuple[int,...]], float],
+                                 opt_feas_lookup: Dict[Tuple[int,...], int]) -> Dict[Tuple[Tuple[int,...], Tuple[int,...]], int]:
+            return { (src, dst): int(opt_feas_lookup.get(dst, 0))
+                     for (src, dst) in edges_dict.keys() }
+
+        # -------------------------------
         # Rows per compression setting
+        # -------------------------------
         rows: List[Dict[str, Any]] = []
         for comp in cfg.lon.compression_accs:
             if comp == 'None':
-                L = aggregated
+                # Use aggregated directly
+                L_local_optima = aggregated["local_optima"]
+                L_fitness_values = aggregated["fitness_values"]
+                L_edges = aggregated["edges"]
+                # lookups
+                opt_feas_lookup = aggregated["opt_feas_map"]
+                neigh_feas_lookup = aggregated["neigh_feas_map"]
             else:
+                # Compressed LON
                 L = compress_lon_aggregated(aggregated, accuracy=float(comp))
+                L_local_optima = L["local_optima"]
+                L_fitness_values = L["fitness_values"]
+                L_edges = L["edges"]
+                # lookups from aggregated (exact tuple keys)
+                opt_feas_lookup = {opt: aggregated["opt_feas_map"].get(opt, 0) for opt in L_local_optima}
+                neigh_feas_lookup = {opt: aggregated["neigh_feas_map"].get(opt, 0.0) for opt in L_local_optima}
+
+            # per-optimum lists aligned with local_optima
+            optima_feasibility = [int(opt_feas_lookup[opt]) for opt in L_local_optima]
+            neighbour_feasibility = [float(neigh_feas_lookup[opt]) for opt in L_local_optima]
+
+            # per-edge feasibility dict (same keys as L_edges)
+            edge_feas_map = _build_edge_feas_map(L_edges, opt_feas_lookup)
 
             rows.append({
                 "problem_name": prob_info["name"],
@@ -287,10 +368,13 @@ def main(cfg: DictConfig):
                 "n_flips_mut": cfg.lon.n_flips_mut,
                 "n_flips_pert": cfg.lon.n_flips_pert,
                 "compression_val": comp,
-                "n_local_optima": len(L["local_optima"]),
-                "local_optima": L["local_optima"],
-                "fitness_values": L["fitness_values"],
-                "edges": L["edges"],
+                "n_local_optima": len(L_local_optima),
+                "local_optima": L_local_optima,
+                "fitness_values": L_fitness_values,
+                "edges": L_edges,                          # (src,dst) -> weight
+                "optima_feasibility": optima_feasibility,  # per-node (aligned)
+                "neighbour_feasibility": neighbour_feasibility,  # per-node (aligned)
+                # "edge_feas_map": edge_feas_map,            # (src,dst) -> 1/0 by target feasibility
             })
 
         df = pd.DataFrame(rows)
