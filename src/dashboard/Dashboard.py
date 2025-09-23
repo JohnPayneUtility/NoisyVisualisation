@@ -3,6 +3,7 @@ from dash import html, dcc, dash_table, Input, Output, State
 import pandas as pd
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
+import plotly.express as px  # for continuous color scales
 import networkx as nx
 import numpy as np
 from sklearn.manifold import MDS as MDS_sklearn
@@ -369,6 +370,27 @@ app.layout = html.Div([
             ),
         ], style={'display': 'inline-block', 'width': '100%'}),
     ]),
+    html.Div([
+        html.Label("LON colouring:", style={'fontWeight': 'bold'}),
+        dcc.Dropdown(
+            id='LON-node-colour-mode',
+            options=[
+                {'label': 'Basic', 'value': 'basic'},
+                {'label': 'By fitness (range)', 'value': 'fitness'},
+                {'label': 'By feasibility (0/1)', 'value': 'feasible'},
+                {'label': 'By neighbour feasibility proportion', 'value': 'neigh'},
+            ],
+            value='fitness',
+            placeholder='Node colour mode',
+            style={'width': '50%', 'marginTop': '6px'}
+        ),
+        dcc.Checklist(
+            id='LON-edge-colour-feas',
+            options=[{'label': 'Colour LON edges by target feasibility', 'value': 'edge_feas'}],
+            value=[],
+            labelStyle={'display': 'inline-block', 'marginTop': '6px'}
+        ),
+    ]),
     html.Hr(),
     # PLOTTING OPTIONS
     dcc.Checklist(
@@ -380,7 +402,7 @@ app.layout = html.Div([
             {'label': '3D Plot', 'value': 'plot_3D'},
             {'label': 'Use Solution Iterations', 'value': 'use_solution_iterations'},
             {'label': 'Use strength for LON node size', 'value': 'LON_node_strength'},
-            {'label': 'Colour LON by fitness', 'value': 'local_optima_color'}
+            # {'label': 'Colour LON by fitness', 'value': 'local_optima_color'}
         ],
         value=['plot_3D', 'LON_node_strength']  # Set default values
     ),
@@ -892,63 +914,81 @@ def render_content_2DPlot_tab(tab):
     State("LON_table", "data")
 )
 def update_filtered_view(selected_rows, LON_table_data):
-    # Check if no selection has been made and if so return empty dataframe to store
-    # print(f'table 2 selected_rows: {selected_rows}, length: {len(selected_rows)}')
     if len(selected_rows) == 0:
         blank_df = pd.DataFrame(columns=df_LONs.columns)
         return blank_df.to_dict('records')
 
     selected_data = [LON_table_data[i] for i in selected_rows]
-    # print(selected_data)
 
-    LON_table_filter_cols = ['PID', 'LON_Algo', 'n_flips_mut', 'n_flips_pert', 'compression_val', 'n_local_optima']
-    filter_columns = [col for col in LON_display_columns]
-    
-    # Convert the filtered data to a DataFrame.
+    # columns needed for plotting; feasibility may be absent for regular LONs
+    LON_plotting_cols = [
+        'local_optima', 'fitness_values', 'edges',
+        'optima_feasibility', 'neighbour_feasibility',
+    ]
+
     df_filtered = pd.DataFrame(selected_data)
-    # print("df_filtered:")
-    # print(df_filtered.head())
-    
     mask = pd.Series(True, index=df_LONs.index)
-    for col in filter_columns:
+    for col in LON_display_columns:
         if col in df_filtered.columns:
-            allowed_values = df_filtered[col].unique()
-            # print(f"Filtering column {col} with allowed values: {allowed_values}")
-            # If any allowed value is null (None or np.nan), allow null rows.
-            if any(pd.isnull(allowed_values)):
-                mask &= (df_LONs[col].isin(allowed_values) | df_LONs[col].isnull())
+            allowed = df_filtered[col].unique()
+            if any(pd.isnull(allowed)):
+                mask &= (df_LONs[col].isin(allowed) | df_LONs[col].isnull())
             else:
-                mask &= df_LONs[col].isin(allowed_values)
-    
-    df_result = df_LONs[mask]
-    # print("Filtered result (first few rows):")
-    # print(df_result['edges'])
-    # print(df_result.columns)
-    LON_plotting_cols = ['local_optima', 'fitness_values', 'edges']
-    df_result = df_result.loc[:, LON_plotting_cols]
-    dict_result = df_result.to_dict('records')
-    # dict_result_SE = convert_to_split_edges_format(dict_result)
+                mask &= df_LONs[col].isin(allowed)
 
-    combined_dict = {
-    "local_optima": [],
-    "fitness_values": [],
-    "edges": {}
+    df_result = df_LONs[mask]
+    # tolerate missing feasibility columns
+    df_result = df_result.loc[:, [c for c in LON_plotting_cols if c in df_result.columns]]
+    rows = df_result.to_dict('records')
+
+    combined = {
+        "local_optima": [],
+        "fitness_values": [],
+        "edges": {},
+        # feasibility maps (string-keyed for JSON)
+        "opt_feas_map": {},    # "1,0,1,..." -> 0/1
+        "neigh_feas_map": {},  # "1,0,1,..." -> float in [0,1]
     }
 
-    for row in dict_result:
-        combined_dict["local_optima"].extend(row["local_optima"])
-        combined_dict["fitness_values"].extend(row["fitness_values"])
+    def key_str_from_opt(opt):
+        # opt is a list/tuple of bits
+        return ",".join(str(int(x)) for x in opt)
 
-        for (source, target), weight in row["edges"].items():
-            if (source, target) in combined_dict["edges"]:
-                combined_dict["edges"][(source, target)] += weight  # Accumulate edge weights
-            else:
-                combined_dict["edges"][(source, target)] = weight  # Add new edge
+    for row in rows:
+        los = row.get("local_optima", [])
+        fvs = row.get("fitness_values", [])
+        feas_list = row.get("optima_feasibility", [0]*len(los)) or [0]*len(los)
+        neigh_list = row.get("neighbour_feasibility", [0.0]*len(los)) or [0.0]*len(los)
 
-    # Now pass the **merged** dictionary to convert_to_split_edges_format()
-    dict_result_SE = convert_to_split_edges_format(combined_dict)
+        combined["local_optima"].extend(los)
+        combined["fitness_values"].extend(fvs)
+
+        # merge edges (weights) — keep tuple internally then convert in split-format helper
+        for (source, target), weight in row.get("edges", {}).items():
+            source = tuple(source)
+            target = tuple(target)
+            combined["edges"][(source, target)] = combined["edges"].get((source, target), 0) + weight
+
+        # fill feasibility maps (string keys for JSON safety)
+        for opt, feas, neigh in zip(los, feas_list, neigh_list):
+            k = key_str_from_opt(opt)
+            combined["opt_feas_map"].setdefault(k, int(feas))
+            combined["neigh_feas_map"].setdefault(k, float(neigh))
+
+    # your helper expects only core keys; convert & then attach the maps
+    payload_for_split = {
+        "local_optima": combined["local_optima"],
+        "fitness_values": combined["fitness_values"],
+        "edges": combined["edges"],
+    }
+    dict_result_SE = convert_to_split_edges_format(payload_for_split)
+
+    # attach JSON-safe feasibility maps
+    dict_result_SE["opt_feas_map"] = combined["opt_feas_map"]
+    dict_result_SE["neigh_feas_map"] = combined["neigh_feas_map"]
 
     return dict_result_SE
+
 
 # Filter main dataframe for STN data using table 2 selection
 @app.callback(
@@ -1077,6 +1117,8 @@ def clean_axis_values(custom_x_min, custom_x_max, custom_y_min, custom_y_max, cu
      Input('STN_lower_fit_limit', 'value'),
      Input('LON-fit-percent', 'value'),
      Input('LON-options', 'value'),
+     Input('LON-node-colour-mode', 'value'), # CoLON colour
+     Input('LON-edge-colour-feas', 'value'), # CoLON colour
      Input('NLON_fit_func', 'value'),
      Input('NLON_intensity', 'value'),
      Input('NLON_samples', 'value'),
@@ -1105,7 +1147,8 @@ def clean_axis_values(custom_x_min, custom_x_max, custom_y_min, custom_y_max, cu
      Input('noisy_fitnesses_data', 'data')]
 )
 def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limit,
-                LO_fit_percent, LON_options, NLON_fit_func, NLON_intensity, NLON_samples, layout_value, plot_type,
+                LO_fit_percent, LON_options, LON_node_colour_mode, LON_edge_colour_feas,
+                NLON_fit_func, NLON_intensity, NLON_samples, layout_value, plot_type,
                 hover_info_value, azimuth_deg, elevation_deg, all_trajectories_list, STN_labels,
                 run_start_index, n_runs_display, local_optima, axis_values,
                 opacity_noise_bar, LON_node_opacity, LON_edge_opacity, STN_node_opacity, STN_edge_opacity,
@@ -1327,8 +1370,38 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
         #         min(best_fitnesses) for all_run_trajectories in all_trajectories_list for _, best_fitnesses, _, _, _ in all_run_trajectories
         #     )
     
+    # CoLON colour helpers
+    def sol_tuple_ints(sol):
+        # convert any iterable into a tuple of ints
+        return tuple(int(x) for x in sol)
+
+    def sol_key_str(sol):
+        # "1,0,1,..." string form used in the Store
+        return ",".join(str(int(x)) for x in sol)
+
+    def lookup_map(mapp, sol):
+        t = sol_tuple_ints(sol)
+        s = sol_key_str(sol)
+        if isinstance(mapp, dict):
+            if t in mapp:
+                return mapp[t]
+            if s in mapp:
+                return mapp[s]
+        return None
+    
+    # Add LON Nodes
     node_noise = {}
     if local_optima:
+        # Code for colouring of CoLON components
+        opt_feas_map = {}
+        neigh_feas_map = {}
+        if local_optima and isinstance(local_optima, dict):
+            opt_feas_map = local_optima.get("opt_feas_map", {}) or {}
+            neigh_feas_map = local_optima.get("neigh_feas_map", {}) or {}
+
+        node_colour_mode = LON_node_colour_mode  # 'fitness' | 'feasible' | 'neigh'
+        colour_edges_by_feas = ('edge_feas' in LON_edge_colour_feas) if isinstance(LON_edge_colour_feas, list) else False
+        # -> continued older code for core functionality
         local_optima = convert_to_single_edges_format(local_optima)
         # local_optima = pd.DataFrame(local_optima).apply(convert_to_single_edges_format, axis=1)
         local_optima = filter_local_optima(local_optima, LO_fit_percent)
@@ -1363,7 +1436,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
             #     # G.add_edge(node_label, noisy_node_label, weight=STN_edge_size_slider, color='pink', style='dotted')
 
             # NOISE BOX PLOTS FOR LON
-            NLON_fit_func, NLON_intensity,
+            # NLON_fit_func, NLON_intensity,
             node_noise[node_label] = []  # create an empty list for this node's noisy fitness values
             n_items, capacity, optimal, values, weights, items_dict, problem_info = load_problem_KP(PID)
             for i in range(NLON_samples):
@@ -1394,30 +1467,39 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
             if src_key in lon_node_mapping and tgt_key in lon_node_mapping:
                 src_label = lon_node_mapping[src_key]
                 tgt_label = lon_node_mapping[tgt_key]
-                G.add_edge(src_label, tgt_label, weight=weight, color='black', edge_type='LON')
+                # G.add_edge(src_label, tgt_label, weight=weight, color='black', edge_type='LON') # previous line before coloured CoLONs
+                edge_color = 'black'  # default
+                if colour_edges_by_feas and opt_feas_map:
+                    tgt_sol = G.nodes[tgt_label].get('solution', [])
+                    feas = lookup_map(opt_feas_map, tgt_sol)
+                    if feas is not None:
+                        edge_color = 'green' if int(feas) == 1 else 'red'
+
+                G.add_edge(src_label, tgt_label, weight=weight, color=edge_color, edge_type='LON')
                 # print(f"DEBUG: Added LON edge from {src_label} to {tgt_label}")
         
-        # Calculate min and max edge weight for lON for normalisation
-        LON_edge_weight_all = [data.get('weight', 2) 
-            for u, v, key, data in G.edges(data=True, keys=True) 
-            if "Local Optimum" in u and "Local Optimum" in v]
-        if LON_edge_weight_all:
-            LON_edge_weight_min = min(LON_edge_weight_all)
-            LON_edge_weight_max = max(LON_edge_weight_all)
-        else:
-            LON_edge_weight_min = LON_edge_weight_max = 1 # set to 1 if LON_edge_weight_all is empty
+        # ONLY recolor by weight if we're NOT colouring by feasibility
+        if not colour_edges_by_feas:
+            # Calculate min and max edge weight for lON for normalisation
+            LON_edge_weight_all = [data.get('weight', 2)
+                for u, v, key, data in G.edges(data=True, keys=True)
+                if "Local Optimum" in u and "Local Optimum" in v]
+            if LON_edge_weight_all:
+                LON_edge_weight_min = min(LON_edge_weight_all)
+                LON_edge_weight_max = max(LON_edge_weight_all)
+            else:
+                LON_edge_weight_min = LON_edge_weight_max = 1 # set to 1 if LON_edge_weight_all is empty
 
-        # Normalise edge weights for edges between Local Optimum nodes and colour
-        for u, v, key, data in G.edges(data=True, keys=True):
-            if "Local Optimum" in u and "Local Optimum" in v:
-                weight = data.get('weight', 2)  # get un-normalised weight
-                # Normalize the weight (if all weights are equal, default to 0.5)
-                norm_weight = (weight - LON_edge_weight_min) / (LON_edge_weight_max - LON_edge_weight_min) if LON_edge_weight_max > LON_edge_weight_min else 0.5
-                norm_weight = np.clip(norm_weight, 0, 0.9999)  # clip normalised weight
-                # Use a colorscale
-                color = px.colors.sample_colorscale('plasma', norm_weight)[0]
-                data['norm_weight'] = norm_weight
-                data['color'] = color
+            # Normalise edge weights for edges between Local Optimum nodes and colour
+            for u, v, key, data in G.edges(data=True, keys=True):
+                if "Local Optimum" in u and "Local Optimum" in v:
+                    weight = data.get('weight', 2) # get un-normalised weight
+                    # Normalize the weight (if all weights are equal, default to 0.5)
+                    norm_weight = (weight - LON_edge_weight_min) / (LON_edge_weight_max - LON_edge_weight_min) if LON_edge_weight_max > LON_edge_weight_min else 0.5
+                    norm_weight = np.clip(norm_weight, 0, 0.9999) # clip normalised weight
+                    color = px.colors.sample_colorscale('plasma', norm_weight)[0]
+                    data['norm_weight'] = norm_weight
+                    data['color'] = color
     
     print('LOCAL OPTIMA ADDED')
 
@@ -1456,18 +1538,48 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
         # Set the computed weight as a node property.
         G.nodes[node]['size'] = node_size
     
+    # Compute fitness range among LON nodes for 'fitness' mode colouring
+    local_optimum_nodes = [node for node in G.nodes() if "Local Optimum" in node]
+    if local_optimum_nodes:
+        all_fitness = [G.nodes[node]['fitness'] for node in local_optimum_nodes]
+        min_fit = min(all_fitness)
+        max_fit = max(all_fitness)
+    else:
+        min_fit = max_fit = 0.0
+
     # node colours
     for node, data in G.nodes(data=True):
-        if "Local Optimum" in node:
-            data['color'] = 'grey'
         if "STN" in node:
             if data.get('start_node', False):
                 data['color'] = 'yellow'
-            if data.get('end_node', False):
+            elif data.get('end_node', False):
                 data['color'] = 'brown'
-        # print(f"node: {node}, node fitness: {data.get('fitness')}, optimum fitness: {optimum}, is optimum: {data.get('fitness') == optimum}")
-        if data.get('fitness') == optimum:
-            if "Noisy" not in node:
+            continue
+
+        if "Local Optimum" in node:
+            sol_tuple = tuple(int(x) for x in data.get('solution', []))
+
+            if node_colour_mode == 'fitness':
+                # continuous colourscale across LON fitness range
+                if max_fit > min_fit:
+                    norm = (float(data['fitness']) - min_fit) / (max_fit - min_fit)
+                else:
+                    norm = 0.5
+                data['color'] = px.colors.sample_colorscale('plasma', float(np.clip(norm, 0.0, 0.9999)))[0]
+
+            elif node_colour_mode == 'feasible':
+                feas = lookup_map(opt_feas_map, sol_tuple)
+                data['color'] = ('green' if int(feas) == 1 else 'red') if feas is not None else 'grey'
+
+            elif node_colour_mode == 'neigh':
+                p = lookup_map(neigh_feas_map, sol_tuple)
+                data['color'] = px.colors.sample_colorscale('RdYlGn', float(np.clip(p, 0.0, 0.9999)))[0] if p is not None else 'grey'
+
+            else:
+                data['color'] = 'grey'
+
+            # keep the "optimum = red" override ONLY when in fitness mode
+            if node_colour_mode == 'fitness' and data.get('fitness') == optimum and "Noisy" not in node:
                 data['color'] = 'red'
     
     print('LOCAL OPTIMA STATS CALCULATED')
