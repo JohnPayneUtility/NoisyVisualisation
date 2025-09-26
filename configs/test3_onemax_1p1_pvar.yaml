@@ -1,6 +1,3 @@
-# Nested config for OnePlusOneEA on OneMax experiment with noise intensity 1
-# This shows how we could use nested structure with dependency resolution
-
 experiment_name: "single_objective_onemax_1plus1ea_noise1"
 
 # ==============================
