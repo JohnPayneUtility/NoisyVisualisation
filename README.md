@@ -15,7 +15,7 @@ This requires setting parallel to true and specifying the number of processors t
 
 '''
 run:
-  num_runs: 1000  # how many basin-hops (seeds) to aggregate
+  num_runs: 1000
   seed: 1
   parallel: true
   num_workers: 50

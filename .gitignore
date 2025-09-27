@@ -3,6 +3,12 @@ __pycache__/
 
 # data
 data/
+plots/
+outputs/
+
+# notes
+tasks.txt
+tasks.md
 
 # additional
-todo.txt
+temp/
