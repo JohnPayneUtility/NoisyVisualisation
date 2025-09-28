@@ -21,7 +21,9 @@ from typing import List, Tuple, Any, Dict, Type
 from deap import tools
 
 from src.io.ExperimentsHelpers import save_or_append_results
+from run_helpers import *
 
+# explicit mlflow path
 from pathlib import Path
 base = Path(__file__).resolve().parents[1]  # project root
 mlruns_dir = base / "data" / "mlruns"
@@ -109,6 +111,9 @@ def resolve_config_dependencies(cfg: DictConfig) -> DictConfig:
                 mapping = {k: int(v) for k, v in resolved_cfg.run.eval_limit_for_noise.items()}
                 resolved_cfg.run.eval_limit = mapping.get(f"{noise_val}", resolved_cfg.run.eval_limit)
     
+    # Resolve problem ID
+    resolved_cfg.problem.PID = determine_pid_from_cfg(resolved_cfg)
+
     return resolved_cfg
 
 # -------------------------------
@@ -195,8 +200,7 @@ def hydra_algo_data_multi(prob_info: Dict[str, Any],
 
 @hydra.main(version_base=None, config_path="configs", config_name="test1_kp_1p1")
 def main(cfg: DictConfig):
-    # Record start time
-    start_time = time.perf_counter()
+    start_time = time.perf_counter() # Record start time
 
     # Resolve dependencies in nested config structure
     cfg = resolve_config_dependencies(cfg)
@@ -206,6 +210,7 @@ def main(cfg: DictConfig):
     mlflow.set_experiment(cfg.experiment_name)
 
     # Problem metadata
+    # Problem info is passed to algorithm class via run function
     prob_info = {
         'name':       cfg.problem.prob_name,
         'type':       cfg.problem.prob_type,

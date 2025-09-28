@@ -25,7 +25,7 @@ run:
     "10": 93638
   seed: 1
   num_runs: 50
-  parallel: false
+  parallel: true
 
 # ==============================
 # MLflow Configuration
@@ -78,7 +78,7 @@ algo:
 # Problem Configuration
 # ==============================
 problem:
-  PID: jump_n100_m10
+  PID: null
   prob_name: jump
   prob_type: discrete
   opt_goal: maximise
