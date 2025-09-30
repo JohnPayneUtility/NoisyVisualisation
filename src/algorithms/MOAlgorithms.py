@@ -10,6 +10,8 @@ from deap import algorithms
 from deap import base
 from deap import creator
 from deap import tools
+from deap.tools._hypervolume.pyhv import hypervolume
+from pymoo.indicators.hv import HV
 import optuna
 
 # ==============================
@@ -38,6 +40,11 @@ def mutSwapBit(individual, indpb):
         individual[idx1], individual[idx2] = individual[idx2], individual[idx1]
     return (individual,)
 
+def mut_flip_one_bit(individual):
+    i = random.randrange(len(individual))
+    individual[i] = 1 - individual[i]  # assumes binary
+    return (individual,)
+
 def complementary_crossover(parent1, parent2):
     assert len(parent1) == len(parent2), "Parents must have the same length."
     
@@ -53,34 +60,52 @@ def complementary_crossover(parent1, parent2):
 
     return offspring1, offspring2
 
-def umda_update_full(len_sol, population, pop_size, select_size, toolbox):
-    # Select from population
-    selected_population = tools.selBest(population, select_size)
-    # Determine the data type of the genes from the first individual in the population
+def mo_umda_update_full(len_sol, population, pop_size, select_size, toolbox,
+                        prob_margin=True, margin_scale=1.0):
+    """
+    NSGA-II (non-dominated sorting + crowding) selection of μ parents,
+    then UMDA-style model update and sampling of λ=pop_size offspring.
+
+    prob_margin: for binary genes, clamp p to [1/n, 1-1/n] (classic UMDA margin).
+    margin_scale: scale factor on 1/n margin (set >1 to be more conservative).
+    """
+    # --- 1) Select μ parents by Pareto rank + crowding distance
+    # (Population must be evaluated already — your base class ensures this.)
+    parents = tools.selNSGA2(population, select_size)
+
+    # --- 2) Detect gene type
     gene_type = type(population[0][0])
-    # Calculate marginal probabilities for binary solutions (assumes binary values are either 0 or 1)
+
+    # --- 3) Fit the univariate model on parents & sample new offspring
     if gene_type == int:
-        probabilities = np.mean(selected_population, axis=0)
+        # Binary UMDA: per-bit marginals
+        probs = np.mean(parents, axis=0)
+
+        if prob_margin:
+            n = float(len_sol)
+            eps = (margin_scale / n)
+            probs = np.clip(probs, eps, 1.0 - eps)
 
         new_solutions = []
         for _ in range(pop_size):
-            new_solution = np.random.rand(len_sol) < probabilities
-            new_solution = creator.Individual(new_solution.astype(int).tolist())  # Create as DEAP Individual
-            new_solutions.append(new_solution)
+            bits = (np.random.rand(len_sol) < probs).astype(int).tolist()
+            new_solutions.append(creator.Individual(bits))
 
-    # For float-based solutions, calculate mean and standard deviation
     elif gene_type == float:
-        selected_array = np.array(selected_population)
-        means = np.mean(selected_array, axis=0)
-        stds = np.std(selected_array, axis=0)
-        
+        # Real-valued UMDA: mean & std per position
+        arr = np.array(parents, dtype=float)
+        means = np.mean(arr, axis=0)
+        stds  = np.std(arr, axis=0)
+        stds  = np.maximum(stds, 1e-12)  # avoid degenerate σ
+
         new_solutions = []
         for _ in range(pop_size):
-            new_solution = np.random.normal(means, stds, len_sol)
-            new_solution = creator.Individual(new_solution.tolist())  # Create as DEAP Individual
-            new_solutions.append(new_solution)
+            vals = np.random.normal(means, stds, size=len_sol).tolist()
+            new_solutions.append(creator.Individual(vals))
+
     else:
-        raise ValueError("Unsupported gene type. Expected int or float.")
+        raise ValueError("Unsupported gene type for moUMDA. Use int (binary) or float.")
+
     return new_solutions
 
 # ==============================
@@ -93,7 +118,7 @@ def record_population_state(data, population, toolbox, true_fitness_function):
     """
     all_generations, best_solutions, best_fitnesses, true_fitnesses = data
 
-    # Record a snapshot of the current population
+    # Record the current population
     all_generations.append([ind[:] for ind in population])
     
     # Identify the best individual in the current population
@@ -101,12 +126,72 @@ def record_population_state(data, population, toolbox, true_fitness_function):
     best_solutions.append(toolbox.clone(best_individual))
     best_fitnesses.append(best_individual.fitness.values[0])
     
-    # If provided, record the true (noise-free) fitness
+    # If provided record true fitness
     if true_fitness_function is not None:
         true_fit = true_fitness_function[0](best_individual, **true_fitness_function[1])
         true_fitnesses.append(true_fit[0])
     else:
         true_fitnesses.append(best_individual.fitness.values[0])
+
+def record_pareto_data(
+    population: List[Any],
+    pareto_solutions: List[List[Any]],
+    pareto_fitnesses: List[List[Any]],
+    pareto_true_fitnesses: List[List[Any]],
+    hypervolumes: List[float],
+    toolbox,
+    opt_weights,
+    true_fitness_function: Optional[tuple] = None,
+    ref_point: Optional[List[float]] = None,
+    ):
+    """ """
+    # Record solutions in pareto front
+    pareto_front = tools.ParetoFront()
+    pareto_front.update(population)
+    pareto_solutions.append([toolbox.clone(ind) for ind in pareto_front])
+
+    # Record noisy fitness of Pareto front solutions
+    pareto_fitnesses.append([ind.fitness.values for ind in pareto_front])
+
+    # Record true fitness of Pareto front solutions
+    if true_fitness_function is not None:
+        true_fit_list = [
+            true_fitness_function[0](ind, **true_fitness_function[1])
+            for ind in pareto_front
+        ]
+        pareto_true_fitnesses.append(true_fit_list)
+    else:
+        pareto_true_fitnesses.append([ind.fitness.values for ind in pareto_front])
+    
+    # Record hypervolume
+    if ref_point is not None:
+        adjusted_front = [toolbox.clone(ind) for ind in pareto_front]
+        for ind in adjusted_front:
+            val, w = ind.fitness.values
+            ind.fitness.values = (-val, w)
+        adj_pareto_fitnesses = [ind.fitness.values for ind in adjusted_front]
+        weights_array = np.array(opt_weights)
+        true_fit_array = np.array(true_fit_list)
+
+        print(f'pareto fitnesses {[ind.fitness.values for ind in pareto_front]}')
+        print(f'adjusted fitnesses: {adj_pareto_fitnesses}')
+        # print(f'true fit array: {true_fit_array}')
+        hv_ref_point = np.where(weights_array > 0, -np.array(ref_point), np.array(ref_point))
+        print(f'ref point: {hv_ref_point}')
+
+        hv = hypervolume(adj_pareto_fitnesses, hv_ref_point)
+        print(f'hypervolume: {hv}')
+        hypervolumes.append(hv)
+
+        # import matplotlib.pyplot as plt
+        # plt.scatter(*zip(*hv_fitnesses))
+        # plt.scatter(*hv_ref_point, color='red', label='Ref point')
+        # plt.legend()
+        # plt.show()
+
+    else:
+        print('No reference point provided')
+
 
 def extract_trajectory_data(best_solutions, best_fitnesses, true_fitnesses):
     # Extract unique solutions and their corresponding fitness values
@@ -117,7 +202,6 @@ def extract_trajectory_data(best_solutions, best_fitnesses, true_fitnesses):
     seen_solutions = {}
 
     for solution, fitness, true_fitness in zip(best_solutions, best_fitnesses, true_fitnesses):
-        # Convert solution to a tuple to make it hashable
         solution_tuple = tuple(solution)
         if solution_tuple not in seen_solutions:
             seen_solutions[solution_tuple] = 1
@@ -160,12 +244,18 @@ class OptimisationAlgorithm:
     fitness_function: Optional[Tuple[Callable, dict]] = None
     starting_solution: Optional[List[Any]] = None
     true_fitness_function: Optional[Tuple[Callable, dict]] = None
+    ref_point: Optional[list[Any]] = None
     
     # Create lists to store data, seperate for each instance
     all_generations: List[List[Any]] = field(default_factory=list)
     best_solutions: List[Any] = field(default_factory=list)
     best_fitnesses: List[float] = field(default_factory=list)
     true_fitnesses: List[float] = field(default_factory=list)
+
+    pareto_solutions: List[List[Any]] = field(default_factory=list)
+    pareto_fitnesses: List[List[Any]] = field(default_factory=list)
+    pareto_true_fitnesses:List[List[Any]] = field(default_factory=list)
+    hypervolumes: List[float] = field(default_factory=list)
 
     def __post_init__(self):
         self.stop_trigger = ''
@@ -220,10 +310,23 @@ class OptimisationAlgorithm:
             self.gens += 1
             self.perform_generation()
             self.record_state(self.population)
+            self.record_state_pareto(self.population)
 
     def record_state(self, population):
         #Record the current population state.
         record_population_state(self.data, population, self.toolbox, self.true_fitness_function)
+    
+    def record_state_pareto(self, population):
+        record_pareto_data(population,
+            self.pareto_solutions,
+            self.pareto_fitnesses,
+            self.pareto_true_fitnesses,
+            self.hypervolumes,
+            self.toolbox,
+            self.opt_weights,
+            self.true_fitness_function,
+            self.ref_point,
+            )
 
     def get_classic_data(self):
         return self.all_generations, self.best_solutions, self.best_fitnesses, self.true_fitnesses
@@ -240,7 +343,74 @@ class OptimisationAlgorithm:
 # Evolutionary Algorithm Subclasses
 # ==============================
 
-class MuPlusLamdaEA(OptimisationAlgorithm):
+class SEMO(OptimisationAlgorithm):
+    def __init__(self, **kwargs):
+        """
+        Expect multi-objective fitness: opt_weights = (w1, w2, ..., wm)
+        Use negative weights for minimization (DEAP maximizes by default).
+        """
+        super().__init__(**kwargs)
+        self.gens = 0
+        self.evals = 0
+        self.name = "SEMO"
+        self.type = "SEMO"
+
+        # Register one-bit mutation and (optional) helper
+        self.toolbox.register("mutate_one_bit", mut_flip_one_bit)
+
+        # Initialise archive P with a single random solution
+        self.initialise_population(pop_size=1)   # P = {x}
+        self.record_state(self.population)
+
+    # ---- Pareto helpers ----
+    @staticmethod
+    def same_genotype(a, b):
+        return tuple(a) == tuple(b)
+
+    def dominated_by_archive(self, cand):
+        # y' is dominated by any p in P?
+        for p in self.population:
+            if p.fitness.dominates(cand.fitness):
+                return True
+        return False
+
+    def prune_dominated_by(self, cand):
+        # Remove all p ∈ P that y' dominates
+        newP = []
+        for p in self.population:
+            if cand.fitness.dominates(p.fitness):
+                continue
+            newP.append(p)
+        self.population = newP
+
+    def already_in_archive(self, cand):
+        return any(self.same_genotype(cand, p) for p in self.population)
+
+    # ---- One SEMO step ----
+    def perform_generation(self):
+        # 1) pick parent uniformly from archive P
+        parent = random.choice(self.population)
+
+        # 2) one-bit mutation
+        offspring = self.toolbox.clone(parent)
+        offspring, = self.toolbox.mutate_one_bit(offspring)
+
+        # 3) evaluate
+        del offspring.fitness.values
+        offspring.fitness.values = self.toolbox.evaluate(offspring)
+        self.evals += 1
+
+        # 4) dominance-based archive update (Algorithm 7)
+        if self.dominated_by_archive(offspring):
+            return  # discard y'
+        if self.already_in_archive(offspring):
+            return  # y' ∈ P -> do nothing (optional but matches spec)
+
+        # keep only non-dominated
+        self.prune_dominated_by(offspring)
+        self.population.append(offspring)
+
+class MoMuPlusLamdaEA(OptimisationAlgorithm):
     def __init__(self, 
                  mu: int,
                  lam: int, 
@@ -339,31 +509,42 @@ class PCEA(OptimisationAlgorithm):
 # Estimation of Distribution Algorithm Subclasses
 # ==============================
 
-class UMDA(OptimisationAlgorithm):
+class MoUMDA(OptimisationAlgorithm):
     def __init__(self, 
                  pop_size: int,
                  select_size: Optional[int] = None,
-                 **kwargs): # other parameters passed to the base class
-        
-        # Initialize common components via the base class
+                 prob_margin: bool = True,
+                 margin_scale: float = 1.0,
+                 **kwargs):
         super().__init__(**kwargs)
         self.gens = 0
         self.evals = 0
         self.pop_size = pop_size
-        if select_size == None:
-            self.select_size = int(self.pop_size/2)
-        else: self.select_size = select_size
-        self.name = f'UMDA(p={pop_size})'
-        self.type = 'UMDA'
+        self.select_size = int(pop_size/2) if select_size is None else select_size
+        self.prob_margin = prob_margin
+        self.margin_scale = margin_scale
 
-        # Create the initial population of size mu
+        self.name = f'MoUMDA(p={pop_size}, μ={self.select_size})'
+        self.type = 'MoUMDA'
+
+        # Initialise & evaluate μ population
         self.initialise_population(self.pop_size)
-        self.record_state(self.population)
+        self.record_state(self.population)  # optional first snapshot
 
     def perform_generation(self):
-        """Perform generation of UMDA Evolutionary Algorithm"""
-        self.population = umda_update_full(self.sol_length, self.population, self.pop_size, self.select_size, self.toolbox)
+        """One generation of MoUMDA."""
+        # NSGA-II parent selection + UMDA model update
+        self.population = mo_umda_update_full(
+            self.sol_length,
+            self.population,
+            self.pop_size,
+            self.select_size,
+            self.toolbox,
+            prob_margin=self.prob_margin,
+            margin_scale=self.margin_scale,
+        )
 
+        # Evaluate new population
         fitnesses = list(map(self.toolbox.evaluate, self.population))
         for ind, fit in zip(self.population, fitnesses):
             ind.fitness.values = fit
@@ -452,43 +633,5 @@ class CompactGA(OptimisationAlgorithm):
     #         return True
     #     return super().stop_condition()
 
-# ==============================
-# Example Usage
-# ==============================
 
-if __name__ == "__main__":
-    
-    mutation_rate = 1 / 100  # for a 100-bit solution
-    mutate_function = (tools.mutFlipBit, {'indpb': mutation_rate})
-    # mutate_function = (mutSwapBit, {'indpb': mutation_rate})
-
-    from FitnessFunctions import OneMax_fitness
-    fitness_function = (OneMax_fitness, {'noise_intensity': 0})
-    true_fitness_function = (OneMax_fitness, {'noise_intensity': 0})
-
-    ss = np.zeros(100, dtype=int)
-
-
-    base_params = {
-        'sol_length': 100,              # Length of the solution
-        'opt_weights': (1.0,),           # Maximization problem
-        'eval_limit': 10e3,               # Maximum fitness evaluations
-        'attr_function': binary_attribute,
-        'fitness_function': fitness_function,
-        'true_fitness_function': true_fitness_function,
-        'starting_solution': None
-        # 'target_stop': 80
-    }
-
-    # algo = MuPlusLamdaEA(mu=5, lam=1, mutate_function=mutate_function, **base_params)
-    algo = UMDA(pop_size=100, **base_params)
-
-    # algo.run()
-    # all_gens, best_sols, best_fits, true_fits = algo.get_classic_data()
-    
-    # # (Optional) Print the final best fitness
-    # print("Algo name:", algo.name)
-    # print("Final best fitness:", true_fits[-1])
-    # # # print("First best sol:", best_sols[1])
-    # # # print("Final best sol:", best_sols[-1])
 

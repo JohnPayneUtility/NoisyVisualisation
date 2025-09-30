@@ -25,4 +25,3 @@ There are CoLON run scripts for Constrained Local Optima Network generation.
 (The CoLON script should be able to generate regular LONs if a violation function is not provided - however this has not been tested)
 
 python run_colon_parallel.py --config-path configs/test01_SO_KP_LON --config-name kp10_colon
-

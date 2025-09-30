@@ -12,6 +12,7 @@ def BinaryCoLON(pert_attempts, len_sol, weights,
                 violation_function=None,   # (func, kwargs) returning scalar v(x); <=0 means feasible
                 starting_solution=None,
                 true_fitness_function=None,
+                include_start_nodes: bool = True,
                 target_stop=None):
     """
     Build a constrained LON (CoLON) using Deb's constraint-handling preorder.
@@ -135,6 +136,17 @@ def BinaryCoLON(pert_attempts, len_sol, weights,
             # Best-improvement local search under Deb’s preorder
             improvement = True
             while improvement:
+                # code block to record starting solutions
+                if include_start_nodes:
+                    start_tuple = tuple(individual)
+                    if start_tuple not in opt_index:
+                        local_optima.append(start_tuple)
+                        fitness_values.append(individual.fitness.values[0])
+                        opt_index[start_tuple] = len(local_optima) - 1
+                        opt_feas_map[start_tuple] = 1 if is_feasible(individual) else 0
+                        _ = compute_neighbour_feasibility_prop(start_tuple)
+                # end of code block to record starting solutions
+
                 mutants = generate_bit_flip_combinations(individual, n_flips_mut)
 
                 # Evaluate neighbours (both f and v)
