@@ -32,6 +32,33 @@ def mutSwapBit(individual, indpb):
         individual[idx1], individual[idx2] = individual[idx2], individual[idx1]
     return (individual,)
 
+def random_bit_flip(bit_list, n_flips=1, exclude_indices=None):
+    # test_random_seed()
+    # Ensure n_flips does not exceed the length of bit_list
+    n_flips = min(n_flips, len(bit_list))
+    
+    flipped_indices = set()
+    if exclude_indices:
+        flipped_indices.update(exclude_indices)
+    if len(flipped_indices) == len(bit_list):
+            return bit_list, flipped_indices
+
+    for _ in range(n_flips):
+        # Select a unique random index to flip
+        index_to_flip = random.randint(0, len(bit_list) - 1)
+        
+        while index_to_flip in flipped_indices:
+            index_to_flip = random.randint(0, len(bit_list) - 1)
+        
+        bit_list[index_to_flip] = 1 - bit_list[index_to_flip] # bit flip
+        
+        # Record the flipped index
+        flipped_indices.add(index_to_flip)
+        if len(flipped_indices) == len(bit_list):
+            return bit_list, flipped_indices
+    
+    return bit_list, flipped_indices
+
 def complementary_crossover(parent1, parent2):
     assert len(parent1) == len(parent2), "Parents must have the same length."
     
