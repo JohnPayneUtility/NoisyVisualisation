@@ -273,34 +273,43 @@ def main(cfg: DictConfig):
 
         base_seed = cfg.run.seed
         total = cfg.run.num_runs
+        done = 0
 
         if parallel and total > 1:
-            with concurrent.futures.ProcessPoolExecutor(max_workers=num_workers) as executor:
-                futures = []
-                for i in range(total):
-                    seed = base_seed + i
-                    futures.append(
-                        executor.submit(
-                            _run_single_lon_worker,
-                            seed,
-                            cfg.problem.dimensions,
-                            weights,
-                            attr_fn_name,
-                            cfg.lon.n_flips_mut,
-                            cfg.lon.n_flips_pert,
-                            cfg.lon.pert_attempts,
-                            fitness_fn_name,
-                            fit_params,
-                            cfg.problem.opt_global,
-                            violation_fn_dotted,  # OPTIONAL
-                            viol_params,          # OPTIONAL
+            try:
+                with concurrent.futures.ProcessPoolExecutor(max_workers=num_workers) as executor:
+                    futures = []
+                    for i in range(total):
+                        seed = base_seed + i
+                        futures.append(
+                            executor.submit(
+                                _run_single_lon_worker,
+                                seed,
+                                cfg.problem.dimensions,
+                                weights,
+                                attr_fn_name,
+                                cfg.lon.n_flips_mut,
+                                cfg.lon.n_flips_pert,
+                                cfg.lon.pert_attempts,
+                                fitness_fn_name,
+                                fit_params,
+                                cfg.problem.opt_global,
+                                violation_fn_dotted,  # OPTIONAL
+                                viol_params,          # OPTIONAL
+                            )
                         )
-                    )
-                for fut in concurrent.futures.as_completed(futures):
-                    (loc, fitv, edges_dict,
-                     optf, edgef_map, neighf) = fut.result()
-                    # edgef_map is not needed during aggregation; we ignore it here
-                    _merge(loc, fitv, edges_dict, optf, edgef_map, neighf)
+                    for fut in concurrent.futures.as_completed(futures):
+                        (loc, fitv, edges_dict,
+                        optf, edgef_map, neighf) = fut.result()
+                        # edgef_map is not needed during aggregation; we ignore it here
+                        _merge(loc, fitv, edges_dict, optf, edgef_map, neighf)
+
+                        done += 1
+                        print(f"[{done}/{total}] Run completed")
+            except KeyboardInterrupt:
+                print("Interrupted! Cancelling workers")
+                executor.shutdown(cancel_futures=True)
+                raise
         else:
             for i in range(total):
                 seed = base_seed + i
@@ -320,6 +329,9 @@ def main(cfg: DictConfig):
                     viol_params,          # OPTIONAL
                 )
                 _merge(loc, fitv, edges_dict, optf, edgef_map, neighf)
+
+                done += 1
+                print(f"[{done}/{total}] Run completed")
 
         # Helper: build edge_feas_map for any edges dict using feasibility of TARGET node
         def _build_edge_feas_map(edges_dict: Dict[Tuple[Tuple[int,...], Tuple[int,...]], float],
@@ -396,10 +408,7 @@ def main(cfg: DictConfig):
     mlflow.end_run(status="FINISHED")
 
     # Summary
-    try:
-        print(df[["compression_val", "n_local_optima"]])
-    except Exception:
-        print(df.head())
+    print(df[["compression_val", "n_local_optima"]])
     print("Compute time (s):", time.perf_counter() - start_time)
 
 
