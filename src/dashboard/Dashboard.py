@@ -54,6 +54,10 @@ df_no_lists.drop([
     'noisy_fits',
     'sol_iterations',
     'sol_transitions',
+    'pareto_solutions',
+    'pareto_fitnesses',
+    'pareto_true_fitnesses',
+    'hypervolumes',
 ], axis=1, inplace=True)
 print(df_no_lists['PID'].unique())
 
@@ -108,7 +112,11 @@ display2_df.drop([
     'sol_iterations',
     'sol_transitions',
     'seed',
-    'seed_signature'
+    'seed_signature',
+    'pareto_solutions',
+    'pareto_fitnesses',
+    'pareto_true_fitnesses',
+    'hypervolumes',
 ], axis=1, inplace=True)
 display2_hidden_cols = [
     'problem_type', 
@@ -163,6 +171,10 @@ app.layout = html.Div([
     dcc.Store(id="STN_series_labels", data=[]),
     dcc.Store(id="noisy_fitnesses_data", data=[]),
     dcc.Store(id="axis-values", data=[]),
+
+    # Multiobjective data stores
+    dcc.Store(id="STN_MO_data", data=[]),
+    dcc.Store(id="STN_MO_series_labels", data=[]),
     
     # Tabbed section for problem selection
     html.Div([
@@ -251,6 +263,12 @@ app.layout = html.Div([
     # RUN DISPLAY OPTIONS
     html.Label("STN run options:", style={'fontWeight': 'bold'}),
     html.Br(),
+    dcc.Checklist(
+    id='stn-mo-mode',
+    options=[{'label': 'Multiobjective STN mode', 'value': 'mo'}],
+    value=[],  # default OFF
+    labelStyle={'display': 'inline-block', 'margin-right': '10px'}
+    ),
     html.Div([
         html.Label(" Select starting run: "),
         dcc.Input(
@@ -991,6 +1009,7 @@ def update_filtered_view(selected_rows, LON_table_data):
 
 
 # Filter main dataframe for STN data using table 2 selection
+# update STN data to contain data for selected rows
 @app.callback(
     Output('STN_data', 'data'),
     Input("table2", "selected_rows"),
@@ -1030,39 +1049,96 @@ def update_filtered_view(selected_rows, table2_data):
     # print(df_result.columns)
     return df_result.to_dict('records')
 
+# @app.callback(
+#     [Output('STN_data_processed', 'data'),
+#      Output('STN_series_labels', 'data'),
+#      Output('noisy_fitnesses_data', 'data')],
+#     Input('STN_data', 'data'),
+# )
+# def process_STN_data(df, group_cols=['algo_name', 'noise']):
+#     df = pd.DataFrame(df)
+#     STN_data = []
+#     STN_series = []
+#     Noise_data = []
+    
+#     # Group by multiple columns
+#     grouped = df.groupby(group_cols)
+    
+#     for group_key, group_df in grouped:
+#         runs = []
+
+#         for _, row in group_df.iterrows():
+#             run = [
+#                 row['unique_sols'],
+#                 row['unique_fits'],
+#                 row['noisy_fits'],
+#                 row['sol_iterations'],
+#                 row['sol_transitions']
+#             ]
+#             runs.append(run)
+        
+#         # Use tuple(group_key) as dictionary keys for clear indexing
+#         STN_data.append(runs)
+#         STN_series.append(group_key)
+    
+#     return STN_data, STN_series, Noise_data
+
 @app.callback(
     [Output('STN_data_processed', 'data'),
      Output('STN_series_labels', 'data'),
-     Output('noisy_fitnesses_data', 'data')],
+     Output('noisy_fitnesses_data', 'data'),
+     Output('STN_MO_data', 'data'),
+     Output('STN_MO_series_labels', 'data')],
     Input('STN_data', 'data'),
 )
 def process_STN_data(df, group_cols=['algo_name', 'noise']):
     df = pd.DataFrame(df)
-    STN_data = []
-    STN_series = []
-    Noise_data = []
-    
-    # Group by multiple columns
-    grouped = df.groupby(group_cols)
-    
-    for group_key, group_df in grouped:
-        runs = []
+    STN_data, STN_series, Noise_data = [], [], []
 
+    MO_data, MO_series = [], []
+
+    if df.empty:
+        return STN_data, STN_series, Noise_data, MO_data, MO_series
+
+    grouped = df.groupby(group_cols)
+
+    for group_key, group_df in grouped:
+        # --- classic STN runs (unchanged) ---
+        runs = []
         for _, row in group_df.iterrows():
-            run = [
-                row['unique_sols'],
-                row['unique_fits'],
-                row['noisy_fits'],
-                row['sol_iterations'],
-                row['sol_transitions']
-            ]
-            runs.append(run)
-        
-        # Use tuple(group_key) as dictionary keys for clear indexing
+            if all(k in row for k in ['unique_sols','unique_fits','noisy_fits','sol_iterations','sol_transitions']):
+                runs.append([
+                    row['unique_sols'],
+                    row['unique_fits'],
+                    row['noisy_fits'],
+                    row['sol_iterations'],
+                    row['sol_transitions'],
+                ])
         STN_data.append(runs)
         STN_series.append(group_key)
-    
-    return STN_data, STN_series, Noise_data
+
+        # --- MO runs (new) ---
+        # Each row is a "run" with sequences per generation (lists)
+        mo_runs = []
+        for _, row in group_df.iterrows():
+            if all(k in row for k in ['pareto_solutions','hypervolumes']):
+                pareto_solutions = row['pareto_solutions'] or []
+                hypervolumes     = row.get('hypervolumes', []) or []
+                # guard differing lengths
+                Gmax = min(len(pareto_solutions), len(hypervolumes))
+                fronts = []
+                for g in range(Gmax):
+                    fronts.append({
+                        'front_solutions': pareto_solutions[g],  # list of bitstrings
+                        'hypervolume': hypervolumes[g],
+                        'gen_idx': g
+                    })
+                if fronts:
+                    mo_runs.append(fronts)
+        MO_data.append(mo_runs)
+        MO_series.append(group_key)
+
+    return STN_data, STN_series, Noise_data, MO_data, MO_series
 
 @app.callback(
     Output('print_STN_series_labels', "children"),
@@ -1144,7 +1220,10 @@ def clean_axis_values(custom_x_min, custom_x_max, custom_y_min, custom_y_max, cu
      Input('LON-node-max', 'value'),
      Input('LON-edge-size-slider', 'value'),
      Input('STN-edge-size-slider', 'value'),
-     Input('noisy_fitnesses_data', 'data')]
+     Input('noisy_fitnesses_data', 'data'),
+     Input('stn-mo-mode', 'value'),
+     Input('STN_MO_data', 'data'),
+     Input('STN_MO_series_labels', 'data')]
 )
 def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limit,
                 LO_fit_percent, LON_options, LON_node_colour_mode, LON_edge_colour_feas,
@@ -1153,7 +1232,8 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                 run_start_index, n_runs_display, local_optima, axis_values,
                 opacity_noise_bar, LON_node_opacity, LON_edge_opacity, STN_node_opacity, STN_edge_opacity,
                 STN_node_min, STN_node_max, LON_node_min, LON_node_max,
-                LON_edge_size_slider, STN_edge_size_slider, noisy_fitnesses_list):
+                LON_edge_size_slider, STN_edge_size_slider, noisy_fitnesses_list,
+                stn_mo_mode, STN_MO_data, STN_MO_series_labels):
     print('Running plotting function...')
     print(STN_labels)
     # LON Options
@@ -1175,6 +1255,9 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
     show_worst = 'show_worst' in run_options
     STN_hamming = 'STN-hamming' in run_options
 
+    # multiobjective options
+    mo_mode = 'mo' in (stn_mo_mode or [])
+
     # Options from dropdowns
     layout = layout_value
 
@@ -1183,8 +1266,6 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
 
     # Colors for different sets of trajectories
     algo_colors = ['blue', 'orange', 'purple', 'cyan', 'magenta', 'brown']
-    # algo_colors = ['blue', 'purple', 'cyan', 'magenta', 'brown']
-    # algo_colors = ['magenta', 'brown', 'teal']
     node_color_shared = 'green'
     option_curve_edges = True
 
@@ -1318,10 +1399,74 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                     tgt = stn_node_mapping[curr_key]
                     G.add_edge(src, tgt, weight=STN_edge_size_slider, color=edge_color, edge_type='STN')
                     # print(f"DEBUG: Added STN edge from {src} to {tgt}")
+    
+    def add_mo_fronts_to_graph(
+        G: nx.MultiDiGraph,
+        mo_runs_for_series,
+        edge_color: str,
+        series_idx: int,
+    ):
+        """Adds multiobjective STN nodes/edges for group of pareto fronts"""
+        mo_nodes = []
+
+        for run_idx, front_seq in enumerate(mo_runs_for_series or []):
+            prev_node = None
+            for item in front_seq or []:
+                front = item.get('front_solutions', []) or []
+                hv    = float(item.get('hypervolume', 0.0))
+                g     = int(item.get('gen_idx', 0))
+
+                node_label = f"MO_S{series_idx}_R{run_idx}_G{g}"
+                if node_label not in G.nodes:
+                    G.add_node(
+                        node_label,
+                        type="STN_MO",
+                        front_solutions=front,
+                        front_size=len(front),
+                        hypervolume=hv,
+                        fitness=hv, # trick to improve compatability with single objective
+                        run_idx=run_idx,
+                        gen_idx=g,
+                        color=edge_color,
+                    )
+
+                mo_nodes.append((node_label, G.nodes[node_label]))
+
+                if prev_node is not None:
+                    G.add_edge(
+                        prev_node,
+                        node_label,
+                        weight=STN_edge_size_slider,
+                        color=edge_color,
+                        edge_type="STN_MO",
+                    )
+                prev_node = node_label
+
+        return mo_nodes
 
     debug_summaries = []
-    # Add trajectory nodes if provided
-    if all_trajectories_list:
+    if mo_mode:
+        print('ADDING NODES IN MULTIOBJECTIVE MODE')
+
+        for idx, mo_runs in enumerate(STN_MO_data):
+            edge_color = algo_colors[idx % len(algo_colors)]
+
+            selected_runs = []
+            if n_runs_display > 0:
+                selected_runs.extend(mo_runs[run_start_index:run_start_index + n_runs_display])
+
+            # [?] LATER ADD SHOW BEST / SHOW WORST / ETC.
+
+            add_mo_fronts_to_graph(
+            G,
+            selected_runs,
+            edge_color,
+            idx,)
+        
+        summary_components = []
+        debug_summary_component = html.Div("None implemented for MO")
+    
+    elif all_trajectories_list:
         # Determine optimisation goal
         
         optimisation_goal = opt_goal[:3].lower() # now handled via data, update in rest of code
@@ -1513,6 +1658,13 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
         min_STN_iter = min(stn_iterations)
         max_STN_iter = max(stn_iterations)
 
+    # Determine front sizes for multiobjective
+    front_sizes = [d.get("front_size", 1) for _, d in G.nodes(data=True) if d.get("type") == "STN_MO"]
+    if front_sizes:
+        min_front_size, max_front_size = min(front_sizes), max(front_sizes)
+    else:
+        min_front_size = max_front_size = 1
+
     # Assign node sizes
     for node, data in G.nodes(data=True):
         if "Local Optimum" in node:
@@ -1523,6 +1675,20 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
             G.nodes[node]['weight'] = node_weight
             # if data.get('fitness') == optimum:
                 # node_size = LON_node_max
+
+        elif "STN_MO" in data.get("type", ""):
+            # ---- Multiobjective STN nodes ----
+            # Use front size to scale node size
+            front_size = data.get("front_size", 1)
+            # Normalise within observed range across all STN_MO nodes
+            # (you should precompute these before the loop if you have many)
+            node_size = STN_node_min + (
+                (front_size - min_front_size) / (max_front_size - min_front_size)
+                if max_front_size > min_front_size else 0.5
+            ) * (STN_node_max - STN_node_min)
+            G.nodes[node]["size"] = node_size
+            continue  # skip remaining checks, already set size
+
         elif "STN" in node:
             # For STN nodes: weight comes from the 'iterations' attribute.
             # node_weight = G.nodes[node].get('iterations', 1)
@@ -1532,9 +1698,11 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
             node_size = STN_node_min + norm_iter * (STN_node_max - STN_node_min)
             if data.get('fitness') == optimum and "Noisy" not in node:
                 node_size = STN_node_max
+
         else:
             # For any other node, assign a default weight of 1.
             node_size = 1
+
         # Set the computed weight as a node property.
         G.nodes[node]['size'] = node_size
     
@@ -1632,6 +1800,9 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
 
     print('\033[32mNode Sizes and Colours Assigned\033[0m')
     print('\033[33mCalculating node positions...\033[0m')
+
+    # DISTANCE METRIC FUNCTIONS
+
     def normed_hamming_distance(sol1, sol2):
         L = len(sol1)
         return sum(el1 != el2 for el1, el2 in zip(sol1, sol2)) / L
@@ -1639,6 +1810,29 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
     def canonical_solution(sol):
         # Force every element to be an int (adjust as needed)
         return tuple(int(x) for x in sol)
+    
+    def _avg_min_hamming_A_to_B(frontA, frontB):
+        """Asymmetric: average over a∈A of min_b Hamming(a,b); normalised by length."""
+        if not frontA or not frontB:
+            return 0.0
+        A = [ canonical_solution(a) for a in frontA ]
+        B = [ canonical_solution(b) for b in frontB ]
+        L = len(A[0]) if A else 1
+        norm = float(L) if L > 0 else 1.0
+        total = 0.0
+        for a in A:
+            # min Hamming(a, b) over b ∈ B
+            m = min(sum(aa != bb for aa, bb in zip(a, b)) for b in B) / norm
+            total += m
+        return total / len(A)
+
+    def front_distance(frontA, frontB):
+        """Symmetric average-min Hamming distance between two fronts."""
+        d1 = _avg_min_hamming_A_to_B(frontA, frontB)
+        d2 = _avg_min_hamming_A_to_B(frontB, frontA)
+        return 0.5*(d1 + d2)
+    
+    # NODE POSITIONING
 
     # Prepare node positions based on selected layout
     # unique_solution_positions = {}
@@ -1648,208 +1842,249 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
     #     if sol not in unique_solution_positions:
     #         solutions.append(sol)
     print('\033[33mCompiling Solutions...\033[0m')
-    solutions_set = set()
-    for node, data in G.nodes(data=True):
-        # 'solution' is your bit-string (tuple) stored in the node attributes
-        # sol = tuple(data['solution'])
-        sol = canonical_solution(data['solution'])
-        solutions_set.add(sol)
-    solutions_list = list(solutions_set)
-    n = len(solutions_list)
-    # print("DEBUG: Number of unique solutions for Positioning:", n)
-    if n == 0:
-        # print("ERROR: No solutions for Positioning")
-        pos = {}
-    elif layout == 'mds':
-        print('\033[33mUsing MDS\033[0m')
-        dissimilarity_matrix = np.zeros((len(solutions_list), len(solutions_list)))
-        for i in range(len(solutions_list)):
-            for j in range(len(solutions_list)):
-                dissimilarity_matrix[i, j] = hamming_distance(solutions_list[i], solutions_list[j])
 
-        mds = MDS_sklearn(n_components=2, dissimilarity='precomputed', random_state=42)
-        positions_2d = mds.fit_transform(dissimilarity_matrix)
+    if mo_mode:
+        print('CALCULATING DISTANCES IN MULTIOBJECTIVE MODE')
 
-        solution_positions = {}
-        for i, sol in enumerate(solutions_list):
-            solution_positions[sol] = positions_2d[i]
-        
-        pos = {}
-        for node, data in G.nodes(data=True):
-            sol = tuple(data['solution'])
-            # All nodes with the same bit-string get the same (x,y)
-            pos[node] = solution_positions[sol]
-    elif layout == 'tsne':
-        print('\033[33mUsing TSNE\033[0m')
-        # Use t-SNE to position nodes based on dissimilarity (Hamming distance)
-        # solutions = [data['solution'] for _, data in G.nodes(data=True)]
-        # n = len(solutions)
-        dissimilarity_matrix = np.zeros((len(solutions_list), len(solutions_list)))
-        for i in range(len(solutions_list)):
-            for j in range(len(solutions_list)):
-                dissimilarity_matrix[i, j] = hamming_distance(solutions_list[i], solutions_list[j])
+        # Get the current MO nodes directly from the graph
+        mo_nodes = [(n, d) for n, d in G.nodes(data=True) if d.get('type') == 'STN_MO']
+        mo_labels = [n for n, _ in mo_nodes]
+        fronts    = [d.get('front_solutions', []) for _, d in mo_nodes]
+        runs      = [d.get('run_idx', 0) for _, d in mo_nodes]  # for optional jitter
+        K = len(fronts)
 
-        # Initialize and fit t-SNE
-        tsne = TSNE(n_components=2, metric='precomputed', random_state=42, init='random')
-        positions_2d = tsne.fit_transform(dissimilarity_matrix)
+        if K == 0:
+            pos = {}
+        else:
+            # Build symmetric distance matrix (uses your front_distance)
+            D = np.zeros((K, K), dtype=float)
+            for i in range(K):
+                for j in range(i + 1, K):
+                    d = front_distance(fronts[i], fronts[j])
+                    D[i, j] = D[j, i] = float(d)
 
-        solution_positions = {}
-        for i, sol in enumerate(solutions_list):
-            solution_positions[sol] = positions_2d[i]
-        
-        pos = {}
-        for node, data in G.nodes(data=True):
-            sol = tuple(data['solution'])
-            # All nodes with the same bit-string get the same (x,y)
-            pos[node] = solution_positions[sol]
-    # elif layout == 'raw':
-        # Directly use the 2D solution values as positions
-        # solutions = [data['solution'] for _, data in G.nodes(data=True)]
-        # pos = {node: solutions[i] for i, node in enumerate(G.nodes())}
-    elif layout == 'kamada_kawai':
-        print('\033[33mUsing Kamada Kawai\033[0m')
-        # pos = nx.kamada_kawai_layout(G, dim=2)
-        # # Update positions for noisy nodes
-        # for node in G.nodes():
-        #     if node.startswith("Noisy_"):
-        #         # Extract the corresponding solution node name by removing the "Noisy " prefix.
-        #         solution_node = node.replace("Noisy_", "", 1)
-        #         if solution_node in pos:
-        #             pos[node] = pos[solution_node]
-        
-        # 1. Calculate initial force-directed positions on the full graph G
-        initial_pos = {}
-        try:
-            # You might need to adjust parameters like max_iter if the graph is large/complex
-            initial_pos = nx.kamada_kawai_layout(G, dim=2, scale=1)
-            print(f"Kamada-Kawai initial layout calculated for {len(initial_pos)} nodes.")
-        except Exception as e:
-            print(f"Kamada-Kawai layout on full graph G failed: {e}")
-            print("Falling back to random positions.")
-            # Fallback: Assign random positions if KK fails
-            # Important: Need to ensure 'pos' is assigned even in failure case
-            pos = {node: (np.random.rand() * 2 - 1, np.random.rand() * 2 - 1) for node in G.nodes()}
-            initial_pos = None # Signal that KK failed and averaging should be skipped
+            # Choose embedding
+            if layout == 'mds':
+                mds = MDS_sklearn(n_components=2, dissimilarity='precomputed', random_state=42)
+                XY = mds.fit_transform(D)
+            elif layout == 'tsne':
+                tsne = TSNE(n_components=2, metric='precomputed', random_state=42, init='random')
+                XY = tsne.fit_transform(D)
+            elif layout in ('kamada_kawai', 'kamada_kawai_weighted', 'spring'):
+                # KK on complete graph weighted by distances
+                H = nx.complete_graph(K)
+                for i in range(K):
+                    for j in range(i + 1, K):
+                        H[i][j]['weight'] = max(D[i, j], 1e-6)  # avoid zero
+                raw = nx.kamada_kawai_layout(H, weight='weight', dim=2)
+                XY = np.array([raw[i] for i in range(K)])
+            else:
+                mds = MDS_sklearn(n_components=2, dissimilarity='precomputed', random_state=42)
+                XY = mds.fit_transform(D)
 
-        # Proceed with averaging only if initial_pos was successfully calculated
-        if initial_pos:
-            # 2. Group nodes by solution and collect their initial positions
-            positions_by_solution = {}
-            nodes_without_solution_or_pos = []
-
-            for node, data in G.nodes(data=True):
-                # Check if node got an initial position (it should have if KK didn't fail)
-                node_pos = initial_pos.get(node)
-                if node_pos is None:
-                    print(f"Warning: Node {node} missing from initial KK position results.")
-                    nodes_without_solution_or_pos.append(node)
-                    continue # Skip if no initial position
-
-                # Retrieve the solution attribute safely
-                sol_data = data.get('solution')
-
-                if sol_data is not None:
-                    try:
-                        sol_tuple = canonical_solution(sol_data)
-                        if sol_tuple not in positions_by_solution:
-                            positions_by_solution[sol_tuple] = []
-                        positions_by_solution[sol_tuple].append(node_pos) # Store (x, y) tuple
-                    except Exception as e_conv:
-                        print(f"Warning: Could not process solution for node {node}: {e_conv}.")
-                        nodes_without_solution_or_pos.append(node)
-                else:
-                    # Keep track of nodes that genuinely lack a solution attribute
-                    nodes_without_solution_or_pos.append(node)
-
-            print(f"Processed {len(initial_pos)} nodes. Found {len(positions_by_solution)} unique solutions with positions.")
-            if nodes_without_solution_or_pos:
-                print(f"Found {len(nodes_without_solution_or_pos)} nodes without a 'solution' attribute or missing from initial positions.")
-
-            # 3. Calculate the average position for each unique solution
-            final_solution_positions = {}
-            for sol_tuple, pos_list in positions_by_solution.items():
-                if not pos_list: continue
-                avg_pos = np.mean(np.array(pos_list), axis=0)
-                final_solution_positions[sol_tuple] = tuple(avg_pos) # Store as tuple
-
-            # 4. Assign the final (averaged) position to all nodes in G
-            pos = {} # Initialize final position dictionary
-            assigned_count = 0
-            unassigned_count = 0
-            for node, data in G.nodes(data=True):
-                sol_data = data.get('solution')
-                assigned = False
-                if sol_data is not None:
-                    try:
-                        sol_tuple = canonical_solution(sol_data)
-                        if sol_tuple in final_solution_positions:
-                            pos[node] = final_solution_positions[sol_tuple]
-                            assigned = True
-                            assigned_count += 1
-                    except Exception:
-                        pass # Error processing solution handled before
-
-                if not assigned:
-                    # Assign original KK position if node had no solution or its solution wasn't processed
-                    pos[node] = initial_pos.get(node, (np.random.rand()*0.1, np.random.rand()*0.1)) # Use initial pos or small random fallback
-                    unassigned_count += 1
-                    # if node in nodes_without_solution_or_pos:
-                    #      print(f"Node {node} (no solution/pos issue) assigned its initial KK position or fallback.")
-
-            print(f"Assigned final positions to {assigned_count} nodes based on averaged solution positions.")
-            if unassigned_count > 0:
-                 print(f"Assigned initial/fallback positions to {unassigned_count} nodes (no solution/pos issue).")
-
-        # Ensure 'pos' dictionary exists even if KK failed initially
-        elif 'pos' not in locals():
-             pos = {node: (np.random.rand() * 2 - 1, np.random.rand() * 2 - 1) for node in G.nodes()}
-            
-    elif layout == 'kamada_kawai_weighted':
-        print('\033[33mUsing Kamada Kawai\033[0m')
-        # pos = nx.kamada_kawai_layout(G, dim=2 if not plot_3D else 3)
-        # 2. Build a complete graph of unique solutions:
-        CG = nx.complete_graph(n)  # nodes will be 0,1,...,n-1
-        mapping = {i: solutions_list[i] for i in range(n)}
-        # 3. For each pair, set the edge weight to be the normalized Hamming distance:
-        for i in range(n):
-            for j in range(i+1, n):
-                weight = hamming_distance(solutions_list[i], solutions_list[j])
-                CG[i][j]['weight'] = weight
-                # Since H is undirected, this weight is used for both directions.
-
-        # 4. Compute the Kamada-Kawai layout on H using the weight attribute.
-        pos_unique = nx.kamada_kawai_layout(CG, weight='weight', dim=2)
-        
-        # 5. Map unique solution positions back to a dictionary keyed by the actual solution tuple.
-        solution_positions = { mapping[i]: pos_unique[i] for i in range(n) }
-        
-        # 6. For every node in G, assign the position corresponding to its solution.
-        pos = {}
-        for node, data in G.nodes(data=True):
-            sol = tuple(data['solution'])
-            pos[node] = solution_positions[sol]
+            # Assign positions to the MO nodes
+            pos = {mo_labels[i]: (float(XY[i, 0]), float(XY[i, 1])) for i in range(K)}
     else:
-        pos = nx.spring_layout(G, dim=2 if not plot_3D else 3)
-    # print("DEBUG: Positions computed for nodes:", pos)
-        # Update positions for noisy nodes
-        for node in G.nodes():
-            if node.startswith("Noisy_"):
-                # Extract the corresponding solution node name by removing the "Noisy " prefix.
-                solution_node = node.replace("Noisy_", "", 1)
-                if solution_node in pos:
-                    pos[node] = pos[solution_node]
+        solutions_set = set()
+        for node, data in G.nodes(data=True):
+            # 'solution' is your bit-string (tuple) stored in the node attributes
+            # sol = tuple(data['solution'])
+            sol = canonical_solution(data['solution'])
+            solutions_set.add(sol)
+        solutions_list = list(solutions_set)
+        n = len(solutions_list)
+        # print("DEBUG: Number of unique solutions for Positioning:", n)
+        if n == 0:
+            # print("ERROR: No solutions for Positioning")
+            pos = {}
+        elif layout == 'mds':
+            print('\033[33mUsing MDS\033[0m')
+            dissimilarity_matrix = np.zeros((len(solutions_list), len(solutions_list)))
+            for i in range(len(solutions_list)):
+                for j in range(len(solutions_list)):
+                    dissimilarity_matrix[i, j] = hamming_distance(solutions_list[i], solutions_list[j])
 
+            mds = MDS_sklearn(n_components=2, dissimilarity='precomputed', random_state=42)
+            positions_2d = mds.fit_transform(dissimilarity_matrix)
+
+            solution_positions = {}
+            for i, sol in enumerate(solutions_list):
+                solution_positions[sol] = positions_2d[i]
+            
+            pos = {}
+            for node, data in G.nodes(data=True):
+                sol = tuple(data['solution'])
+                # All nodes with the same bit-string get the same (x,y)
+                pos[node] = solution_positions[sol]
+        elif layout == 'tsne':
+            print('\033[33mUsing TSNE\033[0m')
+            # Use t-SNE to position nodes based on dissimilarity (Hamming distance)
+            # solutions = [data['solution'] for _, data in G.nodes(data=True)]
+            # n = len(solutions)
+            dissimilarity_matrix = np.zeros((len(solutions_list), len(solutions_list)))
+            for i in range(len(solutions_list)):
+                for j in range(len(solutions_list)):
+                    dissimilarity_matrix[i, j] = hamming_distance(solutions_list[i], solutions_list[j])
+
+            # Initialize and fit t-SNE
+            tsne = TSNE(n_components=2, metric='precomputed', random_state=42, init='random')
+            positions_2d = tsne.fit_transform(dissimilarity_matrix)
+
+            solution_positions = {}
+            for i, sol in enumerate(solutions_list):
+                solution_positions[sol] = positions_2d[i]
+            
+            pos = {}
+            for node, data in G.nodes(data=True):
+                sol = tuple(data['solution'])
+                # All nodes with the same bit-string get the same (x,y)
+                pos[node] = solution_positions[sol]
+        # elif layout == 'raw':
+            # Directly use the 2D solution values as positions
+            # solutions = [data['solution'] for _, data in G.nodes(data=True)]
+            # pos = {node: solutions[i] for i, node in enumerate(G.nodes())}
+        elif layout == 'kamada_kawai':
+            print('\033[33mUsing Kamada Kawai\033[0m')
+            # pos = nx.kamada_kawai_layout(G, dim=2)
+            # # Update positions for noisy nodes
+            # for node in G.nodes():
+            #     if node.startswith("Noisy_"):
+            #         # Extract the corresponding solution node name by removing the "Noisy " prefix.
+            #         solution_node = node.replace("Noisy_", "", 1)
+            #         if solution_node in pos:
+            #             pos[node] = pos[solution_node]
+            
+            # 1. Calculate initial force-directed positions on the full graph G
+            initial_pos = {}
+            try:
+                # You might need to adjust parameters like max_iter if the graph is large/complex
+                initial_pos = nx.kamada_kawai_layout(G, dim=2, scale=1)
+                print(f"Kamada-Kawai initial layout calculated for {len(initial_pos)} nodes.")
+            except Exception as e:
+                print(f"Kamada-Kawai layout on full graph G failed: {e}")
+                print("Falling back to random positions.")
+                # Fallback: Assign random positions if KK fails
+                # Important: Need to ensure 'pos' is assigned even in failure case
+                pos = {node: (np.random.rand() * 2 - 1, np.random.rand() * 2 - 1) for node in G.nodes()}
+                initial_pos = None # Signal that KK failed and averaging should be skipped
+
+            # Proceed with averaging only if initial_pos was successfully calculated
+            if initial_pos:
+                # 2. Group nodes by solution and collect their initial positions
+                positions_by_solution = {}
+                nodes_without_solution_or_pos = []
+
+                for node, data in G.nodes(data=True):
+                    # Check if node got an initial position (it should have if KK didn't fail)
+                    node_pos = initial_pos.get(node)
+                    if node_pos is None:
+                        print(f"Warning: Node {node} missing from initial KK position results.")
+                        nodes_without_solution_or_pos.append(node)
+                        continue # Skip if no initial position
+
+                    # Retrieve the solution attribute safely
+                    sol_data = data.get('solution')
+
+                    if sol_data is not None:
+                        try:
+                            sol_tuple = canonical_solution(sol_data)
+                            if sol_tuple not in positions_by_solution:
+                                positions_by_solution[sol_tuple] = []
+                            positions_by_solution[sol_tuple].append(node_pos) # Store (x, y) tuple
+                        except Exception as e_conv:
+                            print(f"Warning: Could not process solution for node {node}: {e_conv}.")
+                            nodes_without_solution_or_pos.append(node)
+                    else:
+                        # Keep track of nodes that genuinely lack a solution attribute
+                        nodes_without_solution_or_pos.append(node)
+
+                print(f"Processed {len(initial_pos)} nodes. Found {len(positions_by_solution)} unique solutions with positions.")
+                if nodes_without_solution_or_pos:
+                    print(f"Found {len(nodes_without_solution_or_pos)} nodes without a 'solution' attribute or missing from initial positions.")
+
+                # 3. Calculate the average position for each unique solution
+                final_solution_positions = {}
+                for sol_tuple, pos_list in positions_by_solution.items():
+                    if not pos_list: continue
+                    avg_pos = np.mean(np.array(pos_list), axis=0)
+                    final_solution_positions[sol_tuple] = tuple(avg_pos) # Store as tuple
+
+                # 4. Assign the final (averaged) position to all nodes in G
+                pos = {} # Initialize final position dictionary
+                assigned_count = 0
+                unassigned_count = 0
+                for node, data in G.nodes(data=True):
+                    sol_data = data.get('solution')
+                    assigned = False
+                    if sol_data is not None:
+                        try:
+                            sol_tuple = canonical_solution(sol_data)
+                            if sol_tuple in final_solution_positions:
+                                pos[node] = final_solution_positions[sol_tuple]
+                                assigned = True
+                                assigned_count += 1
+                        except Exception:
+                            pass # Error processing solution handled before
+
+                    if not assigned:
+                        # Assign original KK position if node had no solution or its solution wasn't processed
+                        pos[node] = initial_pos.get(node, (np.random.rand()*0.1, np.random.rand()*0.1)) # Use initial pos or small random fallback
+                        unassigned_count += 1
+                        # if node in nodes_without_solution_or_pos:
+                        #      print(f"Node {node} (no solution/pos issue) assigned its initial KK position or fallback.")
+
+                print(f"Assigned final positions to {assigned_count} nodes based on averaged solution positions.")
+                if unassigned_count > 0:
+                    print(f"Assigned initial/fallback positions to {unassigned_count} nodes (no solution/pos issue).")
+
+            # Ensure 'pos' dictionary exists even if KK failed initially
+            elif 'pos' not in locals():
+                pos = {node: (np.random.rand() * 2 - 1, np.random.rand() * 2 - 1) for node in G.nodes()}
+                
+        elif layout == 'kamada_kawai_weighted':
+            print('\033[33mUsing Kamada Kawai\033[0m')
+            # pos = nx.kamada_kawai_layout(G, dim=2 if not plot_3D else 3)
+            # 2. Build a complete graph of unique solutions:
+            CG = nx.complete_graph(n)  # nodes will be 0,1,...,n-1
+            mapping = {i: solutions_list[i] for i in range(n)}
+            # 3. For each pair, set the edge weight to be the normalized Hamming distance:
+            for i in range(n):
+                for j in range(i+1, n):
+                    weight = hamming_distance(solutions_list[i], solutions_list[j])
+                    CG[i][j]['weight'] = weight
+                    # Since H is undirected, this weight is used for both directions.
+
+            # 4. Compute the Kamada-Kawai layout on H using the weight attribute.
+            pos_unique = nx.kamada_kawai_layout(CG, weight='weight', dim=2)
+            
+            # 5. Map unique solution positions back to a dictionary keyed by the actual solution tuple.
+            solution_positions = { mapping[i]: pos_unique[i] for i in range(n) }
+            
+            # 6. For every node in G, assign the position corresponding to its solution.
+            pos = {}
+            for node, data in G.nodes(data=True):
+                sol = tuple(data['solution'])
+                pos[node] = solution_positions[sol]
+        else:
+            pos = nx.spring_layout(G, dim=2 if not plot_3D else 3)
+        # print("DEBUG: Positions computed for nodes:", pos)
+            # Update positions for noisy nodes
+            for node in G.nodes():
+                if node.startswith("Noisy_"):
+                    # Extract the corresponding solution node name by removing the "Noisy " prefix.
+                    solution_node = node.replace("Noisy_", "", 1)
+                    if solution_node in pos:
+                        pos[node] = pos[solution_node]
+
+        # create node_hover_text which holds node hover text information
+        node_hover_text = []
+        if hover_info_value == 'fitness':
+            node_hover_text = [str(G.nodes[node]['fitness']) for node in G.nodes()]
+        elif hover_info_value == 'iterations':
+            node_hover_text = [str(G.nodes[node]['iterations']) for node in G.nodes()]
+        elif hover_info_value == 'solutions':
+            node_hover_text = [str(G.nodes[node]['solution']) for node in G.nodes()]
     print('\033[32mNode Positions Calculated\033[0m')
-
-    # create node_hover_text which holds node hover text information
-    node_hover_text = []
-    if hover_info_value == 'fitness':
-        node_hover_text = [str(G.nodes[node]['fitness']) for node in G.nodes()]
-    elif hover_info_value == 'iterations':
-        node_hover_text = [str(G.nodes[node]['iterations']) for node in G.nodes()]
-    elif hover_info_value == 'solutions':
-        node_hover_text = [str(G.nodes[node]['solution']) for node in G.nodes()]
-
 
 # ---------- PLOTTING -----------
     print('CREATING PLOT...')
