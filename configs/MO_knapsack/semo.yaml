@@ -23,7 +23,7 @@ run:
     "9": 86078
     "10": 93638
   seed: 1
-  num_runs: 1
+  num_runs: 10
   parallel: true
 
 # ==============================
@@ -35,9 +35,21 @@ mlflow:
 # ==============================
 # Hydra Configuration
 # ==============================
+# For single settings
+# hydra:
+#   run:
+#     dir: "data/outputs"
+
+# For range of settings
 hydra:
-  run:
-    dir: "data/outputs"
+  mode: MULTIRUN
+  sweeper:
+    params:
+      # algo.pop_size: 100,200,300
+      problem.fitness_params.noise_intensity: 0,1,2,3
+      # algo.static_indpb: 0.01,0.02,0.03
+  sweep:
+    dir: data/outputs
 
 # ==============================
 # Algorithm Configuration
@@ -75,9 +87,9 @@ problem:
   fitness_params:
     items_dict: null  # Will be set after problem loading
     capacity: null    # Will be set after problem loading
-    noise_intensity: 1
+    noise_intensity: 0
   
   # Attributes and weights
   attr_function: binary_attribute
   weights: [1.0, -1.0]
-  ref_point: [0, 500]
+  ref_point: [0, 269]
