@@ -607,7 +607,7 @@ class SEMO(OptimisationAlgorithm):
         if self.dominated_by_archive(offspring):
             return  # discard y'
         if self.already_in_archive(offspring):
-            return  # y' ∈ P -> do nothing (optional but matches spec)
+            return  # y' ∈ P -> do nothing
 
         # keep only non-dominated
         self.prune_dominated_by(offspring)

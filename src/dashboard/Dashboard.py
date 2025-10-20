@@ -286,10 +286,10 @@ app.layout = html.Div([
                     id='mo_plot_type',
                     options=[
                         {'label': 'noisy pareto noisy hv', 'value': 'npnhv'},
-                        {'label': 'true pareto true hv', 'value': 'npthv'},
+                        {'label': 'true pareto true hv', 'value': 'tpthv'},
                         {'label': 'noisy pareto both hv', 'value': 'npbhv'},
                     ],
-                    value='',
+                    value='npnhv',
                     placeholder='multiobjective plot type',
                     style={'width': '50%'}
                 ),
@@ -1080,22 +1080,84 @@ def update_filtered_view(selected_rows, table2_data):
     return df_result.to_dict('records')
 
 
+# @app.callback(
+#     [Output('STN_data_processed', 'data'),
+#      Output('STN_series_labels', 'data'),
+#      Output('noisy_fitnesses_data', 'data'),
+#      Output('STN_MO_data', 'data'),
+#      Output('STN_MO_series_labels', 'data')],
+#     Input('STN_data', 'data'),
+# )
+# def process_STN_data(df, group_cols=['algo_name', 'noise']):
+#     df = pd.DataFrame(df)
+#     STN_data, STN_series, Noise_data = [], [], []
+
+#     MO_data, MO_series = [], []
+
+#     if df.empty:
+#         return STN_data, STN_series, Noise_data, MO_data, MO_series
+
+#     grouped = df.groupby(group_cols)
+
+#     for group_key, group_df in grouped:
+#         # --- classic STN runs (unchanged) ---
+#         runs = []
+#         for _, row in group_df.iterrows():
+#             if all(k in row for k in ['unique_sols','unique_fits','noisy_fits','sol_iterations','sol_transitions']):
+#                 runs.append([
+#                     row['unique_sols'],
+#                     row['unique_fits'],
+#                     row['noisy_fits'],
+#                     row['sol_iterations'],
+#                     row['sol_transitions'],
+#                 ])
+#         STN_data.append(runs)
+#         STN_series.append(group_key)
+
+#         # --- MO runs (new) ---
+#         # Each row is a "run" with sequences per generation (lists)
+#         mo_runs = []
+#         for _, row in group_df.iterrows():
+#             if all(k in row for k in ['pareto_solutions','noisy_pf_noisy_hypervolumes']):
+#                 pareto_solutions = row['pareto_solutions'] or []
+#                 hypervolumes     = row.get('noisy_pf_noisy_hypervolumes', []) or []
+#                 hypervolumes_true  = row.get('noisy_pf_true_hypervolumes', []) or []
+#                 # guard differing lengths
+#                 Gmax = min(len(pareto_solutions), len(hypervolumes))
+#                 fronts = []
+#                 for g in range(Gmax):
+#                     fronts.append({
+#                         'front_solutions': pareto_solutions[g],  # list of bitstrings
+#                         'hypervolume': hypervolumes[g],
+#                         'hypervolume_true': hypervolumes_true[g],
+#                         'gen_idx': g
+#                     })
+#                 if fronts:
+#                     mo_runs.append(fronts)
+#         MO_data.append(mo_runs)
+#         MO_series.append(group_key)
+
+#     return STN_data, STN_series, Noise_data, MO_data, MO_series
+
 @app.callback(
     [Output('STN_data_processed', 'data'),
      Output('STN_series_labels', 'data'),
      Output('noisy_fitnesses_data', 'data'),
      Output('STN_MO_data', 'data'),
      Output('STN_MO_series_labels', 'data')],
-    Input('STN_data', 'data'),
+    [Input('STN_data', 'data'),
+     Input('mo_plot_type', 'value')],
 )
-def process_STN_data(df, group_cols=['algo_name', 'noise']):
+def process_STN_data(df, mo_plot_type, group_cols=['algo_name', 'noise']):
     df = pd.DataFrame(df)
     STN_data, STN_series, Noise_data = [], [], []
-
     MO_data, MO_series = [], []
 
     if df.empty:
         return STN_data, STN_series, Noise_data, MO_data, MO_series
+
+    # default/fallback if somehow empty
+    mode = mo_plot_type or 'npnhv'
 
     grouped = df.groupby(group_cols)
 
@@ -1114,26 +1176,48 @@ def process_STN_data(df, group_cols=['algo_name', 'noise']):
         STN_data.append(runs)
         STN_series.append(group_key)
 
-        # --- MO runs (new) ---
-        # Each row is a "run" with sequences per generation (lists)
+        # --- MO runs (mode-dependent) ---
         mo_runs = []
         for _, row in group_df.iterrows():
-            if all(k in row for k in ['pareto_solutions','noisy_pf_noisy_hypervolumes']):
-                pareto_solutions = row['pareto_solutions'] or []
-                hypervolumes     = row.get('noisy_pf_noisy_hypervolumes', []) or []
-                hypervolumes_true  = row.get('noisy_pf_true_hypervolumes', []) or []
-                # guard differing lengths
-                Gmax = min(len(pareto_solutions), len(hypervolumes))
-                fronts = []
-                for g in range(Gmax):
-                    fronts.append({
-                        'front_solutions': pareto_solutions[g],  # list of bitstrings
-                        'hypervolume': hypervolumes[g],
-                        'hypervolume_true': hypervolumes_true[g],
-                        'gen_idx': g
-                    })
-                if fronts:
-                    mo_runs.append(fronts)
+            # Select columns based on mode
+            if mode == 'tpthv':
+                pareto_solutions = (row.get('true_pareto_solutions') or [])
+                hv_noisy         = (row.get('true_pf_hypervolumes') or [])
+                # hv_true          = hv_noisy
+                hv_true          = hv_noisy
+            elif mode == 'npbhv':
+                pareto_solutions = (row.get('pareto_solutions') or [])
+                hv_noisy         = (row.get('noisy_pf_noisy_hypervolumes') or [])
+                hv_true          = (row.get('noisy_pf_true_hypervolumes') or [])
+            elif mode == 'tpbhv':
+                pareto_solutions = (row.get('true_pareto_solutions') or [])
+                hv_noisy         = (row.get('true_pf_hypervolumes') or [])
+                hv_true          = (row.get('noisy_pf_noisy_hypervolumes') or [])
+            else:  # 'npnhv' (default)
+                pareto_solutions = (row.get('pareto_solutions') or [])
+                hv_noisy         = (row.get('noisy_pf_noisy_hypervolumes') or [])
+                # hv_true          = (row.get('noisy_pf_true_hypervolumes') or [])
+                hv_true          = hv_noisy
+
+            if not pareto_solutions:
+                continue
+
+            Gmax = min(len(pareto_solutions), len(hv_noisy))
+            if Gmax == 0:
+                continue
+
+            fronts = []
+            for g in range(Gmax):
+                fronts.append({
+                    'front_solutions': pareto_solutions[g],   # list of bitstrings
+                    'hypervolume': hv_noisy[g],               # primary HV used by your plot
+                    # 'hypervolume_true': hv_true[g] if g < len(hv_true) else None,
+                    'hypervolume_true': hv_true[g],
+                    'gen_idx': g
+                })
+            if fronts:
+                mo_runs.append(fronts)
+
         MO_data.append(mo_runs)
         MO_series.append(group_key)
 
@@ -1857,6 +1941,8 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
         d1 = _avg_min_hamming_A_to_B(frontA, frontB)
         d2 = _avg_min_hamming_A_to_B(frontB, frontA)
         return 0.5*(d1 + d2)
+        # return d1
+
     
     # NODE POSITIONING
 
@@ -1883,10 +1969,14 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
         else:
             # Build symmetric distance matrix (uses your front_distance)
             D = np.zeros((K, K), dtype=float)
+            # for i in range(K):
+            #     for j in range(i + 1, K):
+            #         d = front_distance(fronts[i], fronts[j])
+            #         D[i, j] = D[j, i] = float(d)
             for i in range(K):
-                for j in range(i + 1, K):
-                    d = front_distance(fronts[i], fronts[j])
-                    D[i, j] = D[j, i] = float(d)
+                for j in range(K):
+                    if i != j:
+                        D[i, j] = float(front_distance(fronts[i], fronts[j]))
 
             # Choose embedding
             if layout == 'mds':
@@ -2589,16 +2679,22 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
             # title='X',
             title='',
             titlefont=dict(size=24, color='black'),
-            tickfont=dict(size=16, color='black')
+            tickfont=dict(size=16, color='black'),
+            showticklabels=False
         )
         yaxis_settings=dict(
             # title='Y',
             title='',
             titlefont=dict(size=24, color='black'),
-            tickfont=dict(size=16, color='black')
+            tickfont=dict(size=16, color='black'),
+            showticklabels=False
         )
+        if mo_mode:
+            z_axis_title = 'hypervolume'
+        else:
+            z_axis_title = 'fitness'
         zaxis_settings=dict(
-            title='Fitness',
+            title=z_axis_title,
             titlefont=dict(size=24, color='black'),  # Larger z-axis label
             tickfont=dict(size=16, color='black'),
         )
