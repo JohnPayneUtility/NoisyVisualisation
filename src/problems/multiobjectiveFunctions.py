@@ -28,6 +28,7 @@ def eval_noisy_kp_v1_mo(individual, items_dict, capacity, noise_intensity=0, pen
             value_with_penalty = capacity - weight
             return (value_with_penalty, weight)
         else:
-            return (0, 100000)
+            # return (0, 100000)
+            return (value, weight)
     return (value, weight) # Not over capacity return value
 

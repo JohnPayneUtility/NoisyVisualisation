@@ -23,8 +23,9 @@ dependencies:
   - optuna
   - pymoo
   - pip
+  - deap
   - pip:
-      - deap
+      # - deap
       - dash-ag-grid
       - dash-tabulator
       - pgmpy

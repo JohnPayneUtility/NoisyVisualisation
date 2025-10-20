@@ -67,6 +67,13 @@ def resolve_config_dependencies(cfg: DictConfig) -> DictConfig:
         if hasattr(resolved_cfg.problem, 'fitness_params'):
             resolved_cfg.problem.fitness_params.items_dict = items_dict
             resolved_cfg.problem.fitness_params.capacity = float(capacity)
+        
+        # Set reference point for multiobjective knapsack
+        if getattr(resolved_cfg.problem, "prob_name", "").lower() == "knapsack":
+            W = float(sum(float(v[1]) for v in resolved_cfg.problem.items_dict.values()))
+            # code will fail if fitness function produces weight higher than ref point for knapsack
+            resolved_cfg.problem.ref_point = [0.0, 2*W] # double max weight to account for noise
+            # print(resolved_cfg.problem.ref_point)
     else:
         # For problems like OneMax that don't need a loader
         # Ensure dimensions and opt_global are set if they exist in config
@@ -167,10 +174,22 @@ def hydra_algo_data_single(prob_info: Dict[str, Any],
         "seed": seed,
         "seed_signature": seed_signature,
         # pareto data
+        # "pareto_solutions": algo_instance.pareto_solutions,
+        # "pareto_fitnesses": algo_instance.pareto_fitnesses,
+        # "pareto_true_fitnesses": algo_instance.pareto_true_fitnesses,
+        # "hypervolumes": algo_instance.hypervolumes,
+        # "hypervolumes_true": algo_instance.hypervolumes_true
+        # noisy PF data (as the algorithm optimises)
         "pareto_solutions": algo_instance.pareto_solutions,
         "pareto_fitnesses": algo_instance.pareto_fitnesses,
         "pareto_true_fitnesses": algo_instance.pareto_true_fitnesses,
-        "hypervolumes": algo_instance.hypervolumes,
+        # true PF (approx) built from full-pop true evals
+        "true_pareto_solutions": algo_instance.true_pareto_solutions,
+        "true_pareto_fitnesses": algo_instance.true_pareto_fitnesses,
+        # hypervolumes
+        "noisy_pf_noisy_hypervolumes": algo_instance.noisy_pf_noisy_hypervolumes,
+        "noisy_pf_true_hypervolumes": algo_instance.noisy_pf_true_hypervolumes,
+        "true_pf_hypervolumes": algo_instance.true_pf_hypervolumes,
     }
 
 def hydra_algo_data_multi(prob_info: Dict[str, Any],

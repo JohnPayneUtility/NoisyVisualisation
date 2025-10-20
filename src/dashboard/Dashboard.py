@@ -57,8 +57,12 @@ df_no_lists.drop([
     'pareto_solutions',
     'pareto_fitnesses',
     'pareto_true_fitnesses',
-    'hypervolumes',
-], axis=1, inplace=True)
+    'true_pareto_solutions',
+    'true_pareto_fitnesses',
+    'noisy_pf_noisy_hypervolumes',
+    'noisy_pf_true_hypervolumes',
+    'true_pf_hypervolumes',
+], axis=1, errors='ignore', inplace=True)
 print(df_no_lists['PID'].unique())
 
 # Create subset DataFrames
@@ -116,8 +120,12 @@ display2_df.drop([
     'pareto_solutions',
     'pareto_fitnesses',
     'pareto_true_fitnesses',
-    'hypervolumes',
-], axis=1, inplace=True)
+    'true_pareto_solutions',
+    'true_pareto_fitnesses',
+    'noisy_pf_noisy_hypervolumes',
+    'noisy_pf_true_hypervolumes',
+    'true_pf_hypervolumes',
+], axis=1, errors='ignore', inplace=True)
 display2_hidden_cols = [
     'problem_type', 
     'problem_goal', 
@@ -260,8 +268,12 @@ app.layout = html.Div([
         "borderRadius": "5px",
         "margin": "10px",
     }),
-    # RUN DISPLAY OPTIONS
-    html.Label("STN run options:", style={'fontWeight': 'bold'}),
+    # ---------------------------------------
+    # PLOTTING OPTIONS
+    # ---------------------------------------
+    # MULTIOBJECTIVE PLOTTING OPTIONS
+    html.Hr(),
+    html.Label("Multiobjective options:", style={'fontWeight': 'bold'}),
     html.Br(),
     dcc.Checklist(
     id='stn-mo-mode',
@@ -269,6 +281,24 @@ app.layout = html.Div([
     value=[],  # default OFF
     labelStyle={'display': 'inline-block', 'margin-right': '10px'}
     ),
+    html.Div(
+                dcc.Dropdown(
+                    id='mo_plot_type',
+                    options=[
+                        {'label': 'noisy pareto noisy hv', 'value': 'npnhv'},
+                        {'label': 'true pareto true hv', 'value': 'npthv'},
+                        {'label': 'noisy pareto both hv', 'value': 'npbhv'},
+                    ],
+                    value='',
+                    placeholder='multiobjective plot type',
+                    style={'width': '50%'}
+                ),
+                style={'display': 'inline-block', 'verticalAlign': 'middle', 'width': '50%', 'marginRight': '10px'}
+            ),
+    html.Hr(),
+    # STN PLOTTING OPTIONS
+    html.Label("STN run options:", style={'fontWeight': 'bold'}),
+    html.Br(),
     html.Div([
         html.Label(" Select starting run: "),
         dcc.Input(
@@ -1049,39 +1079,6 @@ def update_filtered_view(selected_rows, table2_data):
     # print(df_result.columns)
     return df_result.to_dict('records')
 
-# @app.callback(
-#     [Output('STN_data_processed', 'data'),
-#      Output('STN_series_labels', 'data'),
-#      Output('noisy_fitnesses_data', 'data')],
-#     Input('STN_data', 'data'),
-# )
-# def process_STN_data(df, group_cols=['algo_name', 'noise']):
-#     df = pd.DataFrame(df)
-#     STN_data = []
-#     STN_series = []
-#     Noise_data = []
-    
-#     # Group by multiple columns
-#     grouped = df.groupby(group_cols)
-    
-#     for group_key, group_df in grouped:
-#         runs = []
-
-#         for _, row in group_df.iterrows():
-#             run = [
-#                 row['unique_sols'],
-#                 row['unique_fits'],
-#                 row['noisy_fits'],
-#                 row['sol_iterations'],
-#                 row['sol_transitions']
-#             ]
-#             runs.append(run)
-        
-#         # Use tuple(group_key) as dictionary keys for clear indexing
-#         STN_data.append(runs)
-#         STN_series.append(group_key)
-    
-#     return STN_data, STN_series, Noise_data
 
 @app.callback(
     [Output('STN_data_processed', 'data'),
@@ -1121,9 +1118,10 @@ def process_STN_data(df, group_cols=['algo_name', 'noise']):
         # Each row is a "run" with sequences per generation (lists)
         mo_runs = []
         for _, row in group_df.iterrows():
-            if all(k in row for k in ['pareto_solutions','hypervolumes']):
+            if all(k in row for k in ['pareto_solutions','noisy_pf_noisy_hypervolumes']):
                 pareto_solutions = row['pareto_solutions'] or []
-                hypervolumes     = row.get('hypervolumes', []) or []
+                hypervolumes     = row.get('noisy_pf_noisy_hypervolumes', []) or []
+                hypervolumes_true  = row.get('noisy_pf_true_hypervolumes', []) or []
                 # guard differing lengths
                 Gmax = min(len(pareto_solutions), len(hypervolumes))
                 fronts = []
@@ -1131,6 +1129,7 @@ def process_STN_data(df, group_cols=['algo_name', 'noise']):
                     fronts.append({
                         'front_solutions': pareto_solutions[g],  # list of bitstrings
                         'hypervolume': hypervolumes[g],
+                        'hypervolume_true': hypervolumes_true[g],
                         'gen_idx': g
                     })
                 if fronts:
@@ -1399,48 +1398,75 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                     tgt = stn_node_mapping[curr_key]
                     G.add_edge(src, tgt, weight=STN_edge_size_slider, color=edge_color, edge_type='STN')
                     # print(f"DEBUG: Added STN edge from {src} to {tgt}")
-    
+
     def add_mo_fronts_to_graph(
         G: nx.MultiDiGraph,
         mo_runs_for_series,
         edge_color: str,
         series_idx: int,
-    ):
-        """Adds multiobjective STN nodes/edges for group of pareto fronts"""
+        ):
+        """Adds multiobjective STN nodes/edges for group of Pareto fronts."""
         mo_nodes = []
 
         for run_idx, front_seq in enumerate(mo_runs_for_series or []):
-            prev_node = None
+            prev_true = None
             for item in front_seq or []:
                 front = item.get('front_solutions', []) or []
-                hv    = float(item.get('hypervolume', 0.0))
-                g     = int(item.get('gen_idx', 0))
+                hv_noisy = float(item.get('hypervolume', 0.0))
+                hv_true  = float(item.get('hypervolume_true', hv_noisy))
+                g        = int(item.get('gen_idx', 0))
 
-                node_label = f"MO_S{series_idx}_R{run_idx}_G{g}"
-                if node_label not in G.nodes:
+                # ----- TRUE node -----
+                node_true = f"MO_S{series_idx}_R{run_idx}_G{g}_True"
+                if node_true not in G.nodes:
                     G.add_node(
-                        node_label,
+                        node_true,
                         type="STN_MO",
                         front_solutions=front,
                         front_size=len(front),
-                        hypervolume=hv,
-                        fitness=hv, # trick to improve compatability with single objective
+                        hypervolume=hv_true,
+                        fitness=hv_true,          # for z-axis
                         run_idx=run_idx,
                         gen_idx=g,
                         color=edge_color,
                     )
+                mo_nodes.append((node_true, G.nodes[node_true]))
 
-                mo_nodes.append((node_label, G.nodes[node_label]))
+                # ----- NOISY node -----
+                node_noisy = f"MO_S{series_idx}_R{run_idx}_G{g}_Noisy"
+                if node_noisy not in G.nodes:
+                    G.add_node(
+                        node_noisy,
+                        type="STN_MO_Noise",
+                        front_solutions=front,
+                        front_size=len(front),
+                        hypervolume=hv_noisy,
+                        fitness=hv_noisy,
+                        run_idx=run_idx,
+                        gen_idx=g,
+                        color=edge_color,
+                    )
+                mo_nodes.append((node_noisy, G.nodes[node_noisy]))
 
-                if prev_node is not None:
+                # Vertical "Noise" edge between true and noisy nodes
+                G.add_edge(
+                    node_true,
+                    node_noisy,
+                    weight=0.5,               # smaller edge width
+                    color=edge_color,
+                    edge_type="Noise_MO"
+                )
+
+                # Connect consecutive TRUE nodes across generations (evolution)
+                if prev_true is not None:
                     G.add_edge(
-                        prev_node,
-                        node_label,
+                        prev_true,
+                        node_true,
                         weight=STN_edge_size_slider,
                         color=edge_color,
                         edge_type="STN_MO",
                     )
-                prev_node = node_label
+                prev_true = node_true
 
         return mo_nodes
 
@@ -1850,7 +1876,6 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
         mo_nodes = [(n, d) for n, d in G.nodes(data=True) if d.get('type') == 'STN_MO']
         mo_labels = [n for n, _ in mo_nodes]
         fronts    = [d.get('front_solutions', []) for _, d in mo_nodes]
-        runs      = [d.get('run_idx', 0) for _, d in mo_nodes]  # for optional jitter
         K = len(fronts)
 
         if K == 0:
@@ -1884,6 +1909,14 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
 
             # Assign positions to the MO nodes
             pos = {mo_labels[i]: (float(XY[i, 0]), float(XY[i, 1])) for i in range(K)}
+
+            # --- Add positions for noisy MO nodes (same x,y as their true counterparts) ---
+            for node, data in G.nodes(data=True):
+                if data.get('type') == 'STN_MO_Noise':
+                    # Find the corresponding true node (same prefix before "_Noisy")
+                    base_label = node.replace('_Noisy', '_True')
+                    if base_label in pos:
+                        pos[node] = pos[base_label]
     else:
         solutions_set = set()
         for node, data in G.nodes(data=True):
