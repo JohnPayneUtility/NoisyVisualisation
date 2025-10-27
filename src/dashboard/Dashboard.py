@@ -1318,7 +1318,8 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                 LON_edge_size_slider, STN_edge_size_slider, noisy_fitnesses_list,
                 stn_mo_mode, STN_MO_data, STN_MO_series_labels):
     print('\033[1;31mCreating new Plot...\033[0m')
-    print(STN_labels)
+    # print(STN_labels)
+
     # LON Options
     LON_filter_negative = 'LON-filter-neg' in LON_options
     LON_hamming = 'LON-hamming' in LON_options
@@ -1784,8 +1785,6 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
             selected_runs = []
             if n_runs_display > 0:
                 selected_runs.extend(mo_runs[run_start_index:run_start_index + n_runs_display])
-
-            # [?] LATER ADD SHOW BEST / SHOW WORST / ETC.
 
             add_mo_fronts_to_graph(
             G,
