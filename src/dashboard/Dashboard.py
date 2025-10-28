@@ -8,6 +8,7 @@ import networkx as nx
 import numpy as np
 from sklearn.manifold import MDS as MDS_sklearn
 from sklearn.manifold import TSNE
+from collections import defaultdict
 
 from .DashboardHelpers import *
 
@@ -62,6 +63,7 @@ df_no_lists.drop([
     'noisy_pf_noisy_hypervolumes',
     'noisy_pf_true_hypervolumes',
     'true_pf_hypervolumes',
+    'n_gens_pareto_best',
 ], axis=1, errors='ignore', inplace=True)
 print(df_no_lists['PID'].unique())
 
@@ -125,6 +127,7 @@ display2_df.drop([
     'noisy_pf_noisy_hypervolumes',
     'noisy_pf_true_hypervolumes',
     'true_pf_hypervolumes',
+    'n_gens_pareto_best',
 ], axis=1, errors='ignore', inplace=True)
 display2_hidden_cols = [
     'problem_type', 
@@ -288,6 +291,7 @@ app.layout = html.Div([
                         {'label': 'noisy pareto noisy hv', 'value': 'npnhv'},
                         {'label': 'true pareto true hv', 'value': 'tpthv'},
                         {'label': 'noisy pareto both hv', 'value': 'npbhv'},
+                        {'label': 'both pareto', 'value': 'bpbhv'},
                     ],
                     value='npnhv',
                     placeholder='multiobjective plot type',
@@ -1139,6 +1143,90 @@ def update_filtered_view(selected_rows, table2_data):
 
 #     return STN_data, STN_series, Noise_data, MO_data, MO_series
 
+# @app.callback(
+#     [Output('STN_data_processed', 'data'),
+#      Output('STN_series_labels', 'data'),
+#      Output('noisy_fitnesses_data', 'data'),
+#      Output('STN_MO_data', 'data'),
+#      Output('STN_MO_series_labels', 'data')],
+#     [Input('STN_data', 'data'),
+#      Input('mo_plot_type', 'value')],
+# )
+# def process_STN_data(df, mo_plot_type, group_cols=['algo_name', 'noise']):
+#     df = pd.DataFrame(df)
+#     STN_data, STN_series, Noise_data = [], [], []
+#     MO_data, MO_series = [], []
+
+#     if df.empty:
+#         return STN_data, STN_series, Noise_data, MO_data, MO_series
+
+#     # default/fallback if somehow empty
+#     mode = mo_plot_type or 'npnhv'
+
+#     grouped = df.groupby(group_cols)
+
+#     for group_key, group_df in grouped:
+#         # --- classic STN runs (unchanged) ---
+#         runs = []
+#         for _, row in group_df.iterrows():
+#             if all(k in row for k in ['unique_sols','unique_fits','noisy_fits','sol_iterations','sol_transitions']):
+#                 runs.append([
+#                     row['unique_sols'],
+#                     row['unique_fits'],
+#                     row['noisy_fits'],
+#                     row['sol_iterations'],
+#                     row['sol_transitions'],
+#                 ])
+#         STN_data.append(runs)
+#         STN_series.append(group_key)
+
+#         # --- MO runs (mode-dependent) ---
+#         mo_runs = []
+#         for _, row in group_df.iterrows():
+#             # Select columns based on mode
+#             if mode == 'tpthv':
+#                 pareto_solutions = (row.get('true_pareto_solutions') or [])
+#                 hv_noisy         = (row.get('true_pf_hypervolumes') or [])
+#                 # hv_true          = hv_noisy
+#                 hv_true          = hv_noisy
+#             elif mode == 'npbhv':
+#                 pareto_solutions = (row.get('pareto_solutions') or [])
+#                 hv_noisy         = (row.get('noisy_pf_noisy_hypervolumes') or [])
+#                 hv_true          = (row.get('noisy_pf_true_hypervolumes') or [])
+#             elif mode == 'tpbhv':
+#                 pareto_solutions = (row.get('true_pareto_solutions') or [])
+#                 hv_noisy         = (row.get('true_pf_hypervolumes') or [])
+#                 hv_true          = (row.get('noisy_pf_noisy_hypervolumes') or [])
+#             else:  # 'npnhv' (default)
+#                 pareto_solutions = (row.get('pareto_solutions') or [])
+#                 hv_noisy         = (row.get('noisy_pf_noisy_hypervolumes') or [])
+#                 # hv_true          = (row.get('noisy_pf_true_hypervolumes') or [])
+#                 hv_true          = hv_noisy
+
+#             if not pareto_solutions:
+#                 continue
+
+#             Gmax = min(len(pareto_solutions), len(hv_noisy))
+#             if Gmax == 0:
+#                 continue
+
+#             fronts = []
+#             for g in range(Gmax):
+#                 fronts.append({
+#                     'front_solutions': pareto_solutions[g],   # list of bitstrings
+#                     'hypervolume': hv_noisy[g],               # primary HV used by your plot
+#                     # 'hypervolume_true': hv_true[g] if g < len(hv_true) else None,
+#                     'hypervolume_true': hv_true[g],
+#                     'gen_idx': g
+#                 })
+#             if fronts:
+#                 mo_runs.append(fronts)
+
+#         MO_data.append(mo_runs)
+#         MO_series.append(group_key)
+
+#     return STN_data, STN_series, Noise_data, MO_data, MO_series
+
 @app.callback(
     [Output('STN_data_processed', 'data'),
      Output('STN_series_labels', 'data'),
@@ -1149,6 +1237,7 @@ def update_filtered_view(selected_rows, table2_data):
      Input('mo_plot_type', 'value')],
 )
 def process_STN_data(df, mo_plot_type, group_cols=['algo_name', 'noise']):
+    print('Processing data...', flush=True)
     df = pd.DataFrame(df)
     STN_data, STN_series, Noise_data = [], [], []
     MO_data, MO_series = [], []
@@ -1179,48 +1268,63 @@ def process_STN_data(df, mo_plot_type, group_cols=['algo_name', 'noise']):
         # --- MO runs (mode-dependent) ---
         mo_runs = []
         for _, row in group_df.iterrows():
-            # Select columns based on mode
-            if mode == 'tpthv':
-                pareto_solutions = (row.get('true_pareto_solutions') or [])
-                hv_noisy         = (row.get('true_pf_hypervolumes') or [])
-                # hv_true          = hv_noisy
-                hv_true          = hv_noisy
-            elif mode == 'npbhv':
-                pareto_solutions = (row.get('pareto_solutions') or [])
-                hv_noisy         = (row.get('noisy_pf_noisy_hypervolumes') or [])
-                hv_true          = (row.get('noisy_pf_true_hypervolumes') or [])
-            elif mode == 'tpbhv':
-                pareto_solutions = (row.get('true_pareto_solutions') or [])
-                hv_noisy         = (row.get('true_pf_hypervolumes') or [])
-                hv_true          = (row.get('noisy_pf_noisy_hypervolumes') or [])
-            else:  # 'npnhv' (default)
-                pareto_solutions = (row.get('pareto_solutions') or [])
-                hv_noisy         = (row.get('noisy_pf_noisy_hypervolumes') or [])
-                # hv_true          = (row.get('noisy_pf_true_hypervolumes') or [])
-                hv_true          = hv_noisy
+            pareto_solutions = (row.get('pareto_solutions') or [])
+            nps_hv_noisy         = (row.get('noisy_pf_noisy_hypervolumes') or [])
+            nps_hv_true          = (row.get('noisy_pf_true_hypervolumes') or [])
+            true_pareto_solutions = (row.get('true_pareto_solutions') or [])
+            tps_hv_true         = (row.get('true_pf_hypervolumes') or [])
 
-            if not pareto_solutions:
-                continue
-
-            Gmax = min(len(pareto_solutions), len(hv_noisy))
-            if Gmax == 0:
-                continue
+            Gmax = min(len(pareto_solutions), len(nps_hv_noisy))
 
             fronts = []
             for g in range(Gmax):
-                fronts.append({
-                    'front_solutions': pareto_solutions[g],   # list of bitstrings
-                    'hypervolume': hv_noisy[g],               # primary HV used by your plot
-                    # 'hypervolume_true': hv_true[g] if g < len(hv_true) else None,
-                    'hypervolume_true': hv_true[g],
-                    'gen_idx': g
-                })
+                if mode == 'bpbhv': # Both pareto front sets & both metrics
+                    fronts.append({
+                        'front1':   true_pareto_solutions[g],
+                        'front2':   pareto_solutions[g],
+                        'metric1':  tps_hv_true[g],
+                        'metric2':  nps_hv_noisy[g],
+                        'gen_idx':  g,
+                    })
+                elif mode == 'tpthv':
+                    fronts.append({
+                        'front1':   true_pareto_solutions[g],
+                        'front2':   None,
+                        'metric1':  tps_hv_true[g],
+                        'metric2':  None,
+                        'gen_idx':  g,
+                    })
+                elif mode == 'npbhv':
+                    fronts.append({
+                        'front1':   pareto_solutions[g],
+                        'front2':   None,
+                        'metric1':  nps_hv_true[g],
+                        'metric2':  nps_hv_noisy[g],
+                        'gen_idx':  g,
+                    })
+                elif mode == 'tpbhv':
+                    fronts.append({
+                        'front1':   pareto_solutions[g],
+                        'front2':   None,
+                        'metric1':  tps_hv_true[g],
+                        'metric2':  None,
+                        'gen_idx':  g,
+                    })
+                else:  # npnhv
+                    fronts.append({
+                        'front1':   pareto_solutions[g],
+                        'front2':   None,
+                        'metric1':  nps_hv_noisy[g],
+                        'metric2':  None,
+                        'gen_idx':  g,
+                    })
             if fronts:
                 mo_runs.append(fronts)
 
+        print(f'generations in data: {Gmax}', flush=True)
         MO_data.append(mo_runs)
         MO_series.append(group_key)
-
+    print('Data processing complete', flush=True)
     return STN_data, STN_series, Noise_data, MO_data, MO_series
 
 @app.callback(
@@ -1317,8 +1421,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                 STN_node_min, STN_node_max, LON_node_min, LON_node_max,
                 LON_edge_size_slider, STN_edge_size_slider, noisy_fitnesses_list,
                 stn_mo_mode, STN_MO_data, STN_MO_series_labels):
-    print('\033[1;31mCreating new Plot...\033[0m')
-    # print(STN_labels)
+    print('\033[1m\033[31mCreating new Plot...\033[0m', flush=True)
 
     # LON Options
     LON_filter_negative = 'LON-filter-neg' in LON_options
@@ -1564,8 +1667,6 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                 print(f"\033[33m    fronts (G: size): {gen_str}{tail}\033[0m")
 
 
-
-
     # def add_mo_fronts_to_graph(
     #     G: nx.MultiDiGraph,
     #     mo_runs_for_series,
@@ -1639,7 +1740,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
     #                 )
     #             prev_true = node_true
 
-    #     print_graph_summary(G)
+    #     # print_graph_summary(G)
     #     return mo_nodes
 
     def add_mo_fronts_to_graph(
@@ -1648,132 +1749,358 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
         edge_color: str,
         series_idx: int,
         ):
-        """Adds multiobjective STN nodes/edges for group of Pareto fronts."""
-        def _front_sig(front):
-            return frozenset(tuple(int(x) for x in sol) for sol in (front or []))
-        
+        """
+        Adds MO STN nodes/edges using generic keys:
+        - Always create a base node from front1 with metric1.
+        - Connect consecutive base nodes across generations.
+        - If metric2 is present, create a 'noisy' node:
+            * If front2 is provided, use it for the noisy node.
+            * Otherwise reuse front1.
+            Add a vertical edge between base and noisy nodes.
+        """
+        print(f"[MO DEBUG] add_mo_fronts_to_graph(series_idx={series_idx})", flush=True)
         mo_nodes = []
 
         for run_idx, front_seq in enumerate(mo_runs_for_series or []):
-            # ====================================================
-            # STEP 1: Compress consecutive identical fronts
-            # ====================================================
-            compressed = []
-            prev_sig = None
-            run_len = 0
-            prev_front = None
-            prev_hv_true = prev_hv_noisy = None
-            first_g = None
+            prev_base = None
 
-            for item in (front_seq or []):
-                front    = item.get('front_solutions', []) or []
-                hv_noisy = float(item.get('hypervolume', 0.0))
-                hv_true  = float(item.get('hypervolume_true', hv_noisy))
-                g        = int(item.get('gen_idx', 0))
-                sig = _front_sig(front)
+            count_front1 = sum(1 for it in front_seq if (it.get('front1') is not None))
+            count_front2 = sum(1 for it in front_seq if (it.get('front2') is not None))
+            print(f"[MO DEBUG] Run {run_idx}: front1_gens={count_front1}, front2_gens={count_front2}, total_gens={len(front_seq)}", flush=True)
 
-                if sig == prev_sig:
-                    run_len += 1
-                    prev_hv_true  = hv_true
-                    prev_hv_noisy = hv_noisy
-                else:
-                    if prev_sig is not None:
-                        compressed.append({
-                            "front_solutions": prev_front,
-                            "front_size": len(prev_front or []),
-                            "duration": run_len,
-                            "hypervolume_true": prev_hv_true,
-                            "hypervolume_noisy": prev_hv_noisy,
-                            "gen_idx": first_g,
-                        })
-                    prev_sig = sig
-                    prev_front = front
-                    prev_hv_true = hv_true
-                    prev_hv_noisy = hv_noisy
-                    run_len = 1
-                    first_g = g
+            for item in front_seq or []:
+                front1  = item.get('front1') or []
+                front2  = item.get('front2') or None
+                m1_raw  = item.get('metric1', 0.0)
+                m2_raw  = item.get('metric2', None)
+                g       = int(item.get('gen_idx', 0))
 
-            if prev_sig is not None:
-                compressed.append({
-                    "front_solutions": prev_front,
-                    "front_size": len(prev_front or []),
-                    "duration": run_len,
-                    "hypervolume_true": prev_hv_true,
-                    "hypervolume_noisy": prev_hv_noisy,
-                    "gen_idx": first_g,
-                })
+                # Safe numeric conversion
+                try:
+                    m1 = float(m1_raw if m1_raw is not None else 0.0)
+                except Exception:
+                    m1 = 0.0
+                try:
+                    m2 = float(m2_raw) if m2_raw is not None else None
+                except Exception:
+                    m2 = None
 
-            # ====================================================
-            # STEP 2: Create TRUE and NOISY nodes from compressed fronts
-            # ====================================================
-            prev_true = None
-            for seg_idx, seg in enumerate(compressed):
-                front = seg["front_solutions"]
-                hv_true  = seg["hypervolume_true"]
-                hv_noisy = seg["hypervolume_noisy"]
-                dur = seg["duration"]
-                gen_idx = int(seg["gen_idx"]) 
+                # -------- base (front1, metric1) node --------
+                node_base = f"MO_S{series_idx}_R{run_idx}_G{g}_True"
+                if node_base not in G.nodes:
+                    G.add_node(
+                        node_base,
+                        type="STN_MO",
+                        is_noisy=False,
+                        front_solutions=front1,
+                        front_size=len(front1),
+                        hypervolume=m1,
+                        fitness=m1,            # z-axis value
+                        run_idx=run_idx,
+                        gen_idx=g,
+                        color=edge_color,
+                    )
+                mo_nodes.append((node_base, G.nodes[node_base]))
 
-                node_true  = f"MO_S{series_idx}_R{run_idx}_Seg{seg_idx}_True"
-                node_noisy = f"MO_S{series_idx}_R{run_idx}_Seg{seg_idx}_Noisy"
+                # -------- optional noisy node (metric2) --------
+                if m2 is not None:
+                    noisy_front = front2 if (front2 is not None) else front1
+                    node_noisy = f"MO_S{series_idx}_R{run_idx}_G{g}_Noisy"
+                    if node_noisy not in G.nodes:
+                        G.add_node(
+                            node_noisy,
+                            type="STN_MO_Noise",
+                            is_noisy=True,
+                            front_solutions=noisy_front,
+                            front_size=len(noisy_front),
+                            hypervolume=m2,
+                            fitness=m2,
+                            run_idx=run_idx,
+                            gen_idx=g,
+                            color=edge_color,
+                        )
+                    mo_nodes.append((node_noisy, G.nodes[node_noisy]))
 
-                # TRUE node
-                G.add_node(
-                    node_true,
-                    type="STN_MO",
-                    is_noisy=False,
-                    front_solutions=front,
-                    front_size=len(front),
-                    duration=dur,
-                    hypervolume=hv_true,
-                    fitness=hv_true,
-                    run_idx=run_idx,
-                    gen_idx=gen_idx,
-                    color=edge_color,
-                )
-                mo_nodes.append((node_true, G.nodes[node_true]))
-
-                # NOISY node
-                G.add_node(
-                    node_noisy,
-                    type="STN_MO_Noise",
-                    is_noisy=True,
-                    front_solutions=front,
-                    front_size=len(front),
-                    duration=dur,
-                    hypervolume=hv_noisy,
-                    fitness=hv_noisy,
-                    run_idx=run_idx,
-                    gen_idx=gen_idx,
-                    color=edge_color,
-                )
-                mo_nodes.append((node_noisy, G.nodes[node_noisy]))
-
-                # Edge between TRUE ↔ NOISY
-                G.add_edge(
-                    node_true, node_noisy,
-                    weight=0.5,
-                    color=edge_color,
-                    edge_type="Noise_MO",
-                    is_noisy=True,
-                    run_idx=run_idx,
-                )
-
-                # Evolutionary edge to previous TRUE node
-                if prev_true is not None:
+                    # edge between metric1 and metric2 nodes
                     G.add_edge(
-                        prev_true, node_true,
-                        weight=STN_edge_size_slider,
+                        node_base,
+                        node_noisy,
+                        weight=0.5,
+                        color=edge_color,
+                        edge_type="Noise_MO",
+                        is_noisy=True,
+                    )
+
+                # -------- temporal link across generations --------
+                if prev_base is not None:
+                    G.add_edge(
+                        prev_base,
+                        node_base,
+                        weight=0.5,
                         color=edge_color,
                         edge_type="STN_MO",
                         is_noisy=False,
-                        run_idx=run_idx,
                     )
+                prev_base = node_base
 
-                prev_true = node_true
-
-        print(f"\033[33mAdded MO nodes (compressed consecutive duplicates)\033[0m")
         return mo_nodes
+
+
+    # def _front_sig(front):
+    #     if not front:
+    #         return None
+    #     return frozenset(tuple(int(x) for x in sol) for sol in front)
+
+    # def add_mo_fronts_to_graph(
+    #     G: nx.MultiDiGraph,
+    #     mo_runs_for_series,
+    #     edge_color: str,
+    #     series_idx: int,
+    #     edge_vert_weight: float = 0.5,
+    # ):
+    #     mo_nodes = []
+
+    #     for run_idx, front_seq in enumerate(mo_runs_for_series or []):
+    #         # ------------------------------------------------------------------
+    #         # Compress segments based ONLY on front1 (primary front)
+    #         # ------------------------------------------------------------------
+    #         compressed = []
+    #         prev_sig = None
+    #         run_len = 0
+    #         first_g = None
+
+    #         # track last values for current segment
+    #         seg_f1 = seg_f2 = None
+    #         seg_m1 = seg_m2 = None
+
+    #         for it in (front_seq or []):
+    #             f1 = it.get('front1')
+    #             f2 = it.get('front2')
+    #             m1 = it.get('metric1')
+    #             m2 = it.get('metric2')
+    #             g  = int(it.get('gen_idx', 0))
+
+    #             sig = _front_sig(f1)
+
+    #             if sig == prev_sig:
+    #                 run_len += 1
+    #                 seg_f1, seg_f2 = f1, f2
+    #                 seg_m1, seg_m2 = m1, m2
+    #             else:
+    #                 if prev_sig is not None:
+    #                     compressed.append({
+    #                         'f1': seg_f1,
+    #                         'f2': seg_f2,
+    #                         'm1': seg_m1,
+    #                         'm2': seg_m2,
+    #                         'duration': run_len,
+    #                         'gen_idx': first_g,
+    #                     })
+    #                 prev_sig = sig
+    #                 run_len = 1
+    #                 first_g = g
+    #                 seg_f1, seg_f2 = f1, f2
+    #                 seg_m1, seg_m2 = m1, m2
+
+    #         if prev_sig is not None:
+    #             compressed.append({
+    #                 'f1': seg_f1,
+    #                 'f2': seg_f2,
+    #                 'm1': seg_m1,
+    #                 'm2': seg_m2,
+    #                 'duration': run_len,
+    #                 'gen_idx': first_g,
+    #             })
+
+    #         # ------------------------------------------------------------------
+    #         # Build graph nodes/edges
+    #         # ------------------------------------------------------------------
+    #         prev_primary_node = None
+
+    #         for seg_idx, seg in enumerate(compressed):
+    #             f1 = seg['f1']
+    #             f2 = seg['f2']
+    #             m1 = seg['m1']
+    #             m2 = seg['m2']
+    #             dur = int(seg['duration'])
+    #             gen_idx = int(seg['gen_idx'])
+
+    #             node_f1 = f"MO_S{series_idx}_R{run_idx}_Seg{seg_idx}_F1"
+    #             node_f2 = f"MO_S{series_idx}_R{run_idx}_Seg{seg_idx}_F2"
+
+    #             have_f1 = f1 is not None
+    #             have_f2 = f2 is not None
+
+    #             # ----- PRIMARY NODE: FRONT1 -----
+    #             if have_f1:
+    #                 metric_f1 = m1 if m1 is not None else m2
+    #                 G.add_node(
+    #                     node_f1,
+    #                     type="STN_MO",
+    #                     is_noisy=False,
+    #                     front_solutions=f1,
+    #                     front_size=len(f1),
+    #                     duration=dur,
+    #                     hypervolume=metric_f1,
+    #                     fitness=metric_f1,
+    #                     run_idx=run_idx,
+    #                     gen_idx=gen_idx,
+    #                     color=edge_color,
+    #                 )
+    #                 mo_nodes.append((node_f1, G.nodes[node_f1]))
+
+    #             # ----- SECONDARY NODE: FRONT2 -----
+    #             if have_f2:
+    #                 metric_f2 = m2 if m2 is not None else m1
+    #                 G.add_node(
+    #                     node_f2,
+    #                     type="STN_MO_Noise",
+    #                     is_noisy=True,
+    #                     front_solutions=f2,
+    #                     front_size=len(f2),
+    #                     duration=dur,
+    #                     hypervolume=metric_f2,
+    #                     fitness=metric_f2,
+    #                     run_idx=run_idx,
+    #                     gen_idx=gen_idx,
+    #                     color=edge_color,
+    #                 )
+    #                 mo_nodes.append((node_f2, G.nodes[node_f2]))
+
+    #             # ----- Vertical link F1 ↔ F2 for same segment -----
+    #             if have_f1 and have_f2:
+    #                 G.add_edge(
+    #                     node_f1, node_f2,
+    #                     weight=edge_vert_weight,
+    #                     color=edge_color,
+    #                     edge_type="STN_MO_Noise",
+    #                     is_noisy=True,
+    #                     run_idx=run_idx,
+    #                 )
+
+    #             # ----- Trajectory edge across segments using F1 -----
+    #             if have_f1:
+    #                 if prev_primary_node is not None:
+    #                     G.add_edge(
+    #                         prev_primary_node, node_f1,
+    #                         weight=STN_edge_size_slider,
+    #                         color=edge_color,
+    #                         edge_type="STN_MO",
+    #                         is_noisy=False,
+    #                         run_idx=run_idx,
+    #                     )
+    #                 prev_primary_node = node_f1
+
+    #     print("\033[33mAdded MO nodes\033[0m", flush=True)
+    #     return mo_nodes
+
+    # def add_unique_edge(G, u, v, **attrs):
+    #     et = attrs.get('edge_type')
+    #     if G.has_edge(u, v):
+    #         for _, d in G[u][v].items():
+    #             if d.get('edge_type') == et:
+    #                 return
+    #     G.add_edge(u, v, **attrs)
+    
+    # def _front_sig(front):
+    #     # hashable signature for a PF (order-invariant)
+    #     return frozenset(tuple(int(x) for x in sol) for sol in (front or []))
+
+    # def add_mo_fronts_to_graph(G, mo_runs_for_series, edge_color, series_idx):
+    #     # Optional: wipe previous nodes for this series if you always rebuild:
+    #     # clear_mo_for_series(G, series_idx)
+
+    #     print(f"[MO DEBUG] add_mo_fronts_to_graph(series_idx={series_idx})", flush=True)
+
+    #     mo_nodes = []
+    #     seen_true  = set()
+    #     seen_noisy = set()
+    #     noisy_by_pair = defaultdict(list)
+
+    #     for run_idx, front_seq in enumerate(mo_runs_for_series or []):
+    #         prev_true = None
+
+    #         repeats = []
+    #         prev_sig = None
+    #         for it in front_seq:
+    #             sig = _front_sig(it.get('front1') or [])
+    #             repeats.append(sig == prev_sig)
+    #             prev_sig = sig
+    #         print(f"[MO DEBUG] Run {run_idx}: repeated_front1_spans="
+    #             f"{sum(repeats)} (of {len(front_seq)-1} transitions)", flush=True)
+
+    #         print(f"[MO DEBUG] Run {run_idx}: repeated_front1_spans="
+    #             f"{sum(repeats)} (of {len(front_seq)-1} transitions)", flush=True)
+
+    #         # quick counts (your earlier debug)
+    #         count_front1 = sum(1 for it in front_seq if it.get('front1') is not None)
+    #         count_front2 = sum(1 for it in front_seq if it.get('front2') is not None)
+    #         print(f"[MO DEBUG] Run {run_idx}: front1_gens={count_front1}, front2_gens={count_front2}, total_gens={len(front_seq)}", flush=True)
+
+    #         for item in front_seq or []:
+    #             front1  = item.get('front1') or []
+    #             front2  = item.get('front2')
+    #             m1      = float(item.get('metric1', 0.0) or 0.0)
+    #             m2_raw  = item.get('metric2', None)
+    #             m2      = float(m2_raw) if m2_raw is not None else None
+    #             g       = int(item.get('gen_idx', 0))
+
+    #             pair_key = f"S{series_idx}_R{run_idx}_G{g}"
+
+    #             # ---- True node ----
+    #             node_true = f"MO_S{series_idx}_R{run_idx}_G{g}_True"
+    #             if node_true not in G:
+    #                 G.add_node(
+    #                     node_true,
+    #                     type="STN_MO", is_noisy=False,
+    #                     front_solutions=front1, front_size=len(front1),
+    #                     hypervolume=m1, fitness=m1,
+    #                     run_idx=run_idx, gen_idx=g, color=edge_color,
+    #                     pair_key=pair_key
+    #                 )
+    #             else:
+    #                 # Optional: update attributes if you like
+    #                 pass
+    #             mo_nodes.append((node_true, G.nodes[node_true]))
+    #             seen_true.add(node_true)
+
+    #             # ---- Noisy node (only if metric2 exists) ----
+    #             if m2 is not None:
+    #                 noisy_front = front2 if front2 is not None else front1
+    #                 node_noisy = f"MO_S{series_idx}_R{run_idx}_G{g}_Noisy"
+    #                 if node_noisy not in G:
+    #                     G.add_node(
+    #                         node_noisy,
+    #                         type="STN_MO_Noise", is_noisy=True,
+    #                         front_solutions=noisy_front, front_size=len(noisy_front),
+    #                         hypervolume=m2, fitness=m2,
+    #                         run_idx=run_idx, gen_idx=g, color=edge_color,
+    #                         pair_key=pair_key
+    #                     )
+    #                 mo_nodes.append((node_noisy, G.nodes[node_noisy]))
+    #                 seen_noisy.add(node_noisy)
+    #                 noisy_by_pair[pair_key].append(node_noisy)
+
+    #                 # vertical edge (de-duped)
+    #                 add_unique_edge(G, node_true, node_noisy,
+    #                                 weight=0.5, color=edge_color,
+    #                                 edge_type="Noise_MO", is_noisy=True)
+
+    #             # temporal edge (de-duped)
+    #             if prev_true is not None:
+    #                 add_unique_edge(G, prev_true, node_true,
+    #                                 weight=STN_edge_size_slider, color=edge_color,
+    #                                 edge_type="STN_MO", is_noisy=False)
+    #             prev_true = node_true
+
+    #     # Post-build invariant check
+    #     bad = [(pk, nodes) for pk, nodes in noisy_by_pair.items() if len(nodes) > 1]
+    #     if bad:
+    #         print("[MO DEBUG] Invariant violated: multiple Noisy nodes for a single pair_key:", flush=True)
+    #         for pk, nodes in bad:
+    #             print(f"  {pk}: {nodes}", flush=True)
+
+    #     return mo_nodes
 
     debug_summaries = []
     if mo_mode:
@@ -2209,7 +2536,13 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
         return 0.5*(d1 + d2)
         # return d1
 
-
+    def _is_dual_front():
+            for n_noisy, d_noisy in noisy_nodes:
+                base = n_noisy.replace('_Noisy', '_True')
+                if base in G.nodes:
+                    if G.nodes[base].get('front_solutions', []) != d_noisy.get('front_solutions', []):
+                        return True
+            return False
 
     # Prepare node positions based on selected layout
     # unique_solution_positions = {}
@@ -2222,28 +2555,86 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
 
     if mo_mode:
         print('CALCULATING DISTANCES IN MULTIOBJECTIVE MODE')
-
         # Get the current MO nodes directly from the graph
-        mo_nodes = [(n, d) for n, d in G.nodes(data=True) if d.get('type') == 'STN_MO']
-        mo_labels = [n for n, _ in mo_nodes]
-        fronts    = [d.get('front_solutions', []) for _, d in mo_nodes]
+        # mo_nodes = [(n, d) for n, d in G.nodes(data=True) if d.get('type') == 'STN_MO']
+        # mo_labels = [n for n, _ in mo_nodes]
+        # fronts    = [d.get('front_solutions', []) for _, d in mo_nodes]
+        # K = len(fronts)
+
+        # if K == 0:
+        #     pos = {}
+        # else:
+        #     # Build symmetric distance matrix (uses your front_distance)
+        #     D = np.zeros((K, K), dtype=float)
+        #     # for i in range(K):
+        #     #     for j in range(i + 1, K):
+        #     #         d = front_distance(fronts[i], fronts[j])
+        #     #         D[i, j] = D[j, i] = float(d)
+        #     for i in range(K):
+        #         for j in range(K):
+        #             if i != j:
+        #                 D[i, j] = float(front_distance(fronts[i], fronts[j]))
+
+        #     # Choose embedding
+        #     if layout == 'mds':
+        #         mds = MDS_sklearn(n_components=2, dissimilarity='precomputed', random_state=42)
+        #         XY = mds.fit_transform(D)
+        #     elif layout == 'tsne':
+        #         tsne = TSNE(n_components=2, metric='precomputed', random_state=42, init='random')
+        #         XY = tsne.fit_transform(D)
+        #     elif layout in ('kamada_kawai', 'kamada_kawai_weighted', 'spring'):
+        #         # KK on complete graph weighted by distances
+        #         H = nx.complete_graph(K)
+        #         for i in range(K):
+        #             for j in range(i + 1, K):
+        #                 H[i][j]['weight'] = max(D[i, j], 1e-6)  # avoid zero
+        #         raw = nx.kamada_kawai_layout(H, weight='weight', dim=2)
+        #         XY = np.array([raw[i] for i in range(K)])
+        #     else:
+        #         mds = MDS_sklearn(n_components=2, dissimilarity='precomputed', random_state=42)
+        #         XY = mds.fit_transform(D)
+
+        #     # Assign positions to the MO nodes
+        #     pos = {mo_labels[i]: (float(XY[i, 0]), float(XY[i, 1])) for i in range(K)}
+
+        #     # --- Add positions for noisy MO nodes (same x,y as their true counterparts) ---
+        #     for node, data in G.nodes(data=True):
+        #         if data.get('type') == 'STN_MO_Noise':
+        #             # Find the corresponding true node (same prefix before "_Noisy")
+        #             base_label = node.replace('_Noisy', '_True')
+        #             if base_label in pos:
+        #                 pos[node] = pos[base_label]
+        # Collect nodes
+        base_nodes  = [(n, d) for n, d in G.nodes(data=True) if d.get('type') == 'STN_MO']
+        noisy_nodes = [(n, d) for n, d in G.nodes(data=True) if d.get('type') == 'STN_MO_Noise']
+
+        # Decide mode: dual-front if any noisy front != its base front
+        def _is_dual_front():
+            for n_noisy, d_noisy in noisy_nodes:
+                base = n_noisy.replace('_Noisy', '_True')
+                if base in G.nodes:
+                    if G.nodes[base].get('front_solutions', []) != d_noisy.get('front_solutions', []):
+                        return True
+            return False
+
+        dual_front = _is_dual_front()
+
+        # Nodes to embed
+        embed_nodes = base_nodes + noisy_nodes if dual_front else base_nodes
+        labels = [n for n, _ in embed_nodes]
+        fronts = [d.get('front_solutions', []) for _, d in embed_nodes]
         K = len(fronts)
 
-        if K == 0:
-            pos = {}
-        else:
-            # Build symmetric distance matrix (uses your front_distance)
+        pos = {}
+        if K > 0:
+            # Distance matrix (directed OK)
             D = np.zeros((K, K), dtype=float)
-            # for i in range(K):
-            #     for j in range(i + 1, K):
-            #         d = front_distance(fronts[i], fronts[j])
-            #         D[i, j] = D[j, i] = float(d)
             for i in range(K):
                 for j in range(K):
                     if i != j:
                         D[i, j] = float(front_distance(fronts[i], fronts[j]))
 
-            # Choose embedding
+            # Embedding
             if layout == 'mds':
                 mds = MDS_sklearn(n_components=2, dissimilarity='precomputed', random_state=42)
                 XY = mds.fit_transform(D)
@@ -2251,27 +2642,24 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                 tsne = TSNE(n_components=2, metric='precomputed', random_state=42, init='random')
                 XY = tsne.fit_transform(D)
             elif layout in ('kamada_kawai', 'kamada_kawai_weighted', 'spring'):
-                # KK on complete graph weighted by distances
                 H = nx.complete_graph(K)
-                for i in range(K):
+                for i in range(i := 0, K):
                     for j in range(i + 1, K):
-                        H[i][j]['weight'] = max(D[i, j], 1e-6)  # avoid zero
+                        H[i][j]['weight'] = max(D[i, j], 1e-6)
                 raw = nx.kamada_kawai_layout(H, weight='weight', dim=2)
                 XY = np.array([raw[i] for i in range(K)])
             else:
                 mds = MDS_sklearn(n_components=2, dissimilarity='precomputed', random_state=42)
                 XY = mds.fit_transform(D)
 
-            # Assign positions to the MO nodes
-            pos = {mo_labels[i]: (float(XY[i, 0]), float(XY[i, 1])) for i in range(K)}
+            pos.update({labels[i]: (float(XY[i, 0]), float(XY[i, 1])) for i in range(K)})
 
-            # --- Add positions for noisy MO nodes (same x,y as their true counterparts) ---
-            for node, data in G.nodes(data=True):
-                if data.get('type') == 'STN_MO_Noise':
-                    # Find the corresponding true node (same prefix before "_Noisy")
-                    base_label = node.replace('_Noisy', '_True')
-                    if base_label in pos:
-                        pos[node] = pos[base_label]
+        # If single-front mode, copy base XY to noisy nodes
+        if not dual_front:
+            for n_noisy, _ in noisy_nodes:
+                base = n_noisy.replace('_Noisy', '_True')
+                if base in pos:
+                    pos[n_noisy] = pos[base]
     else:
         solutions_set = set()
         for node, data in G.nodes(data=True):

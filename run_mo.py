@@ -190,6 +190,8 @@ def hydra_algo_data_single(prob_info: Dict[str, Any],
         "noisy_pf_noisy_hypervolumes": algo_instance.noisy_pf_noisy_hypervolumes,
         "noisy_pf_true_hypervolumes": algo_instance.noisy_pf_true_hypervolumes,
         "true_pf_hypervolumes": algo_instance.true_pf_hypervolumes,
+        # iterations
+        "n_gens_pareto_best": algo_instance.n_gens_pareto_best
     }
 
 def hydra_algo_data_multi(prob_info: Dict[str, Any],

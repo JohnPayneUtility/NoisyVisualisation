@@ -46,7 +46,7 @@ hydra:
   sweeper:
     params:
       # algo.pop_size: 100,200,300
-      problem.fitness_params.noise_intensity: 0,1,2
+      problem.fitness_params.noise_intensity: 0,1
       # algo.static_indpb: 0.01,0.02,0.03
   sweep:
     dir: data/outputs

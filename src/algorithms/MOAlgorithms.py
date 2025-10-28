@@ -112,6 +112,11 @@ def mo_umda_update_full(len_sol, population, pop_size, select_size, toolbox,
 # Helper Functions
 # ==============================
 
+def front_sig(front_inds):
+    # represent each solution as a tuple of ints, then frozenset for order-insensitivity
+    sols = [tuple(int(x) for x in ind) for ind in (front_inds or [])]
+    return frozenset(sols)
+
 def record_population_state(data, population, toolbox, true_fitness_function):
     """
     Record the current state of the population.
@@ -134,168 +139,88 @@ def record_population_state(data, population, toolbox, true_fitness_function):
         true_fitnesses.append(best_individual.fitness.values[0])
 
 # def record_pareto_data(
-#     population: List[Any],
-#     pareto_solutions: List[List[Any]],
-#     pareto_fitnesses: List[List[Any]],
-#     pareto_true_fitnesses: List[List[Any]],
-#     hypervolumes: List[float],
-#     hypervolumes_true: List[float],
-#     toolbox,
-#     opt_weights,
-#     true_fitness_function: Optional[tuple] = None,
-#     ref_point: Optional[List[float]] = None,
-#     ):
-#     """ """
-#     # Record solutions in pareto front
-#     pareto_front = tools.ParetoFront()
-#     pareto_front.update(population)
-#     pareto_solutions.append([toolbox.clone(ind) for ind in pareto_front])
-
-#     # Record noisy fitness of Pareto front solutions
-#     pareto_fitnesses.append([ind.fitness.values for ind in pareto_front])
-
-#     # Record true fitness of Pareto front solutions
-#     if true_fitness_function is not None:
-#         true_fit_list = [
-#             true_fitness_function[0](ind, **true_fitness_function[1])
-#             for ind in pareto_front
-#         ]
-#         pareto_true_fitnesses.append(true_fit_list)
-#     else:
-#         pareto_true_fitnesses.append([ind.fitness.values for ind in pareto_front])
-    
-#     # Record hypervolume
-#     if ref_point is not None:
-#         adjusted_front = [toolbox.clone(ind) for ind in pareto_front]
-#         for ind in adjusted_front:
-#             val, w = ind.fitness.values
-#             ind.fitness.values = (-val, w)
-#         adj_pareto_fitnesses = [ind.fitness.values for ind in adjusted_front]
-#         weights_array = np.array(opt_weights)
-#         true_fit_array = np.array(true_fit_list)
-
-#         print(f'pareto fitnesses {[ind.fitness.values for ind in pareto_front]}')
-#         print(f'adjusted fitnesses: {adj_pareto_fitnesses}')
-#         # print(f'true fit array: {true_fit_array}')
-#         hv_ref_point = np.where(weights_array > 0, -np.array(ref_point), np.array(ref_point))
-#         print(f'ref point: {hv_ref_point}')
-
-#         hv = hypervolume(adj_pareto_fitnesses, hv_ref_point)
-#         print(f'hypervolume: {hv}')
-#         hypervolumes.append(hv)
-    # else:
-    #     print('No reference point provided')
-
-# def record_pareto_data(
-#     population: List[Any],
-#     pareto_solutions: List[List[Any]],
-#     pareto_fitnesses: List[List[Any]],
-#     pareto_true_fitnesses: List[List[Any]],
-#     hypervolumes: List[float],
-#     hypervolumes_true: List[float],
-#     toolbox,
-#     opt_weights,
-#     true_fitness_function: Optional[tuple] = None,
-#     ref_point: Optional[List[float]] = None,
-# ):
-#     """Record (noisy) PF, true PF (over PF candidates), and both hypervolumes."""
-#     # ---------- Build *noisy* Pareto front from population ----------
-#     pareto_front = tools.ParetoFront()
-#     pareto_front.update(population)
-
-#     # Store PF solutions (clones) and their noisy fitnesses
-#     pf_clone = [toolbox.clone(ind) for ind in pareto_front]
-#     pareto_solutions.append(pf_clone)
-#     noisy_fit_list = [ind.fitness.values for ind in pareto_front]
-#     pareto_fitnesses.append(noisy_fit_list)
-
-#     # ---------- True fitness for those PF candidates ----------
-#     if true_fitness_function is not None:
-#         tf = true_fitness_function[0]
-#         tf_kwargs = true_fitness_function[1]
-#         true_fit_list = [tf(ind, **tf_kwargs) for ind in pareto_front]
-#         pareto_true_fitnesses.append(true_fit_list)
-#     else:
-#         # Fallback: if no true function provided, mirror noisy
-#         true_fit_list = noisy_fit_list
-#         pareto_true_fitnesses.append(true_fit_list)
-
-#     # ---------- Hypervolumes (noisy + true) ----------
-#     if ref_point is not None and len(noisy_fit_list) > 0:
-#         # Sign convention: for weights > 0 (i.e., maximize), multiply by -1
-#         # so hypervolume is computed in a minimization sense.
-#         w = np.array(opt_weights, dtype=float)
-#         sign = np.where(w > 0, -1.0, 1.0)  # -1 for maximize, +1 for minimize
-#         hv_ref = np.array(ref_point, dtype=float) * sign
-
-#         # Noisy HV (current behavior, renamed)
-#         noisy_pts = np.array(noisy_fit_list, dtype=float) * sign
-#         hv_noisy = hypervolume(noisy_pts.tolist(), hv_ref.tolist())
-#         hypervolumes.append(hv_noisy)
-
-#         # True Pareto front (over the same PF candidates), then HV
-#         # Re-filter nondominated **by true fitness** to avoid counting dominated points.
-#         # We do this by making lightweight clones with .fitness set to the true values.
-#         true_pf_candidates = [toolbox.clone(ind) for ind in pareto_front]
-#         for ind, tf_vals in zip(true_pf_candidates, true_fit_list):
-#             ind.fitness.values = tf_vals
-
-#         true_pf = tools.ParetoFront()
-#         true_pf.update(true_pf_candidates)
-#         true_pts = np.array([ind.fitness.values for ind in true_pf], dtype=float) * sign
-
-#         hv_true = hypervolume(true_pts.tolist(), hv_ref.tolist())
-#         hypervolumes_true.append(hv_true)
-
-# def record_pareto_data(
 #     population,
-#     pareto_solutions,
-#     pareto_fitnesses,
-#     pareto_true_fitnesses,
-#     hypervolumes,
-#     hypervolumes_true,
+#     pareto_solutions, # noisy PF solutions
+#     pareto_fitnesses, # noisy PF noisy fitnesses
+#     pareto_true_fitnesses, # noisy PF true fitnesses
+#     true_pareto_solutions, # true PF approx. solutions
+#     true_pareto_fitnesses, # true PF approx. fitnesses
+#     noisy_pf_noisy_hypervolumes, # noisy HV of noisy PF
+#     noisy_pf_true_hypervolumes, # true HV of noisy PF
+#     true_pf_hypervolumes, # HV of true PF approximation
 #     toolbox,
-#     opt_weights,
+#     opt_weights, # optimisation weights for multiobjective
 #     true_fitness_function=None,
-#     ref_point=None,
+#     ref_point=None, # reference point for HV calculation
 #     ):
+#     """
+#     """
+#     # Assrts
+#     assert true_fitness_function is not None, "true_fitness_function must be provided."
+#     assert ref_point is not None, "ref_point must be provided for hypervolume calculation."
+
+#     # Use config ref point and objectives to determine ref for HV calculation
+#     w = np.asarray(opt_weights, dtype=float)
+#     sign = np.where(w > 0, -1.0, 1.0)  # flip max->min for HV
+#     hv_ref = np.asarray(ref_point, dtype=float) * sign
+
+#     # =========================
+#     # 1) Noisy Pareto front
+#     # =========================
 #     pareto_front = tools.ParetoFront()
 #     pareto_front.update(population)
 
 #     pf_clone = [toolbox.clone(ind) for ind in pareto_front]
 #     pareto_solutions.append(pf_clone)
 
+#     # noisy evals of the noisy PF
 #     noisy_fit_list = [ind.fitness.values for ind in pareto_front]
 #     pareto_fitnesses.append(noisy_fit_list)
-
-#     if true_fitness_function is not None:
-#         tf, tf_kwargs = true_fitness_function
-#         true_fit_list = [tf(ind, **tf_kwargs) for ind in pareto_front]
-#     else:
-#         true_fit_list = noisy_fit_list
+#     # true evals of the noisy PF
+#     tf, tf_kwargs = true_fitness_function
+#     true_fit_list = [tf(ind, **tf_kwargs) for ind in pareto_front]
 #     pareto_true_fitnesses.append(true_fit_list)
 
-#     if ref_point is not None and len(noisy_fit_list) > 0:
-#         w = np.asarray(opt_weights, dtype=float)
-#         sign = np.where(w > 0, -1.0, 1.0)  # flip maximize to minimize
+#     # =========================
+#     # 2) HV for noisy pareto front
+#     # =========================
+#     # noisy HVs
+#     noisy_pts = np.asarray(noisy_fit_list, dtype=float) * sign
+#     hv_noisy = hypervolume(noisy_pts, hv_ref)
+#     noisy_pf_noisy_hypervolumes.append(float(hv_noisy))
+#     # true HVs
+#     true_pts_for_noisy_pf = np.asarray(true_fit_list, dtype=float) * sign
+#     hv_noisy_true = hypervolume(true_pts_for_noisy_pf, hv_ref)
+#     noisy_pf_true_hypervolumes.append(float(hv_noisy_true))
 
-#         hv_ref = np.asarray(ref_point, dtype=float) * sign
+#     # =========================
+#     # 3) TRUE Pareto front (FULL POP, TRUE EVALS) — without touching originals
+#     # =========================
+#     # Clone the WHOLE population and evaluate *true* fitness on the clones
+#     tf, tf_kwargs = true_fitness_function
+#     pop_true = [toolbox.clone(ind) for ind in population]
+#     for ind_clone, ind_orig in zip(pop_true, population):
+#         # Evaluate true fitness on the clone (no side effects on originals)
+#         ind_clone.fitness.values = tf(ind_orig, **tf_kwargs)
 
-#         # Noisy HV
-#         noisy_pts = np.asarray(noisy_fit_list, dtype=float) * sign
-#         hv_noisy = hypervolume(noisy_pts, hv_ref)
-#         hypervolumes.append(float(hv_noisy))
+#     # Compute TRUE PF over true-evaluated clones
+#     true_pf = tools.ParetoFront()
+#     true_pf.update(pop_true)
 
-#         # True HV (optionally re-filter to true nondominated set)
-#         true_pf_candidates = [toolbox.clone(ind) for ind in pareto_front]
-#         for ind, tf_vals in zip(true_pf_candidates, true_fit_list):
-#             ind.fitness.values = tf_vals
-#         true_pf = tools.ParetoFront()
-#         true_pf.update(true_pf_candidates)
-#         true_pts = np.asarray([ind.fitness.values for ind in true_pf], dtype=float) * sign
+#     # Collect TRUE PF solutions and their TRUE fitness values
+#     if true_pareto_solutions is not None:
+#         true_pareto_solutions.append([toolbox.clone(ind) for ind in true_pf])
 
-#         hv_true = hypervolume(true_pts, hv_ref)
-#         hypervolumes_true.append(float(hv_true))
+#     true_pf_fit_true = [ind.fitness.values for ind in true_pf]
+#     if true_pareto_fitnesses is not None:
+#         true_pareto_fitnesses.append(true_pf_fit_true)
+
+#     # =========================
+#     # 4) TRUE HV (of the TRUE PF)
+#     # =========================
+#     true_pts = np.asarray(true_pf_fit_true, dtype=float) * sign
+#     hv_true = hypervolume(true_pts, hv_ref)
+#     true_pf_hypervolumes.append(float(hv_true))
 
 def record_pareto_data(
     population,
@@ -307,6 +232,7 @@ def record_pareto_data(
     noisy_pf_noisy_hypervolumes, # noisy HV of noisy PF
     noisy_pf_true_hypervolumes, # true HV of noisy PF
     true_pf_hypervolumes, # HV of true PF approximation
+    n_gens_pareto_best,
     toolbox,
     opt_weights, # optimisation weights for multiobjective
     true_fitness_function=None,
@@ -326,11 +252,24 @@ def record_pareto_data(
     # =========================
     # 1) Noisy Pareto front
     # =========================
+    # calculate pareto front
     pareto_front = tools.ParetoFront()
     pareto_front.update(population)
-
     pf_clone = [toolbox.clone(ind) for ind in pareto_front]
-    pareto_solutions.append(pf_clone)
+
+    # check if paretofront has changed (only record if so)
+    curr_sig = front_sig(pf_clone)
+    if pareto_solutions:
+        last_sig = front_sig(pareto_solutions[-1])
+        if curr_sig == last_sig:
+            n_gens_pareto_best[-1] += 1 # update iterations best counter
+            return
+        else:
+            n_gens_pareto_best.append(1) # reset counter
+    else:
+        n_gens_pareto_best.append(1) # create initial record
+
+    pareto_solutions.append(pf_clone) # record new pareto front
 
     # noisy evals of the noisy PF
     noisy_fit_list = [ind.fitness.values for ind in pareto_front]
@@ -454,6 +393,8 @@ class OptimisationAlgorithm:
     noisy_pf_noisy_hypervolumes: List[float] = field(default_factory=list)
     noisy_pf_true_hypervolumes: List[float] = field(default_factory=list)
     true_pf_hypervolumes: List[float] = field(default_factory=list)
+    # iterations
+    n_gens_pareto_best: List[int] = field(default_factory=list)
 
     def __post_init__(self):
         self.stop_trigger = ''
@@ -525,6 +466,7 @@ class OptimisationAlgorithm:
             self.noisy_pf_noisy_hypervolumes,
             self.noisy_pf_true_hypervolumes,
             self.true_pf_hypervolumes,
+            self.n_gens_pareto_best,
             self.toolbox,
             self.opt_weights,
             self.true_fitness_function,
@@ -603,7 +545,7 @@ class SEMO(OptimisationAlgorithm):
         offspring.fitness.values = self.toolbox.evaluate(offspring)
         self.evals += 1
 
-        # 4) dominance-based archive update (Algorithm 7)
+        # 4) dominance-based archive update
         if self.dominated_by_archive(offspring):
             return  # discard y'
         if self.already_in_archive(offspring):
