@@ -257,15 +257,25 @@ def main(cfg: DictConfig):
     true_fit_params['noise_intensity'] = 0
     ref_point = cfg.problem.get("ref_point", None)
 
+    # check for starting solution
+    # ! possibly move into dependency resolution
+    cfg_start_sol = getattr(cfg.algo, "starting_solution", None)
+    if cfg_start_sol is not None:
+        start_sol = list(cfg_start_sol)
+    else:
+        start_sol = None
+
+    # create algo parameter dict
     algo_params = {
         'sol_length':            cfg.problem.dimensions,
         'opt_weights':           tuple(cfg.problem.weights),
         'eval_limit':            cfg.run.eval_limit,
         'attr_function':         getattr(sys.modules['src.algorithms'], cfg.problem.attr_function),
-        'starting_solution':     None,
+        'starting_solution':     start_sol,
         # 'target_stop':           cfg.problem.opt_global,
         'target_stop':           None,
-        'gen_limit':             None,
+        'gen_limit':             cfg.run.max_gens,
+        'stop_without_improvement_in_gens': cfg.run.get("stop_without_improvement_in_gens", None),
         'fitness_function':      (fitness_fn, fit_params),
         'true_fitness_function': (fitness_fn, true_fit_params),
         'ref_point': ref_point,

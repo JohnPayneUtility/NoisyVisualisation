@@ -7,9 +7,10 @@ experiment_name: "MO_knapsack"
 # Run Configuration
 # ==============================
 run:
-  max_gens: 100
+  max_gens: 10e6
+  stop_without_improvement_in_gens: 100
   eval_limit: 10000
-  use_noise_dependent_eval_limit: true
+  use_noise_dependent_eval_limit: false
   eval_limit_for_noise:
     "0": 38392
     "1": 38392
@@ -23,7 +24,7 @@ run:
     "9": 86078
     "10": 93638
   seed: 1
-  num_runs: 10
+  num_runs: 100
   parallel: true
 
 # ==============================

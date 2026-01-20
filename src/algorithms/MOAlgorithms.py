@@ -148,6 +148,7 @@ def record_population_state(data, population, toolbox, true_fitness_function):
 #     noisy_pf_noisy_hypervolumes, # noisy HV of noisy PF
 #     noisy_pf_true_hypervolumes, # true HV of noisy PF
 #     true_pf_hypervolumes, # HV of true PF approximation
+#     n_gens_pareto_best,
 #     toolbox,
 #     opt_weights, # optimisation weights for multiobjective
 #     true_fitness_function=None,
@@ -167,11 +168,26 @@ def record_population_state(data, population, toolbox, true_fitness_function):
 #     # =========================
 #     # 1) Noisy Pareto front
 #     # =========================
+#     # calculate pareto front
 #     pareto_front = tools.ParetoFront()
 #     pareto_front.update(population)
-
 #     pf_clone = [toolbox.clone(ind) for ind in pareto_front]
-#     pareto_solutions.append(pf_clone)
+
+#     # check if paretofront has changed (only record if so)
+#     curr_sig = front_sig(pf_clone)
+#     if pareto_solutions:
+#         last_sig = front_sig(pareto_solutions[-1])
+#         if curr_sig == last_sig:
+#             n_gens_pareto_best[-1] += 1 # update iterations best counter
+#             print(f'No change to pareto front in {n_gens_pareto_best[-1]} iterations - skipping data')
+#             return
+#         else:
+#             n_gens_pareto_best.append(1) # reset counter
+#             print(f'improved front with {len(pf_clone)} solutions found')
+#     else:
+#         n_gens_pareto_best.append(1) # create initial record
+
+#     pareto_solutions.append(pf_clone) # record new pareto front
 
 #     # noisy evals of the noisy PF
 #     noisy_fit_list = [ind.fitness.values for ind in pareto_front]
@@ -224,23 +240,26 @@ def record_population_state(data, population, toolbox, true_fitness_function):
 
 def record_pareto_data(
     population,
-    pareto_solutions, # noisy PF solutions
-    pareto_fitnesses, # noisy PF noisy fitnesses
-    pareto_true_fitnesses, # noisy PF true fitnesses
-    true_pareto_solutions, # true PF approx. solutions
-    true_pareto_fitnesses, # true PF approx. fitnesses
-    noisy_pf_noisy_hypervolumes, # noisy HV of noisy PF
-    noisy_pf_true_hypervolumes, # true HV of noisy PF
-    true_pf_hypervolumes, # HV of true PF approximation
+    pareto_solutions,  # noisy PF solutions
+    pareto_fitnesses,  # noisy PF noisy fitnesses
+    pareto_true_fitnesses,  # noisy PF true fitnesses
+    true_pareto_solutions,  # true PF approx. solutions
+    true_pareto_fitnesses,  # true PF approx. fitnesses
+    noisy_pf_noisy_hypervolumes,  # noisy HV of noisy PF
+    noisy_pf_true_hypervolumes,  # true HV of noisy PF
+    true_pf_hypervolumes,  # HV of true PF approximation
     n_gens_pareto_best,
     toolbox,
-    opt_weights, # optimisation weights for multiobjective
+    opt_weights,  # optimisation weights for multiobjective
     true_fitness_function=None,
-    ref_point=None, # reference point for HV calculation
-    ):
+    ref_point=None,  # reference point for HV calculation
+    record_every_gen=False,
+    gen=None,
+    seed_signature=None
+):
     """
     """
-    # Assrts
+    # Asserts
     assert true_fitness_function is not None, "true_fitness_function must be provided."
     assert ref_point is not None, "ref_point must be provided for hypervolume calculation."
 
@@ -252,28 +271,45 @@ def record_pareto_data(
     # =========================
     # 1) Noisy Pareto front
     # =========================
-    # calculate pareto front
     pareto_front = tools.ParetoFront()
     pareto_front.update(population)
     pf_clone = [toolbox.clone(ind) for ind in pareto_front]
 
-    # check if paretofront has changed (only record if so)
+    # Check if PF changed and report
     curr_sig = front_sig(pf_clone)
+    n_improvements = len(n_gens_pareto_best)
+
     if pareto_solutions:
         last_sig = front_sig(pareto_solutions[-1])
         if curr_sig == last_sig:
-            n_gens_pareto_best[-1] += 1 # update iterations best counter
-            return
+            n_gens_pareto_best[-1] += 1
+            print(
+                    f"[SeedSig {seed_signature}] | "
+                    f"[Gen {gen}] No PF change | "
+                    f"total improvements: {n_improvements} | "
+                    f"since last improvement: {n_gens_pareto_best[-1]}"
+                )
+            if not record_every_gen:
+                return
+            pareto_solutions.append(pf_clone)
         else:
-            n_gens_pareto_best.append(1) # reset counter
-    else:
-        n_gens_pareto_best.append(1) # create initial record
-
-    pareto_solutions.append(pf_clone) # record new pareto front
+            n_gens_pareto_best.append(1)
+            pareto_solutions.append(pf_clone)
+            print(
+                f"[SeedSig {seed_signature}] | "
+                f"[Gen {gen}] PF IMPROVED | "
+                f"PF size: {len(pf_clone)} | "
+                f"total improvements: {n_improvements + 1}"
+            )
+    else: # Initial Record
+        n_gens_pareto_best.append(1)
+        pareto_solutions.append(pf_clone)
+        print(f"[Gen {gen}] Initial PF recorded | PF size: {len(pf_clone)}")
 
     # noisy evals of the noisy PF
     noisy_fit_list = [ind.fitness.values for ind in pareto_front]
     pareto_fitnesses.append(noisy_fit_list)
+
     # true evals of the noisy PF
     tf, tf_kwargs = true_fitness_function
     true_fit_list = [tf(ind, **tf_kwargs) for ind in pareto_front]
@@ -282,11 +318,10 @@ def record_pareto_data(
     # =========================
     # 2) HV for noisy pareto front
     # =========================
-    # noisy HVs
     noisy_pts = np.asarray(noisy_fit_list, dtype=float) * sign
     hv_noisy = hypervolume(noisy_pts, hv_ref)
     noisy_pf_noisy_hypervolumes.append(float(hv_noisy))
-    # true HVs
+
     true_pts_for_noisy_pf = np.asarray(true_fit_list, dtype=float) * sign
     hv_noisy_true = hypervolume(true_pts_for_noisy_pf, hv_ref)
     noisy_pf_true_hypervolumes.append(float(hv_noisy_true))
@@ -294,18 +329,13 @@ def record_pareto_data(
     # =========================
     # 3) TRUE Pareto front (FULL POP, TRUE EVALS) — without touching originals
     # =========================
-    # Clone the WHOLE population and evaluate *true* fitness on the clones
-    tf, tf_kwargs = true_fitness_function
     pop_true = [toolbox.clone(ind) for ind in population]
     for ind_clone, ind_orig in zip(pop_true, population):
-        # Evaluate true fitness on the clone (no side effects on originals)
         ind_clone.fitness.values = tf(ind_orig, **tf_kwargs)
 
-    # Compute TRUE PF over true-evaluated clones
     true_pf = tools.ParetoFront()
     true_pf.update(pop_true)
 
-    # Collect TRUE PF solutions and their TRUE fitness values
     if true_pareto_solutions is not None:
         true_pareto_solutions.append([toolbox.clone(ind) for ind in true_pf])
 
@@ -319,7 +349,6 @@ def record_pareto_data(
     true_pts = np.asarray(true_pf_fit_true, dtype=float) * sign
     hv_true = hypervolume(true_pts, hv_ref)
     true_pf_hypervolumes.append(float(hv_true))
-
 
 def extract_trajectory_data(best_solutions, best_fitnesses, true_fitnesses):
     # Extract unique solutions and their corresponding fitness values
@@ -368,11 +397,13 @@ class OptimisationAlgorithm:
     gen_limit: Optional[int] = int(10e6)
     eval_limit: Optional[int] = None
     target_stop: Optional[float] = None
+    stop_without_improvement_in_gens: Optional[int] = None
     attr_function: Optional[Callable] = None
     fitness_function: Optional[Tuple[Callable, dict]] = None
     starting_solution: Optional[List[Any]] = None
     true_fitness_function: Optional[Tuple[Callable, dict]] = None
     ref_point: Optional[list[Any]] = None
+    record_every_gen: bool = False
     
     # Create lists to store data, seperate for each instance
     # single objective data
@@ -441,6 +472,12 @@ class OptimisationAlgorithm:
         if self.gen_limit is not None and self.gens >= self.gen_limit:
             self.stop_trigger = 'gen_limit'
             return True
+        if self.stop_without_improvement_in_gens is not None:
+            if self.n_gens_pareto_best:
+                no_improvement = int(self.n_gens_pareto_best[-1])
+                if no_improvement >= int(self.stop_without_improvement_in_gens):
+                    self.stop_trigger = 'no_improvement'
+                    return True
         return False
     
     def run(self):
@@ -471,6 +508,9 @@ class OptimisationAlgorithm:
             self.opt_weights,
             self.true_fitness_function,
             self.ref_point,
+            self.record_every_gen,
+            self.gens,
+            self.seed_signature
             )
 
     def get_classic_data(self):

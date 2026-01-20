@@ -14,6 +14,19 @@ from .DashboardHelpers import *
 
 from ..problems.FitnessFunctions import *
 from ..problems.ProblemScripts import load_problem_KP
+from ..plotting.plotParetoFrontMain import plotParetoFront
+from ..plotting.plotParetoFrontMain import plotParetoFrontSubplots
+from ..plotting.plotParetoFrontMain import plotParetoFrontSubplotsMulti
+from ..plotting.plotParetoFrontMain import PlotparetoFrontSubplotsHighlighted
+from ..plotting.plotParetoFrontMain import plotParetoFrontAnimation
+# from ..plotting.plotParetoFrontMain import saveParetoFrontGIF
+from ..plotting.plotParetoFrontMain import plotParetoFrontNoisy
+from ..plotting.plotParetoFrontMain import plotParetoFrontIndVsDist
+from ..plotting.plotParetoFrontMain import plotParetoFrontIGDVsDist
+from ..plotting.plotParetoFrontMain import plotProgressPerMovementRatio
+from ..plotting.plotParetoFrontMain import plotMovementCorrelation
+from ..plotting.plotParetoFrontMain import plotMoveDeltaHistograms
+from ..plotting.plotParetoFrontMain import plotObjectiveVsDecisionScatter
 
 import logging
 
@@ -186,6 +199,9 @@ app.layout = html.Div([
     # Multiobjective data stores
     dcc.Store(id="STN_MO_data", data=[]),
     dcc.Store(id="STN_MO_series_labels", data=[]),
+    # pareto front data store
+    dcc.Store(id="MO_data_PPP", data=[]),
+    # dcc.Store(id="MO_data_PPP_options", data=[]),
     
     # Tabbed section for problem selection
     html.Div([
@@ -246,31 +262,100 @@ app.layout = html.Div([
     html.Div(id="table2-selected-output", style={
         "margin": "10px", "padding": "10px", "border": "1px solid #ccc"
     }),
-    # html.Hr(),
+    html.Hr(),
 
-    # Tabbed section for 3D LON/STN plot
-    html.Div([
-        html.H3("STN/LON Plot"),
-        dcc.Tabs(id='STNPlotTabSelection', value='p1', children=[
-            dcc.Tab(label='2D STN', 
-                    value='p1', style=tab_style, 
-                    selected_style=tab_selected_style),
-            dcc.Tab(label='3D STN', 
-                    value='p2', 
-                    style=tab_style, 
-                    selected_style=tab_selected_style),
-            dcc.Tab(label='3D Joint STN LON', 
-                    value='p3', 
-                    style=tab_style, 
-                    selected_style=tab_selected_style),
-        ]),
-        html.Div(id='STNPlotTabContent'),
-    ], style={
-        "border": "2px solid #ccc",
-        "padding": "10px",
-        "borderRadius": "5px",
-        "margin": "10px",
-    }),
+    # PARETO FRONT PLOTTING
+    html.H3("Pareto front plotting"),
+    html.H3("Plot type:"),
+    dcc.Dropdown(
+        id='paretoFrontPlotType',
+        options=[
+            {'label': 'Basic', 'value': 'Basic'},
+            {'label': 'Subplots', 'value': 'Subplots'},
+            {'label': 'Subplots (multi)', 'value': 'SubplotsMulti'},
+            {'label': 'Subplots (highlighted)', 'value': 'SubplotsHighlight'},
+            {'label': 'pareto animation', 'value': 'paretoAnimation'},
+            # {'label': 'SAVE pareto animation', 'value': 'saveParetoGif'},
+            {'label': 'Noisy', 'value': 'Noisy'},
+            {'label': 'HV Vs Distance', 'value': 'IndVsDist'},
+            {'label': 'IGD Vs Distance', 'value': 'IGDVsDist'},
+            {'label': 'Progress per Movement', 'value': 'PPM'},
+            {'label': 'Movement Correlation', 'value': 'MoveCorr'},
+            {'label': 'Histogram', 'value': 'Hist'},
+            {'label': 'Scatter', 'value': 'Scatter'}
+        ],
+        value='Basic',
+        clearable=False,
+        style={'width': '50%'}
+    ),
+    dcc.Dropdown(
+        id='IndVsDist_IndType',
+        options=[
+            {'label': 'noisy HV', 'value': 'NoisyHV'},
+            {'label': 'Clean HV', 'value': 'CleanHV'},
+            {'label': 'IGD', 'value': 'IGD'}
+        ],
+        value='NoisyHV',
+        clearable=False,
+        style={'width': '50%'}
+    ),
+    dcc.Dropdown(
+        id='IndVsDist_DistType',
+        options=[
+            {'label': 'Cumulative', 'value': 'cumulative'},
+            {'label': 'Raw', 'value': 'raw'},
+            {'label': 'MDS', 'value': 'mds'},
+            {'label': 'tSNE', 'value': 'tsne'},
+            {'label': 'ISOMAP', 'value': 'isomap'}
+        ],
+        value='cumulative',
+        clearable=False,
+        style={'width': '50%'}
+    ),
+    html.Label(" Number of runs to show: "),
+        dcc.Input(
+            id='paretoPlotNumRuns',
+            type='number',
+            min=0,
+            max=1000,
+            step=1,
+            value=1
+        ),
+    html.Label(" Window size: "),
+        dcc.Input(
+            id='paretoPlotWindowSize',
+            type='number',
+            min=0,
+            max=1000,
+            step=1,
+            value=5
+        ),
+    dcc.Graph(id="plotParetoFront"),
+    html.Hr(),
+
+    # # Tabbed section for 3D LON/STN plot
+    # html.Div([
+    #     html.H3("STN/LON Plot"),
+    #     dcc.Tabs(id='STNPlotTabSelection', value='p1', children=[
+    #         dcc.Tab(label='2D STN', 
+    #                 value='p1', style=tab_style, 
+    #                 selected_style=tab_selected_style),
+    #         dcc.Tab(label='3D STN', 
+    #                 value='p2', 
+    #                 style=tab_style, 
+    #                 selected_style=tab_selected_style),
+    #         dcc.Tab(label='3D Joint STN LON', 
+    #                 value='p3', 
+    #                 style=tab_style, 
+    #                 selected_style=tab_selected_style),
+    #     ]),
+    #     html.Div(id='STNPlotTabContent'),
+    # ], style={
+    #     "border": "2px solid #ccc",
+    #     "padding": "10px",
+    #     "borderRadius": "5px",
+    #     "margin": "10px",
+    # }),
     # ---------------------------------------
     # PLOTTING OPTIONS
     # ---------------------------------------
@@ -289,6 +374,7 @@ app.layout = html.Div([
                     id='mo_plot_type',
                     options=[
                         {'label': 'noisy pareto noisy hv', 'value': 'npnhv'},
+                        {'label': 'noisy pareto true hv', 'value': 'npthv'},
                         {'label': 'true pareto true hv', 'value': 'tpthv'},
                         {'label': 'noisy pareto both hv', 'value': 'npbhv'},
                         {'label': 'both pareto', 'value': 'bpbhv'},
@@ -1232,7 +1318,8 @@ def update_filtered_view(selected_rows, table2_data):
      Output('STN_series_labels', 'data'),
      Output('noisy_fitnesses_data', 'data'),
      Output('STN_MO_data', 'data'),
-     Output('STN_MO_series_labels', 'data')],
+     Output('STN_MO_series_labels', 'data'),
+     Output('MO_data_PPP', 'data')],
     [Input('STN_data', 'data'),
      Input('mo_plot_type', 'value')],
 )
@@ -1241,9 +1328,10 @@ def process_STN_data(df, mo_plot_type, group_cols=['algo_name', 'noise']):
     df = pd.DataFrame(df)
     STN_data, STN_series, Noise_data = [], [], []
     MO_data, MO_series = [], []
+    MO_data_PPP = []
 
     if df.empty:
-        return STN_data, STN_series, Noise_data, MO_data, MO_series
+        return STN_data, STN_series, Noise_data, MO_data, MO_series, MO_data_PPP
 
     # default/fallback if somehow empty
     mode = mo_plot_type or 'npnhv'
@@ -1267,16 +1355,21 @@ def process_STN_data(df, mo_plot_type, group_cols=['algo_name', 'noise']):
 
         # --- MO runs (mode-dependent) ---
         mo_runs = []
+        mo_runs_full = []
         for _, row in group_df.iterrows():
             pareto_solutions = (row.get('pareto_solutions') or [])
             nps_hv_noisy         = (row.get('noisy_pf_noisy_hypervolumes') or [])
             nps_hv_true          = (row.get('noisy_pf_true_hypervolumes') or [])
             true_pareto_solutions = (row.get('true_pareto_solutions') or [])
             tps_hv_true         = (row.get('true_pf_hypervolumes') or [])
+            nps_noisy_fits      = (row.get('pareto_fitnesses') or [])
+            nps_clean_fits      = (row.get('pareto_true_fitnesses') or [])
+            tps_clean_fits      = (row.get('true_pareto_fitnesses') or [])
 
             Gmax = min(len(pareto_solutions), len(nps_hv_noisy))
 
             fronts = []
+            fronts_full = []
             for g in range(Gmax):
                 if mode == 'bpbhv': # Both pareto front sets & both metrics
                     fronts.append({
@@ -1291,6 +1384,14 @@ def process_STN_data(df, mo_plot_type, group_cols=['algo_name', 'noise']):
                         'front1':   true_pareto_solutions[g],
                         'front2':   None,
                         'metric1':  tps_hv_true[g],
+                        'metric2':  None,
+                        'gen_idx':  g,
+                    })
+                elif mode == 'npthv':
+                    fronts.append({
+                        'front1':   pareto_solutions[g],
+                        'front2':   None,
+                        'metric1':  nps_hv_true[g],
                         'metric2':  None,
                         'gen_idx':  g,
                     })
@@ -1318,14 +1419,28 @@ def process_STN_data(df, mo_plot_type, group_cols=['algo_name', 'noise']):
                         'metric2':  None,
                         'gen_idx':  g,
                     })
+                fronts_full.append({
+                    'algo_front_solutions': pareto_solutions[g],
+                    'algo_front_noisy_fitnesses': nps_noisy_fits[g],
+                    'algo_front_clean_fitnesses': nps_clean_fits[g],
+                    'algo_front_noisy_hypervolume': nps_hv_noisy[g],
+                    'algo_front_clean_hypervolume': nps_hv_true[g],
+                    'clean_front_solutions': true_pareto_solutions[g],
+                    'clean_front_fitnesses': tps_clean_fits[g],
+                    'clean_front_hypervolume': tps_hv_true[g],
+                    'gen_idx':  g,
+                })
             if fronts:
                 mo_runs.append(fronts)
+            if fronts_full:
+                mo_runs_full.append(fronts_full)
 
         print(f'generations in data: {Gmax}', flush=True)
         MO_data.append(mo_runs)
         MO_series.append(group_key)
+        MO_data_PPP.append(mo_runs_full)
     print('Data processing complete', flush=True)
-    return STN_data, STN_series, Noise_data, MO_data, MO_series
+    return STN_data, STN_series, Noise_data, MO_data, MO_series, MO_data_PPP
 
 @app.callback(
     Output('print_STN_series_labels', "children"),
@@ -2516,8 +2631,6 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
     
     def avg_min_hamming_A_to_B(frontA, frontB):
         """Asymmetric: average over a∈A of min_b Hamming(a,b); normalised by length."""
-        if not frontA or not frontB:
-            return 0.0
         A = [ canonical_solution(a) for a in frontA ]
         B = [ canonical_solution(b) for b in frontB ]
         L = len(A[0]) if A else 1
@@ -2670,14 +2783,16 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
         solutions_list = list(solutions_set)
         n = len(solutions_list)
         # print("DEBUG: Number of unique solutions for Positioning:", n)
+        K = len(solutions_list)
         if n == 0:
             # print("ERROR: No solutions for Positioning")
             pos = {}
+        
         elif layout == 'mds':
             print('\033[33mUsing MDS\033[0m')
-            dissimilarity_matrix = np.zeros((len(solutions_list), len(solutions_list)))
-            for i in range(len(solutions_list)):
-                for j in range(len(solutions_list)):
+            dissimilarity_matrix = np.zeros((K, K))
+            for i in range(K):
+                for j in range(K):
                     dissimilarity_matrix[i, j] = hamming_distance(solutions_list[i], solutions_list[j])
 
             mds = MDS_sklearn(n_components=2, dissimilarity='precomputed', random_state=42)
@@ -3413,6 +3528,44 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
     fig.write_html('plots/3dplot.html')
     return fig, debug_summary_component
 
+@app.callback(
+    Output("plotParetoFront", "figure"),
+    [Input('MO_data_PPP', 'data'),
+     Input('STN_MO_series_labels', 'data'),
+     Input('paretoFrontPlotType', 'value'),
+     Input('IndVsDist_IndType', 'value'),
+     Input('IndVsDist_DistType', 'value'),
+     Input('paretoPlotNumRuns', 'value'),
+     Input('paretoPlotWindowSize', 'value')]
+)
+def updateParetoPlot(frontdata, series_labels, paretoFrontPlotType, IndVsDist_IndType, IndVsDist_DistType, nruns, windowSize):
+    if paretoFrontPlotType == 'Basic':
+        return plotParetoFront(frontdata, series_labels)
+    if paretoFrontPlotType == 'Subplots':
+        return plotParetoFrontSubplots(frontdata, series_labels)
+    if paretoFrontPlotType == 'SubplotsMulti':
+        return plotParetoFrontSubplotsMulti(frontdata, series_labels, nruns)
+    if paretoFrontPlotType == 'SubplotsHighlight':
+        return PlotparetoFrontSubplotsHighlighted(frontdata, series_labels)
+    if paretoFrontPlotType == 'paretoAnimation':
+        return plotParetoFrontAnimation(frontdata, series_labels)
+    # if paretoFrontPlotType == 'saveParetoGif':
+    #     return saveParetoFrontGIF(frontdata, series_labels)
+    if paretoFrontPlotType == 'Noisy':
+        return plotParetoFrontNoisy(frontdata, series_labels)
+    if paretoFrontPlotType == 'IndVsDist':
+        return plotParetoFrontIndVsDist(frontdata, series_labels, IndVsDist_DistType, nruns)
+    if paretoFrontPlotType == 'IGDVsDist':
+        return plotParetoFrontIGDVsDist(frontdata, series_labels, IndVsDist_DistType, nruns)
+    if paretoFrontPlotType == 'PPM':
+        return plotProgressPerMovementRatio(frontdata, series_labels)
+    if paretoFrontPlotType == 'MoveCorr':
+        return plotMovementCorrelation(frontdata, series_labels, IndVsDist_IndType=IndVsDist_IndType, window=windowSize)
+    if paretoFrontPlotType == 'Hist':
+        return plotMoveDeltaHistograms(frontdata, series_labels, IndVsDist_IndType=IndVsDist_IndType)
+    if paretoFrontPlotType == 'Scatter':
+        return plotObjectiveVsDecisionScatter(frontdata, series_labels, IndVsDist_IndType=IndVsDist_IndType)
+    
 # ==========
 # RUN
 # ==========

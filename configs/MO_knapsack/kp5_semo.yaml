@@ -7,9 +7,10 @@ experiment_name: "MO_knapsack"
 # Run Configuration
 # ==============================
 run:
-  max_gens: 100
+  max_gens: 10e6
+  stop_without_improvement_in_gens: 100
   eval_limit: 10000
-  use_noise_dependent_eval_limit: true
+  use_noise_dependent_eval_limit: false
   eval_limit_for_noise:
     "0": 38392
     "1": 38392
@@ -23,7 +24,7 @@ run:
     "9": 86078
     "10": 93638
   seed: 1
-  num_runs: 10
+  num_runs: 100
   parallel: true
 
 # ==============================
@@ -46,7 +47,7 @@ hydra:
   sweeper:
     params:
       # algo.pop_size: 100,200,300
-      problem.fitness_params.noise_intensity: 0,1
+      problem.fitness_params.noise_intensity: 0,1,2
       # algo.static_indpb: 0.01,0.02,0.03
   sweep:
     dir: data/outputs
@@ -57,6 +58,7 @@ hydra:
 algo:
   name: SEMO
   type: SEMO
+  # starting_solution: [0,0,0,0,0]
   
   # Algorithm initialization parameters
   init_args:
@@ -87,6 +89,7 @@ problem:
   fitness_params:
     items_dict: null  # Will be set after problem loading
     capacity: null    # Will be set after problem loading
+    penalty: 0
     noise_intensity: 0
   
   # Attributes and weights

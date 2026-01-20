@@ -83,7 +83,7 @@ problem:
   # Fitness function
   fitness_fn: OneMax_fitness
   fitness_params:
-    noise_intensity: 1  # Set to noise intensity 1 as requested
+    noise_intensity: 1
   
   # Attributes and weights
   attr_function: binary_attribute
