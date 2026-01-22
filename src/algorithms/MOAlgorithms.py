@@ -10,9 +10,17 @@ from deap import algorithms
 from deap import base
 from deap import creator
 from deap import tools
-from deap.tools._hypervolume.pyhv import hypervolume
-from pymoo.indicators.hv import HV
+
+# from pymoo.indicators.hv import HV
 import optuna
+
+import pydoc
+
+try: # try import fast hypervolume else fallback to python implementation
+    from deap.tools._hypervolume import hv as _hv # fast compiled version
+    hypervolume = _hv.hypervolume
+except Exception:
+    from deap.tools._hypervolume.pyhv import hypervolume # python version
 
 # ==============================
 # Helpers
@@ -294,7 +302,9 @@ def record_pareto_data(
     ref_point=None,  # reference point for HV calculation
     record_every_gen=False,
     gen=None,
-    seed_signature=None
+    eval=None,
+    seed_signature=None,
+    verbose_rate=0
 ):
     """
     """
@@ -306,6 +316,12 @@ def record_pareto_data(
     w = np.asarray(opt_weights, dtype=float)
     sign = np.where(w > 0, -1.0, 1.0)  # flip max->min for HV
     hv_ref = np.asarray(ref_point, dtype=float) * sign
+
+    def _should_print(g: int) -> bool:
+        # Check if should print update statement to terminal
+        if verbose_rate == 0:
+            return False
+        return (g % verbose_rate) == 0
 
     # =========================
     # 1) Noisy Pareto front
@@ -322,9 +338,11 @@ def record_pareto_data(
         last_sig = front_sig(pareto_solutions[-1])
         if curr_sig == last_sig:
             n_gens_pareto_best[-1] += 1
-            print(
+            if _should_print(gen):
+                print(
                     f"[SeedSig {seed_signature}] | "
                     f"[Gen {gen}] No PF change | "
+                    f"[Eval {eval}] No PF Change | "
                     f"total improvements: {n_improvements} | "
                     f"since last improvement: {n_gens_pareto_best[-1]}"
                 )
@@ -334,16 +352,19 @@ def record_pareto_data(
         else:
             n_gens_pareto_best.append(1)
             pareto_solutions.append(pf_clone)
-            print(
-                f"[SeedSig {seed_signature}] | "
-                f"[Gen {gen}] PF IMPROVED | "
-                f"PF size: {len(pf_clone)} | "
-                f"total improvements: {n_improvements + 1}"
-            )
+            if _should_print(gen):
+                print(
+                    f"[SeedSig {seed_signature}] | "
+                    f"[Gen {gen}] PF Changed | "
+                    f"[Eval {eval}] PF Changed | "
+                    f"PF size: {len(pf_clone)} | "
+                    f"total improvements: {n_improvements + 1}"
+                )
     else: # Initial Record
         n_gens_pareto_best.append(1)
         pareto_solutions.append(pf_clone)
-        print(f"[Gen {gen}] Initial PF recorded | PF size: {len(pf_clone)}")
+        if verbose_rate != 0:
+            print(f"[Gen {gen}] Initial PF recorded | PF size: {len(pf_clone)}")
 
     # noisy evals of the noisy PF
     noisy_fit_list = [ind.fitness.values for ind in pareto_front]
@@ -443,6 +464,7 @@ class OptimisationAlgorithm:
     true_fitness_function: Optional[Tuple[Callable, dict]] = None
     ref_point: Optional[list[Any]] = None
     record_every_gen: bool = False
+    verbose_rate: int = 0
     
     # Create lists to store data, seperate for each instance
     # single objective data
@@ -549,7 +571,9 @@ class OptimisationAlgorithm:
             self.ref_point,
             self.record_every_gen,
             self.gens,
-            self.seed_signature
+            self.evals,
+            self.seed_signature,
+            self.verbose_rate
             )
 
     def get_classic_data(self):
@@ -874,8 +898,10 @@ class MoUMDA_ParetoArchive(OptimisationAlgorithm):
             self.ref_point,
             self.record_every_gen,
             self.gens,
-            self.seed_signature
-        )
+            self.evals,
+            self.seed_signature,
+            self.verbose_rate
+            )
 
     def perform_generation(self):
         # generate offspring AND update archive
@@ -979,11 +1005,6 @@ class CompactGA(OptimisationAlgorithm):
     #     if all(p in (0.0, 1.0) for p in self.p_vector):
     #         return True
     #     return super().stop_condition()
-
-
-import random
-import pydoc
-from deap import tools
 
 class NSGA2(OptimisationAlgorithm):
     def __init__(

@@ -297,6 +297,7 @@ def main(cfg: DictConfig):
         'fitness_function':      (fitness_fn, fit_params),
         'true_fitness_function': (fitness_fn, true_fit_params),
         'ref_point': ref_point,
+        'verbose_rate': cfg.run.get("verbose_rate", 0),
     }
 
     # Run and log via MLflow
