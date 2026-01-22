@@ -464,7 +464,8 @@ def PlotparetoFrontSubplotsHighlighted(
 
     # --- Determine grid ---
     n_gens = len(gen_entries)
-    cols = math.ceil(math.sqrt(n_gens))
+    # cols = math.ceil(math.sqrt(n_gens))
+    cols = min(5, n_gens)
     rows = math.ceil(n_gens / cols)
 
     fig = make_subplots(

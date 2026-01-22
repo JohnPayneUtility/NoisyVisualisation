@@ -99,17 +99,35 @@ def resolve_config_dependencies(cfg: DictConfig) -> DictConfig:
         if hasattr(resolved_cfg.problem, 'dimensions'):
             resolved_cfg.algo.indpb_fn.n_items = resolved_cfg.problem.dimensions
     
-    # Step 3: Resolve mutation parameters
+    # # Step 3: Resolve mutation parameters
+    # if hasattr(resolved_cfg.algo, 'use_dynamic_mutation'):
+    #     if resolved_cfg.algo.use_dynamic_mutation:
+    #         # Calculate dynamic mutation rate
+    #         if hasattr(resolved_cfg.algo, 'indpb_fn'):
+    #             resolved_cfg.algo.init_args.mutate_params.indpb = call(resolved_cfg.algo.indpb_fn)
+    #     else:
+    #         # Use static mutation rate
+    #         if hasattr(resolved_cfg.algo, 'static_indpb'):
+    #             resolved_cfg.algo.init_args.mutate_params.indpb = resolved_cfg.algo.static_indpb
     if hasattr(resolved_cfg.algo, 'use_dynamic_mutation'):
-        if resolved_cfg.algo.use_dynamic_mutation:
-            # Calculate dynamic mutation rate
-            if hasattr(resolved_cfg.algo, 'indpb_fn'):
-                resolved_cfg.algo.init_args.mutate_params.indpb = call(resolved_cfg.algo.indpb_fn)
+        # Ensure mutation dict exists in either naming scheme
+        if not hasattr(resolved_cfg.algo.init_args, "mutate_params") and hasattr(resolved_cfg.algo.init_args, "mutate_kwargs"):
+            # NSGA2-style naming present
+            mut_container = resolved_cfg.algo.init_args.mutate_kwargs
+            target_path = "mutate_kwargs"
         else:
-            # Use static mutation rate
+            # legacy naming
+            if not hasattr(resolved_cfg.algo.init_args, "mutate_params"):
+                resolved_cfg.algo.init_args.mutate_params = OmegaConf.create({})
+            mut_container = resolved_cfg.algo.init_args.mutate_params
+            target_path = "mutate_params"
+
+        if resolved_cfg.algo.use_dynamic_mutation:
+            resolved_cfg.algo.init_args[target_path].indpb = call(resolved_cfg.algo.indpb_fn)
+        else:
             if hasattr(resolved_cfg.algo, 'static_indpb'):
-                resolved_cfg.algo.init_args.mutate_params.indpb = resolved_cfg.algo.static_indpb
-    
+                resolved_cfg.algo.init_args[target_path].indpb = resolved_cfg.algo.static_indpb
+
     # Step 4: Resolve noise-dependent eval limits
     if hasattr(resolved_cfg.run, 'use_noise_dependent_eval_limit'):
         if resolved_cfg.run.use_noise_dependent_eval_limit:

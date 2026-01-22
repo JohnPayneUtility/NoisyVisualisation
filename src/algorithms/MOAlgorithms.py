@@ -15,10 +15,12 @@ from pymoo.indicators.hv import HV
 import optuna
 
 # ==============================
-# Description
+# Helpers
 # ==============================
 
-
+def _ind_to_key(ind):
+    # hashable representation of a solution
+    return tuple(ind)
 
 # ==============================
 # Attribute Functions
@@ -60,8 +62,56 @@ def complementary_crossover(parent1, parent2):
 
     return offspring1, offspring2
 
+# def mo_umda_update_full(len_sol, population, pop_size, select_size, toolbox,
+#                         prob_margin=True, margin_scale=1.0):
+#     """
+#     NSGA-II (non-dominated sorting + crowding) selection of μ parents,
+#     then UMDA-style model update and sampling of λ=pop_size offspring.
+
+#     prob_margin: for binary genes, clamp p to [1/n, 1-1/n] (classic UMDA margin).
+#     margin_scale: scale factor on 1/n margin (set >1 to be more conservative).
+#     """
+#     # --- 1) Select μ parents by Pareto rank + crowding distance
+#     # (Population must be evaluated already — your base class ensures this.)
+#     parents = tools.selNSGA2(population, select_size)
+
+#     # --- 2) Detect gene type
+#     gene_type = type(population[0][0])
+
+#     # --- 3) Fit the univariate model on parents & sample new offspring
+#     if gene_type == int:
+#         # Binary UMDA: per-bit marginals
+#         probs = np.mean(parents, axis=0)
+
+#         if prob_margin:
+#             n = float(len_sol)
+#             eps = (margin_scale / n)
+#             probs = np.clip(probs, eps, 1.0 - eps)
+
+#         new_solutions = []
+#         for _ in range(pop_size):
+#             bits = (np.random.rand(len_sol) < probs).astype(int).tolist()
+#             new_solutions.append(creator.Individual(bits))
+
+#     elif gene_type == float:
+#         # Real-valued UMDA: mean & std per position
+#         arr = np.array(parents, dtype=float)
+#         means = np.mean(arr, axis=0)
+#         stds  = np.std(arr, axis=0)
+#         stds  = np.maximum(stds, 1e-12)  # avoid degenerate σ
+
+#         new_solutions = []
+#         for _ in range(pop_size):
+#             vals = np.random.normal(means, stds, size=len_sol).tolist()
+#             new_solutions.append(creator.Individual(vals))
+
+#     else:
+#         raise ValueError("Unsupported gene type for moUMDA. Use int (binary) or float.")
+
+#     return new_solutions
+
 def mo_umda_update_full(len_sol, population, pop_size, select_size, toolbox,
-                        prob_margin=True, margin_scale=1.0):
+                        prob_margin=True, margin_scale=1.0, prevent_duplicates=False):
     """
     NSGA-II (non-dominated sorting + crowding) selection of μ parents,
     then UMDA-style model update and sampling of λ=pop_size offspring.
@@ -78,8 +128,98 @@ def mo_umda_update_full(len_sol, population, pop_size, select_size, toolbox,
 
     # --- 3) Fit the univariate model on parents & sample new offspring
     if gene_type == int:
-        # Binary UMDA: per-bit marginals
         probs = np.mean(parents, axis=0)
+
+        if prob_margin:
+            n = float(len_sol)
+            eps = (margin_scale / n)
+            probs = np.clip(probs, eps, 1.0 - eps)
+
+        new_solutions = []
+        seen = set() if prevent_duplicates else None
+
+        while len(new_solutions) < pop_size:
+            bits = (np.random.rand(len_sol) < probs).astype(int).tolist()
+            ind = creator.Individual(bits)
+
+            if prevent_duplicates:
+                key = _ind_to_key(ind)
+                if key in seen:
+                    continue
+                seen.add(key)
+
+            new_solutions.append(ind)
+
+    elif gene_type == float:
+        arr = np.array(parents, dtype=float)
+        means = np.mean(arr, axis=0)
+        stds  = np.maximum(np.std(arr, axis=0), 1e-12)
+
+        new_solutions = []
+        seen = set() if prevent_duplicates else None
+
+        while len(new_solutions) < pop_size:
+            vals = np.random.normal(means, stds, size=len_sol).tolist()
+            ind = creator.Individual(vals)
+
+            if prevent_duplicates:
+                key = tuple(np.round(vals, 12))  # avoid FP noise
+                if key in seen:
+                    continue
+                seen.add(key)
+
+            new_solutions.append(ind)
+
+    else:
+        raise ValueError("Unsupported gene type for moUMDA. Use int (binary) or float.")
+
+    return new_solutions
+
+def _update_archive_nondominated(archive, candidates):
+    combined = list(archive) + list(candidates)
+    if not combined:
+        return []
+
+    fronts = tools.sortNondominated(combined, k=len(combined), first_front_only=False)
+    nd = list(fronts[0])  # keep only non-dominated
+    return nd
+
+
+def mo_umda_update_with_archive(
+    len_sol,
+    population,
+    pop_size,
+    select_size,
+    toolbox,
+    archive,
+    prob_margin=True,
+    margin_scale=1.0,
+):
+    """
+    Reuses your existing flow:
+      1) selNSGA2 on current pop -> parents (μ)
+      2) archive <- nondominated(archive ∪ parents)
+      3) fit UMDA model on archive
+      4) sample λ offspring
+    Returns: (new_population, new_archive)
+    """
+
+    # 1) select μ
+    parents = tools.selNSGA2(population, select_size)
+
+    # 2) update archive with selected items; remove dominated
+    new_archive = _update_archive_nondominated(
+        archive, parents
+    )
+
+    # 3) detect gene type (same as you do)
+    gene_type = type(population[0][0])
+
+    # 4) fit on ARCHIVE (key change) and sample λ
+    if gene_type == int:
+        # if archive empty (can happen at very start), fallback to parents
+        model_source = new_archive if new_archive else parents
+        probs = np.mean(model_source, axis=0)
 
         if prob_margin:
             n = float(len_sol)
@@ -92,11 +232,10 @@ def mo_umda_update_full(len_sol, population, pop_size, select_size, toolbox,
             new_solutions.append(creator.Individual(bits))
 
     elif gene_type == float:
-        # Real-valued UMDA: mean & std per position
-        arr = np.array(parents, dtype=float)
-        means = np.mean(arr, axis=0)
-        stds  = np.std(arr, axis=0)
-        stds  = np.maximum(stds, 1e-12)  # avoid degenerate σ
+        model_source = np.array(new_archive if new_archive else parents, dtype=float)
+        means = np.mean(model_source, axis=0)
+        stds  = np.std(model_source, axis=0)
+        stds  = np.maximum(stds, 1e-12)
 
         new_solutions = []
         for _ in range(pop_size):
@@ -106,7 +245,7 @@ def mo_umda_update_full(len_sol, population, pop_size, select_size, toolbox,
     else:
         raise ValueError("Unsupported gene type for moUMDA. Use int (binary) or float.")
 
-    return new_solutions
+    return new_solutions, new_archive
 
 # ==============================
 # Helper Functions
@@ -137,106 +276,6 @@ def record_population_state(data, population, toolbox, true_fitness_function):
         true_fitnesses.append(true_fit[0])
     else:
         true_fitnesses.append(best_individual.fitness.values[0])
-
-# def record_pareto_data(
-#     population,
-#     pareto_solutions, # noisy PF solutions
-#     pareto_fitnesses, # noisy PF noisy fitnesses
-#     pareto_true_fitnesses, # noisy PF true fitnesses
-#     true_pareto_solutions, # true PF approx. solutions
-#     true_pareto_fitnesses, # true PF approx. fitnesses
-#     noisy_pf_noisy_hypervolumes, # noisy HV of noisy PF
-#     noisy_pf_true_hypervolumes, # true HV of noisy PF
-#     true_pf_hypervolumes, # HV of true PF approximation
-#     n_gens_pareto_best,
-#     toolbox,
-#     opt_weights, # optimisation weights for multiobjective
-#     true_fitness_function=None,
-#     ref_point=None, # reference point for HV calculation
-#     ):
-#     """
-#     """
-#     # Assrts
-#     assert true_fitness_function is not None, "true_fitness_function must be provided."
-#     assert ref_point is not None, "ref_point must be provided for hypervolume calculation."
-
-#     # Use config ref point and objectives to determine ref for HV calculation
-#     w = np.asarray(opt_weights, dtype=float)
-#     sign = np.where(w > 0, -1.0, 1.0)  # flip max->min for HV
-#     hv_ref = np.asarray(ref_point, dtype=float) * sign
-
-#     # =========================
-#     # 1) Noisy Pareto front
-#     # =========================
-#     # calculate pareto front
-#     pareto_front = tools.ParetoFront()
-#     pareto_front.update(population)
-#     pf_clone = [toolbox.clone(ind) for ind in pareto_front]
-
-#     # check if paretofront has changed (only record if so)
-#     curr_sig = front_sig(pf_clone)
-#     if pareto_solutions:
-#         last_sig = front_sig(pareto_solutions[-1])
-#         if curr_sig == last_sig:
-#             n_gens_pareto_best[-1] += 1 # update iterations best counter
-#             print(f'No change to pareto front in {n_gens_pareto_best[-1]} iterations - skipping data')
-#             return
-#         else:
-#             n_gens_pareto_best.append(1) # reset counter
-#             print(f'improved front with {len(pf_clone)} solutions found')
-#     else:
-#         n_gens_pareto_best.append(1) # create initial record
-
-#     pareto_solutions.append(pf_clone) # record new pareto front
-
-#     # noisy evals of the noisy PF
-#     noisy_fit_list = [ind.fitness.values for ind in pareto_front]
-#     pareto_fitnesses.append(noisy_fit_list)
-#     # true evals of the noisy PF
-#     tf, tf_kwargs = true_fitness_function
-#     true_fit_list = [tf(ind, **tf_kwargs) for ind in pareto_front]
-#     pareto_true_fitnesses.append(true_fit_list)
-
-#     # =========================
-#     # 2) HV for noisy pareto front
-#     # =========================
-#     # noisy HVs
-#     noisy_pts = np.asarray(noisy_fit_list, dtype=float) * sign
-#     hv_noisy = hypervolume(noisy_pts, hv_ref)
-#     noisy_pf_noisy_hypervolumes.append(float(hv_noisy))
-#     # true HVs
-#     true_pts_for_noisy_pf = np.asarray(true_fit_list, dtype=float) * sign
-#     hv_noisy_true = hypervolume(true_pts_for_noisy_pf, hv_ref)
-#     noisy_pf_true_hypervolumes.append(float(hv_noisy_true))
-
-#     # =========================
-#     # 3) TRUE Pareto front (FULL POP, TRUE EVALS) — without touching originals
-#     # =========================
-#     # Clone the WHOLE population and evaluate *true* fitness on the clones
-#     tf, tf_kwargs = true_fitness_function
-#     pop_true = [toolbox.clone(ind) for ind in population]
-#     for ind_clone, ind_orig in zip(pop_true, population):
-#         # Evaluate true fitness on the clone (no side effects on originals)
-#         ind_clone.fitness.values = tf(ind_orig, **tf_kwargs)
-
-#     # Compute TRUE PF over true-evaluated clones
-#     true_pf = tools.ParetoFront()
-#     true_pf.update(pop_true)
-
-#     # Collect TRUE PF solutions and their TRUE fitness values
-#     if true_pareto_solutions is not None:
-#         true_pareto_solutions.append([toolbox.clone(ind) for ind in true_pf])
-
-#     true_pf_fit_true = [ind.fitness.values for ind in true_pf]
-#     if true_pareto_fitnesses is not None:
-#         true_pareto_fitnesses.append(true_pf_fit_true)
-
-#     # =========================
-#     # 4) TRUE HV (of the TRUE PF)
-#     # =========================
-#     true_pts = np.asarray(true_pf_fit_true, dtype=float) * sign
-#     hv_true = hypervolume(true_pts, hv_ref)
-#     true_pf_hypervolumes.append(float(hv_true))
 
 def record_pareto_data(
     population,
@@ -700,6 +739,7 @@ class MoUMDA(OptimisationAlgorithm):
                  select_size: Optional[int] = None,
                  prob_margin: bool = True,
                  margin_scale: float = 1.0,
+                 prevent_duplicates: bool = False,
                  **kwargs):
         super().__init__(**kwargs)
         self.gens = 0
@@ -708,9 +748,14 @@ class MoUMDA(OptimisationAlgorithm):
         self.select_size = int(pop_size/2) if select_size is None else select_size
         self.prob_margin = prob_margin
         self.margin_scale = margin_scale
+        self.prevent_duplicates = prevent_duplicates
 
-        self.name = f'MoUMDA(p={pop_size}, μ={self.select_size})'
-        self.type = 'MoUMDA'
+        if prevent_duplicates:
+            self.name = f'MoUMDA_noDuplicates(p={pop_size}, μ={self.select_size})'
+            self.type = 'MoUMDA_noDuplicates'
+        else:
+            self.name = f'MoUMDA(p={pop_size}, μ={self.select_size})'
+            self.type = 'MoUMDA'
 
         # Initialise & evaluate μ population
         self.initialise_population(self.pop_size)
@@ -734,6 +779,123 @@ class MoUMDA(OptimisationAlgorithm):
         for ind, fit in zip(self.population, fitnesses):
             ind.fitness.values = fit
         self.evals += self.pop_size
+
+class MoUMDA_noDuplicates(OptimisationAlgorithm):
+    def __init__(self, 
+                 pop_size: int,
+                 select_size: Optional[int] = None,
+                 prob_margin: bool = True,
+                 margin_scale: float = 1.0,
+                 prevent_duplicates: bool = True,
+                 **kwargs):
+        super().__init__(**kwargs)
+        self.gens = 0
+        self.evals = 0
+        self.pop_size = pop_size
+        self.select_size = int(pop_size/2) if select_size is None else select_size
+        self.prob_margin = prob_margin
+        self.margin_scale = margin_scale
+        self.prevent_duplicates = prevent_duplicates
+
+        if prevent_duplicates:
+            self.name = f'MoUMDA_noDuplicates(p={pop_size}, μ={self.select_size})'
+            self.type = 'MoUMDA_noDuplicates'
+        else:
+            self.name = f'MoUMDA(p={pop_size}, μ={self.select_size})'
+            self.type = 'MoUMDA'
+
+        # Initialise & evaluate μ population
+        self.initialise_population(self.pop_size)
+        self.record_state(self.population)  # optional first snapshot
+
+    def perform_generation(self):
+        """One generation of MoUMDA."""
+        # NSGA-II parent selection + UMDA model update
+        self.population = mo_umda_update_full(
+            self.sol_length,
+            self.population,
+            self.pop_size,
+            self.select_size,
+            self.toolbox,
+            prob_margin=self.prob_margin,
+            margin_scale=self.margin_scale,
+        )
+
+        # Evaluate new population
+        fitnesses = list(map(self.toolbox.evaluate, self.population))
+        for ind, fit in zip(self.population, fitnesses):
+            ind.fitness.values = fit
+        self.evals += self.pop_size
+
+
+class MoUMDA_ParetoArchive(OptimisationAlgorithm):
+    def __init__(
+        self,
+        pop_size: int,
+        select_size: Optional[int] = None,
+        prob_margin: bool = True,
+        margin_scale: float = 1.0,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+        self.gens = 0
+        self.evals = 0
+        self.pop_size = pop_size
+        self.select_size = int(pop_size / 2) if select_size is None else select_size
+        self.prob_margin = prob_margin
+        self.margin_scale = margin_scale
+
+        self.name = f"MoUMDA_ParetoArchive(λ={pop_size}, μ={self.select_size})"
+        self.type = "MoUMDA_ParetoArchive"
+
+        # NEW: archive of non-dominated solutions
+        self.archive = []
+
+        # keep your existing init behaviour
+        self.initialise_population(self.pop_size)
+        self.record_state(self.population)
+
+    def record_state_pareto(self, population):
+        # Record PF/HV based on the archive
+        record_pareto_data(
+            self.archive,
+            self.pareto_solutions,
+            self.pareto_fitnesses,
+            self.pareto_true_fitnesses,
+            self.true_pareto_solutions,
+            self.true_pareto_fitnesses,
+            self.noisy_pf_noisy_hypervolumes,
+            self.noisy_pf_true_hypervolumes,
+            self.true_pf_hypervolumes,
+            self.n_gens_pareto_best,
+            self.toolbox,
+            self.opt_weights,
+            self.true_fitness_function,
+            self.ref_point,
+            self.record_every_gen,
+            self.gens,
+            self.seed_signature
+        )
+
+    def perform_generation(self):
+        # generate offspring AND update archive
+        self.population, self.archive = mo_umda_update_with_archive(
+            self.sol_length,
+            self.population,
+            self.pop_size,
+            self.select_size,
+            self.toolbox,
+            archive=self.archive,
+            prob_margin=self.prob_margin,
+            margin_scale=self.margin_scale,
+        )
+
+        # evaluate offspring (same as before)
+        fitnesses = list(map(self.toolbox.evaluate, self.population))
+        for ind, fit in zip(self.population, fitnesses):
+            ind.fitness.values = fit
+        self.evals += self.pop_size
+
 
 class CompactGA(OptimisationAlgorithm):
     def __init__(self, 
@@ -818,5 +980,91 @@ class CompactGA(OptimisationAlgorithm):
     #         return True
     #     return super().stop_condition()
 
+
+import random
+import pydoc
+from deap import tools
+
+class NSGA2(OptimisationAlgorithm):
+    def __init__(
+        self,
+        pop_size: int = 100,
+        cxpb: float = 0.9,
+        mutpb: float = 0.1,
+        mate_op=None,            # can be callable OR "deap.tools.cxTwoPoint"
+        mutate_op=None,          # can be callable OR "deap.tools.mutFlipBit"
+        mutate_params=None,      # keep this name to match your resolver
+        mutate_kwargs=None,      # optional alias
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+        self.name = "NSGA-II"
+        self.type = "NSGA-II"
+
+        self.pop_size = int(pop_size)
+        self.cxpb = float(cxpb)
+        self.mutpb = float(mutpb)
+
+        self.gens = 0
+        self.evals = 0
+
+        # --- resolve operator references if they come in as strings/DictConfig ---
+        def _resolve_callable(x):
+            if x is None:
+                return None
+            # Hydra may pass OmegaConf nodes; str() gives dotted path nicely
+            if not callable(x):
+                x = str(x)
+                obj = pydoc.locate(x)
+                if obj is None or not callable(obj):
+                    raise TypeError(f"Operator '{x}' could not be resolved to a callable.")
+                return obj
+            return x
+
+        mate_fn = _resolve_callable(mate_op)
+        mut_fn  = _resolve_callable(mutate_op)
+
+        self.toolbox.register("select", tools.selNSGA2)
+
+        if mate_fn is not None:
+            self.toolbox.register("mate", mate_fn)
+
+        # accept either mutate_params (your resolver) or mutate_kwargs
+        if mutate_kwargs is None and mutate_params is not None:
+            mutate_kwargs = dict(mutate_params)
+        mutate_kwargs = mutate_kwargs or {}
+
+        if mut_fn is not None:
+            self.toolbox.register("mutate", mut_fn, **mutate_kwargs)
+
+        # init + crowding distance
+        self.initialise_population(pop_size=self.pop_size)
+        self.population = self.toolbox.select(self.population, len(self.population))
+
+        self.record_state(self.population)
+        self.record_state_pareto(self.population)
+
+    def perform_generation(self):
+        offspring = tools.selTournamentDCD(self.population, len(self.population))
+        offspring = list(map(self.toolbox.clone, offspring))
+
+        for c1, c2 in zip(offspring[::2], offspring[1::2]):
+            if random.random() < self.cxpb:
+                self.toolbox.mate(c1, c2)
+                del c1.fitness.values, c2.fitness.values
+
+        for ind in offspring:
+            if random.random() < self.mutpb:
+                out = self.toolbox.mutate(ind)
+                if isinstance(out, tuple):
+                    ind = out[0]
+                del ind.fitness.values
+
+        invalid = [ind for ind in offspring if not ind.fitness.valid]
+        for ind in invalid:
+            ind.fitness.values = self.toolbox.evaluate(ind)
+        self.evals += len(invalid)
+
+        self.population = self.toolbox.select(self.population + offspring, self.pop_size)
 
 
