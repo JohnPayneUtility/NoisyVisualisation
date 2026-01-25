@@ -106,6 +106,126 @@ def plot2d_box(dataframe, value='final'):
     # fig = go.Figure(data=[])
     return fig
 
+def plot2d_line_mo(dataframe):
+    """Line plot for multi-objective data using hypervolume."""
+    df = dataframe.copy()
+
+    # Check if we have MO data
+    if 'final_true_hv' not in df.columns:
+        fig = go.Figure()
+        fig.update_layout(
+            title='No multi-objective data available',
+            template='plotly_white'
+        )
+        return fig
+
+    # Remove rows with None values
+    df = df.dropna(subset=['final_true_hv'])
+
+    if df.empty:
+        # Return empty figure if no data
+        fig = go.Figure()
+        fig.update_layout(
+            title='No multi-objective data available',
+            template='plotly_white'
+        )
+        return fig
+
+    df = df[['algo_name', 'noise', 'final_true_hv']]
+
+    # Calculate statistics
+    stats = df.groupby(['algo_name', 'noise'])['final_true_hv'].agg(['mean', 'std']).reset_index()
+
+    fig = go.Figure()
+    for algo in stats['algo_name'].unique():
+        subset = stats[stats['algo_name'] == algo]
+        fig.add_trace(go.Scatter(
+            x=subset['noise'],
+            y=subset['mean'],
+            error_y=dict(
+                type='data',
+                array=subset['std'],
+                visible=True,
+                thickness=1.5,
+                width=5
+            ),
+            mode='lines+markers',
+            name=algo
+        ))
+
+    fig.update_layout(
+        title='Multi-Objective Performance (Hypervolume)',
+        xaxis_title=r'$\sigma$ (Standard Deviation of Gaussian Noise $N(0,\sigma)$)',
+        yaxis_title='Final Hypervolume',
+        legend_title='Algo Name',
+        template='plotly_white'
+    )
+    return fig
+
+def plot2d_box_mo(dataframe):
+    """Box plot for multi-objective data using hypervolume."""
+    df = dataframe.copy()
+
+    # Check if we have MO data
+    if 'final_true_hv' not in df.columns:
+        fig = go.Figure()
+        fig.update_layout(
+            title='No multi-objective data available',
+            template='plotly_white'
+        )
+        return fig
+
+    # Remove rows with None values
+    df = df.dropna(subset=['final_true_hv'])
+
+    if df.empty:
+        # Return empty figure if no data
+        fig = go.Figure()
+        fig.update_layout(
+            title='No multi-objective data available',
+            template='plotly_white'
+        )
+        return fig
+
+    df = df[['algo_name', 'noise', 'final_true_hv']]
+
+    noise_levels = sorted(df['noise'].unique())
+    export = True
+
+    fig = px.box(
+        df,
+        x="noise",
+        y="final_true_hv",
+        color="algo_name",
+        category_orders={"noise": noise_levels},
+        points=False
+    )
+
+    if export:
+        fig.update_layout(
+            xaxis=dict(
+                title=dict(
+                    text="d, where d x mean(W) is s.d. of noise",
+                    font=dict(size=24, color="black")
+                ),
+                tickfont=dict(size=20, color="black")
+            ),
+            yaxis=dict(
+                title=dict(
+                    text="Final Hypervolume",
+                    font=dict(size=24, color="black")
+                ),
+                tickfont=dict(size=20, color="black")
+            ),
+            legend=dict(
+                title=dict(font=dict(size=24, color="black")),
+                font=dict(size=20, color="black")
+            ),
+            boxmode="group",
+            template="plotly_white"
+        )
+    return fig
+
 def convert_to_rgba(color, opacity=1.0):
     from matplotlib.colors import to_rgba
     rgba = to_rgba(color, alpha=opacity)

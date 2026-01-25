@@ -160,8 +160,8 @@ def hydra_algo_data_single(prob_info: Dict[str, Any],
     algo_instance.run()  # This updates the instance's internal data.
     
     # Retrieve derived data from the run.
-    unique_sols, unique_fits, noisy_fits, sol_iterations, sol_transitions = algo_instance.get_trajectory_data()
-    seed_signature = algo_instance.seed_signature
+    # unique_sols, unique_fits, noisy_fits, sol_iterations, sol_transitions = algo_instance.get_trajectory_data()
+    # seed_signature = algo_instance.seed_signature
     
     return {
         "problem_name": prob_info['name'],
@@ -180,23 +180,18 @@ def hydra_algo_data_single(prob_info: Dict[str, Any],
         "n_gens": algo_instance.gens,
         "n_evals": algo_instance.evals,
         "stop_trigger": algo_instance.stop_trigger,
-        "n_unique_sols": len(unique_sols),
-        "unique_sols": unique_sols,
-        "unique_fits": unique_fits,
-        "noisy_fits": noisy_fits,
-        "final_fit": unique_fits[-1],
-        "max_fit": max(unique_fits),
-        "min_fit": min(unique_fits),
-        "sol_iterations": sol_iterations,
-        "sol_transitions": sol_transitions,
+        # "n_unique_sols": len(unique_sols),
+        # "unique_sols": unique_sols,
+        # "unique_fits": unique_fits,
+        # "noisy_fits": noisy_fits,
+        # "final_fit": unique_fits[-1],
+        # "max_fit": max(unique_fits),
+        # "min_fit": min(unique_fits),
+        # "sol_iterations": sol_iterations,
+        # "sol_transitions": sol_transitions,
         "seed": seed,
-        "seed_signature": seed_signature,
-        # pareto data
-        # "pareto_solutions": algo_instance.pareto_solutions,
-        # "pareto_fitnesses": algo_instance.pareto_fitnesses,
-        # "pareto_true_fitnesses": algo_instance.pareto_true_fitnesses,
-        # "hypervolumes": algo_instance.hypervolumes,
-        # "hypervolumes_true": algo_instance.hypervolumes_true
+        "seed_signature": algo_instance.seed_signature,
+        # PARETO DATA
         # noisy PF data (as the algorithm optimises)
         "pareto_solutions": algo_instance.pareto_solutions,
         "pareto_fitnesses": algo_instance.pareto_fitnesses,
@@ -204,10 +199,17 @@ def hydra_algo_data_single(prob_info: Dict[str, Any],
         # true PF (approx) built from full-pop true evals
         "true_pareto_solutions": algo_instance.true_pareto_solutions,
         "true_pareto_fitnesses": algo_instance.true_pareto_fitnesses,
-        # hypervolumes
+        # hypervolumes (full lists)
         "noisy_pf_noisy_hypervolumes": algo_instance.noisy_pf_noisy_hypervolumes,
         "noisy_pf_true_hypervolumes": algo_instance.noisy_pf_true_hypervolumes,
         "true_pf_hypervolumes": algo_instance.true_pf_hypervolumes,
+        # hypervolume scalar values (for dashboard plotting/tables)
+        "final_true_hv": algo_instance.true_pf_hypervolumes[-1] if algo_instance.true_pf_hypervolumes else None,
+        "max_true_hv": max(algo_instance.true_pf_hypervolumes) if algo_instance.true_pf_hypervolumes else None,
+        "min_true_hv": min(algo_instance.true_pf_hypervolumes) if algo_instance.true_pf_hypervolumes else None,
+        "final_noisy_pf_hv": algo_instance.noisy_pf_true_hypervolumes[-1] if algo_instance.noisy_pf_true_hypervolumes else None,
+        "max_noisy_pf_hv": max(algo_instance.noisy_pf_true_hypervolumes) if algo_instance.noisy_pf_true_hypervolumes else None,
+        "min_noisy_pf_hv": min(algo_instance.noisy_pf_true_hypervolumes) if algo_instance.noisy_pf_true_hypervolumes else None,
         # iterations
         "n_gens_pareto_best": algo_instance.n_gens_pareto_best
     }
@@ -323,7 +325,11 @@ def main(cfg: DictConfig):
 
         # Log metrics and artifacts
         for row in df.itertuples():
-            mlflow.log_metric('final_fitness', row.final_fit, step=row.seed)
+            # Log final hypervolume instead of single fitness
+            if row.true_pf_hypervolumes:
+                mlflow.log_metric('final_true_hypervolume', row.true_pf_hypervolumes[-1], step=row.seed)
+            if row.noisy_pf_true_hypervolumes:
+                mlflow.log_metric('final_noisy_pf_hypervolume', row.noisy_pf_true_hypervolumes[-1], step=row.seed)
         df.to_csv('data/temp/results.csv', index=False) # save csv
         mlflow.log_artifact('data/temp/results.csv')
         df.to_pickle("data/temp/results.pkl") # save pickle
@@ -333,8 +339,10 @@ def main(cfg: DictConfig):
     
     mlflow.end_run(status="FINISHED")
 
-    # Print summary
-    print(df[['seed', 'final_fit']])
+    # Print summary - show final hypervolume instead of final_fit
+    summary_df = df[['seed', 'n_gens', 'n_evals']].copy()
+    summary_df['final_hv'] = df['true_pf_hypervolumes'].apply(lambda x: x[-1] if x else None)
+    print(summary_df)
 
     compute_time = time.perf_counter() - start_time
     print(compute_time)

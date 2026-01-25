@@ -7,10 +7,213 @@ import plotly.express as px  # for continuous color scales
 import networkx as nx
 import numpy as np
 from sklearn.manifold import MDS as MDS_sklearn
+from sklearn.manifold import ClassicalMDS
 from sklearn.manifold import TSNE
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
+import os
 
 from .DashboardHelpers import *
+
+
+def compute_distance_matrix(distance_fn, items):
+    """
+    Compute full pairwise distance matrix for items.
+
+    Args:
+        distance_fn: Function that computes distance between two items
+        items: List of items
+
+    Returns:
+        D: numpy array of shape (n, n) with pairwise distances
+    """
+    n = len(items)
+    D = np.zeros((n, n), dtype=float)
+    for i in range(n):
+        for j in range(n):
+            if i != j:
+                D[i, j] = float(distance_fn(items[i], items[j]))
+    return D
+
+
+def _compute_distance_row(args):
+    """Helper function to compute one row of the distance matrix."""
+    i, items, distance_fn = args
+    n = len(items)
+    row = np.zeros(n, dtype=float)
+    for j in range(n):
+        if i != j:
+            row[j] = float(distance_fn(items[i], items[j]))
+    return i, row
+
+
+def compute_distance_matrix_parallel(distance_fn, items, parallel=None):
+    """
+    Compute full pairwise distance matrix for items with optional parallelization.
+
+    Args:
+        distance_fn: Function that computes distance between two items (must be picklable)
+        items: List of items
+        parallel: If None, no parallelization. If numeric, parallelize when n > parallel.
+
+    Returns:
+        D: numpy array of shape (n, n) with pairwise distances
+    """
+    n = len(items)
+    D = np.zeros((n, n), dtype=float)
+
+    use_parallel = parallel is not None and n > parallel
+
+    if use_parallel:
+        print(f'\033[33mUsing parallel distance matrix computation with {n} items\033[0m')
+        n_workers = min(os.cpu_count() or 4, 50)
+        with ThreadPoolExecutor(max_workers=n_workers) as executor:
+            futures = [executor.submit(_compute_distance_row, (i, items, distance_fn)) for i in range(n)]
+            for future in futures:
+                i, row = future.result()
+                D[i, :] = row
+    else:
+        for i in range(n):
+            for j in range(n):
+                if i != j:
+                    D[i, j] = float(distance_fn(items[i], items[j]))
+
+    return D
+
+
+def _select_landmarks_random(n, n_landmarks, distance_fn, items, rng):
+    """Random landmark selection."""
+    return rng.choice(n, n_landmarks, replace=False)
+
+
+def _select_landmarks_fps(n, n_landmarks, distance_fn, items, rng, r=1):
+    """
+    Furthest Point Sampling (FPS) landmark selection.
+
+    Selects landmarks that are well-spread across the space by iteratively
+    choosing points that are far from all existing landmarks.
+
+    Args:
+        n: Total number of items
+        n_landmarks: Number of landmarks to select
+        distance_fn: Function that computes distance between two items
+        items: List of items
+        rng: NumPy random generator
+        r: Number of candidates to consider at each step (adds randomization)
+
+    Returns:
+        Array of landmark indices
+    """
+    # Choose first landmark uniformly at random
+    first_landmark = rng.integers(0, n)
+    S = [first_landmark]
+
+    # Initialize minimum distances to first landmark
+    m = np.array([float(distance_fn(items[i], items[first_landmark]))
+                  if i != first_landmark else 0.0 for i in range(n)])
+
+    for k in range(1, n_landmarks):
+        # Find indices not in S
+        available = np.array([i for i in range(n) if i not in S])
+        m_available = m[available]
+
+        # Get indices of r largest distances (furthest from all landmarks)
+        r_actual = min(r, len(available))
+        candidate_positions = np.argpartition(m_available, -r_actual)[-r_actual:]
+        candidates = available[candidate_positions]
+
+        # Choose uniformly at random from candidates
+        new_landmark = rng.choice(candidates)
+        S.append(new_landmark)
+
+        # Update minimum distances
+        for i in range(n):
+            if i not in S:
+                d_new = float(distance_fn(items[i], items[new_landmark]))
+                m[i] = min(m[i], d_new)
+
+    return np.array(S)
+
+
+def landmark_mds(distance_fn, items, n_landmarks=None, landmark_method='random',
+                 fps_candidates=1, random_state=42):
+    """
+    Landmark MDS: Efficient MDS approximation for large datasets.
+
+    Args:
+        distance_fn: Function that computes distance between two items
+        items: List of items to embed
+        n_landmarks: Number of landmarks to use (default: sqrt(n))
+        landmark_method: Method for selecting landmarks ('random' or 'fps')
+        fps_candidates: For FPS method, number of candidates to consider at each step
+        random_state: Random seed for reproducibility
+
+    Returns:
+        XY: numpy array of shape (n, 2) with 2D coordinates
+    """
+    n = len(items)
+    if n_landmarks is None:
+        n_landmarks = min(max(20, int(np.sqrt(n))), n)
+
+    # Ensure we don't have more landmarks than items
+    n_landmarks = min(n_landmarks, n)
+
+    # Select landmarks based on method
+    rng = np.random.default_rng(random_state)
+    if landmark_method == 'random':
+        landmark_indices = _select_landmarks_random(n, n_landmarks, distance_fn, items, rng)
+    elif landmark_method == 'fps':
+        landmark_indices = _select_landmarks_fps(n, n_landmarks, distance_fn, items, rng,
+                                                  r=fps_candidates)
+    else:
+        raise ValueError(f"Unknown landmark_method: {landmark_method}. Use 'random' or 'fps'.")
+
+    # Compute n×k distance matrix (all points to landmarks)
+    D_to_landmarks = np.zeros((n, n_landmarks))
+    for i in range(n):
+        for j, lm_idx in enumerate(landmark_indices):
+            if i != lm_idx:
+                D_to_landmarks[i, j] = float(distance_fn(items[i], items[lm_idx]))
+
+    # Extract k×k landmark-to-landmark distance matrix
+    D_landmarks = D_to_landmarks[landmark_indices, :]
+
+    # Run MDS on landmarks only
+    # mds = MDS_sklearn(n_components=2, dissimilarity='precomputed', random_state=random_state)
+    # XY_landmarks = mds.fit_transform(D_landmarks)
+    cmds = ClassicalMDS(n_components=2, metric="precomputed")
+    XY_landmarks = cmds.fit_transform(D_landmarks)
+
+    # Initialize output coordinates
+    XY = np.zeros((n, 2))
+    XY[landmark_indices] = XY_landmarks
+
+    # Out-of-sample extension via lateration (least-squares distance matching)
+    landmark_set = set(landmark_indices)
+    X_L = XY_landmarks  # Landmark positions in 2D
+
+    # Precompute squared norms of landmark positions
+    X_L_sq_norms = np.sum(X_L ** 2, axis=1)
+
+    for i in range(n):
+        if i in landmark_set:
+            continue
+
+        # Distances from point i to all landmarks
+        delta = D_to_landmarks[i, :]
+        delta_sq = delta ** 2
+
+        # Use landmark 0 as reference
+        # Build system: A @ x = b
+        # A[a-1, :] = 2 * (X_L[a] - X_L[0])
+        # b[a-1] = ||X_L[a]||² - ||X_L[0]||² - (δ[a]² - δ[0]²)
+        A = 2 * (X_L[1:] - X_L[0])
+        b = X_L_sq_norms[1:] - X_L_sq_norms[0] - (delta_sq[1:] - delta_sq[0])
+
+        # Solve least-squares problem: argmin_x ||Ax - b||²
+        XY[i], residuals, rank, s = np.linalg.lstsq(A, b, rcond=None)
+
+    return XY
 
 from ..problems.FitnessFunctions import *
 from ..problems.ProblemScripts import load_problem_KP
@@ -92,29 +295,29 @@ display1_df = display1_df[['problem_type',
                            'PID']].drop_duplicates()
 
 # For Table 2, group and aggregate data
-display2_df = df[['problem_name',
-                  'opt_global', 
-                  'fit_func', 
-                  'noise', 
-                  'algo_type',
-                  'algo_name', 
-                  'n_unique_sols', 
-                  'n_gens', 
-                  'n_evals',
-                  'final_fit',
-                  'max_fit',
-                  'min_fit']]
-display2_df = df.groupby(
-    ['problem_name', 'opt_global', 'fit_func', 'noise', 'algo_type']
-).agg({
-    'n_unique_sols': 'median',
-    'n_gens': 'median',
-    'n_evals': 'median',
-    'final_fit': 'mean',
-    'max_fit': 'max',
-    'min_fit': 'min'
-}).reset_index()
-display2_hidden_cols = ['problem_type', 'problem_goal', 'problem_name', 'dimensions', 'opt_global']
+# display2_df = df[['problem_name',
+#                   'opt_global', 
+#                   'fit_func', 
+#                   'noise', 
+#                   'algo_type',
+#                   'algo_name', 
+#                   'n_unique_sols', 
+#                   'n_gens', 
+#                   'n_evals',
+#                   'final_fit',
+#                   'max_fit',
+#                   'min_fit']]
+# display2_df = df.groupby(
+#     ['problem_name', 'opt_global', 'fit_func', 'noise', 'algo_type']
+# ).agg({
+#     'n_unique_sols': 'median',
+#     'n_gens': 'median',
+#     'n_evals': 'median',
+#     'final_fit': 'mean',
+#     'max_fit': 'max',
+#     'min_fit': 'min'
+# }).reset_index()
+# display2_hidden_cols = ['problem_type', 'problem_goal', 'problem_name', 'dimensions', 'opt_global']
 
 display2_df = df.copy()
 display2_df.drop([
@@ -141,6 +344,12 @@ display2_df.drop([
     'noisy_pf_true_hypervolumes',
     'true_pf_hypervolumes',
     'n_gens_pareto_best',
+    'final_true_hv',
+    'max_true_hv',
+    'min_true_hv',
+    'final_noisy_pf_hv',
+    'max_noisy_pf_hv',
+    'min_noisy_pf_hv'
 ], axis=1, errors='ignore', inplace=True)
 display2_hidden_cols = [
     'problem_type', 
@@ -226,16 +435,24 @@ app.layout = html.Div([
     html.Div([
         html.H3("2D Performance Plotting"),
         dcc.Tabs(id='2DPlotTabSelection', value='p1', children=[
-            dcc.Tab(label='Line plot', 
-                    value='p1', style=tab_style, 
+            dcc.Tab(label='Line plot (SO)',
+                    value='p1', style=tab_style,
                     selected_style=tab_selected_style),
-            dcc.Tab(label='Box plot', 
-                    value='p2', 
-                    style=tab_style, 
+            dcc.Tab(label='Box plot (SO)',
+                    value='p2',
+                    style=tab_style,
                     selected_style=tab_selected_style),
-            dcc.Tab(label='Data', 
-                    value='p3', 
-                    style=tab_style, 
+            dcc.Tab(label='Line plot (MO)',
+                    value='p3',
+                    style=tab_style,
+                    selected_style=tab_selected_style),
+            dcc.Tab(label='Box plot (MO)',
+                    value='p4',
+                    style=tab_style,
+                    selected_style=tab_selected_style),
+            dcc.Tab(label='Data',
+                    value='p5',
+                    style=tab_style,
                     selected_style=tab_selected_style),
         ]),
         html.Div(id='2DPlotTabContent'),
@@ -561,6 +778,8 @@ app.layout = html.Div([
             {'label': 'Fruchterman Reignold force directed', 'value': 'spring'},
             {'label': 'Kamada Kawai force directed', 'value': 'kamada_kawai'},
             {'label': 'MDS dissimilarity', 'value': 'mds'},
+            {'label': 'Random Landmark MDS', 'value': 'r_lmds'},
+            {'label': 'FPS Landmark MDS', 'value': 'fps_lmds'},
             {'label': 't-SNE dissimilarity', 'value': 'tsne'},
             {'label': 'raw solution values', 'value': 'raw'}
         ],
@@ -1003,7 +1222,7 @@ def display_stored_data(data):
     plot_df = pd.DataFrame(data)
     plot = plot2d_line(plot_df)
     return plot
-# 2D bar plot
+# 2D box plot
 @app.callback(
     Output('2DBoxPlot', 'figure'),
     Input('plot_2d_data', 'data')
@@ -1011,6 +1230,26 @@ def display_stored_data(data):
 def display_stored_data(data):
     plot_df = pd.DataFrame(data)
     plot = plot2d_box(plot_df)
+    return plot
+
+# 2D line plot (multi-objective)
+@app.callback(
+    Output('2DLinePlotMO', 'figure'),
+    Input('plot_2d_data', 'data')
+)
+def display_stored_data_mo_line(data):
+    plot_df = pd.DataFrame(data)
+    plot = plot2d_line_mo(plot_df)
+    return plot
+
+# 2D box plot (multi-objective)
+@app.callback(
+    Output('2DBoxPlotMO', 'figure'),
+    Input('plot_2d_data', 'data')
+)
+def display_stored_data_mo_box(data):
+    plot_df = pd.DataFrame(data)
+    plot = plot2d_box_mo(plot_df)
     return plot
 
 # ---------- Render 2D plot content in tabbed view ----------
@@ -1029,6 +1268,14 @@ def render_content_2DPlot_tab(tab):
             dcc.Graph(id='2DBoxPlot', style={'width': '800px', 'height': '600px'}),
         ])
     elif tab == 'p3':
+        return html.Div([
+            dcc.Graph(id='2DLinePlotMO'),
+        ])
+    elif tab == 'p4':
+        return html.Div([
+            dcc.Graph(id='2DBoxPlotMO', style={'width': '800px', 'height': '600px'}),
+        ])
+    elif tab == 'p5':
         return html.Div([
             dash_table.DataTable(
                 id='plot_2d_data_table',
@@ -1563,6 +1810,12 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
 
     # Options from dropdowns
     layout = layout_value
+
+    # MoSTN plot Limits
+    STN_final_x_gens = 150      # None = keep all
+    STN_lower_fit_limit = None  # already exists
+    STN_upper_fit_limit = None  # new
+    STN_stride = 1              # 1 = keep all, 2 = every 2nd, etc.
 
     # G = nx.DiGraph()
     G = nx.MultiDiGraph()
@@ -2335,55 +2588,6 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
 
     if mo_mode:
         print('CALCULATING DISTANCES IN MULTIOBJECTIVE MODE')
-        # Get the current MO nodes directly from the graph
-        # mo_nodes = [(n, d) for n, d in G.nodes(data=True) if d.get('type') == 'STN_MO']
-        # mo_labels = [n for n, _ in mo_nodes]
-        # fronts    = [d.get('front_solutions', []) for _, d in mo_nodes]
-        # K = len(fronts)
-
-        # if K == 0:
-        #     pos = {}
-        # else:
-        #     # Build symmetric distance matrix (uses your front_distance)
-        #     D = np.zeros((K, K), dtype=float)
-        #     # for i in range(K):
-        #     #     for j in range(i + 1, K):
-        #     #         d = front_distance(fronts[i], fronts[j])
-        #     #         D[i, j] = D[j, i] = float(d)
-        #     for i in range(K):
-        #         for j in range(K):
-        #             if i != j:
-        #                 D[i, j] = float(front_distance(fronts[i], fronts[j]))
-
-        #     # Choose embedding
-        #     if layout == 'mds':
-        #         mds = MDS_sklearn(n_components=2, dissimilarity='precomputed', random_state=42)
-        #         XY = mds.fit_transform(D)
-        #     elif layout == 'tsne':
-        #         tsne = TSNE(n_components=2, metric='precomputed', random_state=42, init='random')
-        #         XY = tsne.fit_transform(D)
-        #     elif layout in ('kamada_kawai', 'kamada_kawai_weighted', 'spring'):
-        #         # KK on complete graph weighted by distances
-        #         H = nx.complete_graph(K)
-        #         for i in range(K):
-        #             for j in range(i + 1, K):
-        #                 H[i][j]['weight'] = max(D[i, j], 1e-6)  # avoid zero
-        #         raw = nx.kamada_kawai_layout(H, weight='weight', dim=2)
-        #         XY = np.array([raw[i] for i in range(K)])
-        #     else:
-        #         mds = MDS_sklearn(n_components=2, dissimilarity='precomputed', random_state=42)
-        #         XY = mds.fit_transform(D)
-
-        #     # Assign positions to the MO nodes
-        #     pos = {mo_labels[i]: (float(XY[i, 0]), float(XY[i, 1])) for i in range(K)}
-
-        #     # --- Add positions for noisy MO nodes (same x,y as their true counterparts) ---
-        #     for node, data in G.nodes(data=True):
-        #         if data.get('type') == 'STN_MO_Noise':
-        #             # Find the corresponding true node (same prefix before "_Noisy")
-        #             base_label = node.replace('_Noisy', '_True')
-        #             if base_label in pos:
-        #                 pos[node] = pos[base_label]
         # Collect nodes
         base_nodes  = [(n, d) for n, d in G.nodes(data=True) if d.get('type') == 'STN_MO']
         noisy_nodes = [(n, d) for n, d in G.nodes(data=True) if d.get('type') == 'STN_MO_Noise']
@@ -2407,21 +2611,28 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
 
         pos = {}
         if K > 0:
-            # Distance matrix (directed OK)
-            D = np.zeros((K, K), dtype=float)
-            for i in range(K):
-                for j in range(K):
-                    if i != j:
-                        D[i, j] = float(front_distance(fronts[i], fronts[j]))
-
             # Embedding
-            if layout == 'mds':
+            if layout == 'r_lmds':
+                # Landmark MDS - efficient approximation for large K
+                print(f'\033[33mUsing Random Landmark MDS with {K} fronts\033[0m')
+                XY = landmark_mds(front_distance, fronts, n_landmarks=None, random_state=42, landmark_method='random')
+            if layout == 'fps_lmds':
+                # Landmark MDS - efficient approximation for large K
+                print(f'\033[33mUsing FPS Landmark MDS with {K} fronts\033[0m')
+                XY = landmark_mds(front_distance, fronts, n_landmarks=None, random_state=42, landmark_method='fps')
+            elif layout == 'mds':
+                # Standard MDS
+                print(f'\033[33mUsing standard MDS with {K} fronts\033[0m')
+                # D = compute_distance_matrix(front_distance, fronts)
+                D = compute_distance_matrix(front_distance, fronts)
                 mds = MDS_sklearn(n_components=2, dissimilarity='precomputed', random_state=42)
                 XY = mds.fit_transform(D)
             elif layout == 'tsne':
+                D = compute_distance_matrix(front_distance, fronts)
                 tsne = TSNE(n_components=2, metric='precomputed', random_state=42, init='random')
                 XY = tsne.fit_transform(D)
             elif layout in ('kamada_kawai', 'kamada_kawai_weighted', 'spring'):
+                D = compute_distance_matrix(front_distance, fronts)
                 H = nx.complete_graph(K)
                 for i in range(i := 0, K):
                     for j in range(i + 1, K):
@@ -2429,6 +2640,8 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                 raw = nx.kamada_kawai_layout(H, weight='weight', dim=2)
                 XY = np.array([raw[i] for i in range(K)])
             else:
+                # Default to MDS
+                D = compute_distance_matrix(front_distance, fronts)
                 mds = MDS_sklearn(n_components=2, dissimilarity='precomputed', random_state=42)
                 XY = mds.fit_transform(D)
 
@@ -2455,8 +2668,22 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
             # print("ERROR: No solutions for Positioning")
             pos = {}
         
+        elif layout == 'lmds':
+            print(f'\033[33mUsing Landmark MDS with {K} solutions\033[0m')
+            # Use Landmark MDS for efficient embedding
+            positions_2d = landmark_mds(hamming_distance, solutions_list, n_landmarks=None, random_state=42)
+
+            solution_positions = {}
+            for i, sol in enumerate(solutions_list):
+                solution_positions[sol] = positions_2d[i]
+
+            pos = {}
+            for node, data in G.nodes(data=True):
+                sol = tuple(data['solution'])
+                # All nodes with the same bit-string get the same (x,y)
+                pos[node] = solution_positions[sol]
         elif layout == 'mds':
-            print('\033[33mUsing MDS\033[0m')
+            print(f'\033[33mUsing standard MDS with {K} solutions\033[0m')
             dissimilarity_matrix = np.zeros((K, K))
             for i in range(K):
                 for j in range(K):
@@ -2468,7 +2695,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
             solution_positions = {}
             for i, sol in enumerate(solutions_list):
                 solution_positions[sol] = positions_2d[i]
-            
+
             pos = {}
             for node, data in G.nodes(data=True):
                 sol = tuple(data['solution'])

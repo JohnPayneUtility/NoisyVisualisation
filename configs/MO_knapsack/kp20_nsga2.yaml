@@ -25,7 +25,7 @@ run:
   seed: 1
   num_runs: 10
   parallel: true
-  verbose_rate: 10 # 0=silent, 1=every gen, n=every n gens
+  verbose_rate: 50 # 0=silent, 1=every gen, n=every n gens
 
 # ==============================
 # MLflow Configuration

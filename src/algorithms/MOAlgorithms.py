@@ -264,26 +264,26 @@ def front_sig(front_inds):
     sols = [tuple(int(x) for x in ind) for ind in (front_inds or [])]
     return frozenset(sols)
 
-def record_population_state(data, population, toolbox, true_fitness_function):
-    """
-    Record the current state of the population.
-    """
-    all_generations, best_solutions, best_fitnesses, true_fitnesses = data
+# def record_population_state(data, population, toolbox, true_fitness_function):
+#     """
+#     Record the current state of the population.
+#     """
+#     all_generations, best_solutions, best_fitnesses, true_fitnesses = data
 
-    # Record the current population
-    all_generations.append([ind[:] for ind in population])
+#     # Record the current population
+#     all_generations.append([ind[:] for ind in population])
     
-    # Identify the best individual in the current population
-    best_individual = tools.selBest(population, 1)[0]
-    best_solutions.append(toolbox.clone(best_individual))
-    best_fitnesses.append(best_individual.fitness.values[0])
+#     # Identify the best individual in the current population
+#     best_individual = tools.selBest(population, 1)[0]
+#     best_solutions.append(toolbox.clone(best_individual))
+#     best_fitnesses.append(best_individual.fitness.values[0])
     
-    # If provided record true fitness
-    if true_fitness_function is not None:
-        true_fit = true_fitness_function[0](best_individual, **true_fitness_function[1])
-        true_fitnesses.append(true_fit[0])
-    else:
-        true_fitnesses.append(best_individual.fitness.values[0])
+#     # If provided record true fitness
+#     if true_fitness_function is not None:
+#         true_fit = true_fitness_function[0](best_individual, **true_fitness_function[1])
+#         true_fitnesses.append(true_fit[0])
+#     else:
+#         true_fitnesses.append(best_individual.fitness.values[0])
 
 def record_pareto_data(
     population,
@@ -410,41 +410,41 @@ def record_pareto_data(
     hv_true = hypervolume(true_pts, hv_ref)
     true_pf_hypervolumes.append(float(hv_true))
 
-def extract_trajectory_data(best_solutions, best_fitnesses, true_fitnesses):
-    # Extract unique solutions and their corresponding fitness values
-    unique_solutions = []
-    unique_fitnesses = []
-    noisy_fitnesses = []
-    solution_iterations = []
-    seen_solutions = {}
+# def extract_trajectory_data(best_solutions, best_fitnesses, true_fitnesses):
+#     # Extract unique solutions and their corresponding fitness values
+#     unique_solutions = []
+#     unique_fitnesses = []
+#     noisy_fitnesses = []
+#     solution_iterations = []
+#     seen_solutions = {}
 
-    for solution, fitness, true_fitness in zip(best_solutions, best_fitnesses, true_fitnesses):
-        solution_tuple = tuple(solution)
-        if solution_tuple not in seen_solutions:
-            seen_solutions[solution_tuple] = 1
-            unique_solutions.append(solution)
-            unique_fitnesses.append(true_fitness)
-            noisy_fitnesses.append(fitness)
-        else:
-            seen_solutions[solution_tuple] += 1
+#     for solution, fitness, true_fitness in zip(best_solutions, best_fitnesses, true_fitnesses):
+#         solution_tuple = tuple(solution)
+#         if solution_tuple not in seen_solutions:
+#             seen_solutions[solution_tuple] = 1
+#             unique_solutions.append(solution)
+#             unique_fitnesses.append(true_fitness)
+#             noisy_fitnesses.append(fitness)
+#         else:
+#             seen_solutions[solution_tuple] += 1
 
-    # Create a list of iteration counts for each unique solution
-    for solution in unique_solutions:
-        solution_tuple = tuple(solution)
-        solution_iterations.append(seen_solutions[solution_tuple])
+#     # Create a list of iteration counts for each unique solution
+#     for solution in unique_solutions:
+#         solution_tuple = tuple(solution)
+#         solution_iterations.append(seen_solutions[solution_tuple])
 
-    return unique_solutions, unique_fitnesses, noisy_fitnesses, solution_iterations
+#     return unique_solutions, unique_fitnesses, noisy_fitnesses, solution_iterations
 
-def extract_transitions(unique_solutions):
-    # Extract transitions between solutions over generations
-    transitions = []
+# def extract_transitions(unique_solutions):
+#     # Extract transitions between solutions over generations
+#     transitions = []
 
-    for i in range(1, len(unique_solutions)):
-        prev_solution = tuple(unique_solutions[i - 1])
-        current_solution = tuple(unique_solutions[i])
-        transitions.append((prev_solution, current_solution))
+#     for i in range(1, len(unique_solutions)):
+#         prev_solution = tuple(unique_solutions[i - 1])
+#         current_solution = tuple(unique_solutions[i])
+#         transitions.append((prev_solution, current_solution))
 
-    return transitions
+#     return transitions
 
 # ==============================
 # Base Algorithm Class
@@ -468,10 +468,10 @@ class OptimisationAlgorithm:
     
     # Create lists to store data, seperate for each instance
     # single objective data
-    all_generations: List[List[Any]] = field(default_factory=list)
-    best_solutions: List[Any] = field(default_factory=list)
-    best_fitnesses: List[float] = field(default_factory=list)
-    true_fitnesses: List[float] = field(default_factory=list)
+    # all_generations: List[List[Any]] = field(default_factory=list)
+    # best_solutions: List[Any] = field(default_factory=list)
+    # best_fitnesses: List[float] = field(default_factory=list)
+    # true_fitnesses: List[float] = field(default_factory=list)
 
     # multi objective data
     # noisy pareto front data
@@ -491,7 +491,9 @@ class OptimisationAlgorithm:
     def __post_init__(self):
         self.stop_trigger = ''
         self.seed_signature = random.randint(0, 10**6)
-        self.data = [self.all_generations, self.best_solutions, self.best_fitnesses, self.true_fitnesses]
+        # self.noisy_pf = tools.ParetoFront()
+        # self.true_pf = tools.ParetoFront()
+        # self.data = [self.all_generations, self.best_solutions, self.best_fitnesses, self.true_fitnesses]
 
         # Fitness and individual creators
         if not hasattr(creator, "CustomFitness"):
@@ -546,12 +548,12 @@ class OptimisationAlgorithm:
         while not self.stop_condition():
             self.gens += 1
             self.perform_generation()
-            self.record_state(self.population)
+            # self.record_state(self.population)
             self.record_state_pareto(self.population)
 
-    def record_state(self, population):
-        #Record the current population state.
-        record_population_state(self.data, population, self.toolbox, self.true_fitness_function)
+    # def record_state(self, population):
+    #     #Record the current population state.
+    #     record_population_state(self.data, population, self.toolbox, self.true_fitness_function)
     
     def record_state_pareto(self, population):
         record_pareto_data(
@@ -576,16 +578,16 @@ class OptimisationAlgorithm:
             self.verbose_rate
             )
 
-    def get_classic_data(self):
-        return self.all_generations, self.best_solutions, self.best_fitnesses, self.true_fitnesses
+    # def get_classic_data(self):
+    #     return self.all_generations, self.best_solutions, self.best_fitnesses, self.true_fitnesses
     
-    def get_solution_data(self):
-        return self.best_solutions, self.best_fitnesses, self.true_fitnesses
+    # def get_solution_data(self):
+    #     return self.best_solutions, self.best_fitnesses, self.true_fitnesses
     
-    def get_trajectory_data(self):
-        unique_sols, unique_fits, noisy_fitnesses, sol_iterations = extract_trajectory_data(self.best_solutions, self.best_fitnesses, self.true_fitnesses)
-        sol_transitions = extract_transitions(unique_sols)
-        return unique_sols, unique_fits, noisy_fitnesses, sol_iterations, sol_transitions
+    # def get_trajectory_data(self):
+    #     unique_sols, unique_fits, noisy_fitnesses, sol_iterations = extract_trajectory_data(self.best_solutions, self.best_fitnesses, self.true_fitnesses)
+    #     sol_transitions = extract_transitions(unique_sols)
+    #     return unique_sols, unique_fits, noisy_fitnesses, sol_iterations, sol_transitions
 
 # ==============================
 # Evolutionary Algorithm Subclasses
@@ -608,7 +610,7 @@ class SEMO(OptimisationAlgorithm):
 
         # Initialise archive P with a single random solution
         self.initialise_population(pop_size=1)   # P = {x}
-        self.record_state(self.population)
+        # self.record_state(self.population)
 
     # ---- Pareto helpers ----
     @staticmethod
@@ -658,101 +660,6 @@ class SEMO(OptimisationAlgorithm):
         self.prune_dominated_by(offspring)
         self.population.append(offspring)
 
-class MoMuPlusLamdaEA(OptimisationAlgorithm):
-    def __init__(self, 
-                 mu: int,
-                 lam: int, 
-                 mutate_function: str, 
-                 mutate_params: dict,
-                 **kwargs): # other parameters passed to the base class
-        
-        # Initialize common components via the base class
-        super().__init__(**kwargs)
-        self.gens = 0
-        self.evals = 0
-        self.mu = mu
-        self.lam = lam
-        self.name = f'({mu}+{lam})EA'
-        if mu > 1 and lam > 1:
-            self.type = '(mu+lamda)EA'
-        elif mu > 1:
-            self.type = '(mu+1)EA'
-        elif lam > 1:
-            self.type = '(1+lam)EA'
-        else: self.type = '(1+1)EA'
-
-        # Register the mutation operator in the toolbox
-        if mutate_function == None or mutate_function == "probFlipBit":
-            self.toolbox.register("mutate", lambda ind: tools.mutFlipBit(ind, **mutate_params))
-        elif mutate_function == "probSwapBit":
-            self.toolbox.register("mutate", lambda ind: mutSwapBit(ind, **mutate_params))
-        # self.toolbox.register("mutate", lambda ind: mutate_function(ind, **mutate_params))
-
-        # Create the initial population of size mu
-        self.initialise_population(self.mu)
-        self.record_state(self.population)
-
-    def perform_generation(self):
-        """Perform generation of (mu + lambda) Evolutionary Algorithm"""
-        # Generate offspring 
-        for _ in range(self.lam):
-            parent = random.choice(self.population)              
-            offspring = self.toolbox.clone(parent)
-            offspring, = self.toolbox.mutate(offspring)
-            
-            # Evaluate the offspring
-            del offspring.fitness.values
-            offspring.fitness.values = self.toolbox.evaluate(offspring)
-            self.evals += 1
-
-            self.population.append(offspring)
-        # Update population
-        self.population = tools.selBest(self.population, self.mu)
-
-class PCEA(OptimisationAlgorithm):
-    def __init__(self, 
-                 pop_size: int,
-                 **kwargs): # other parameters passed to the base class
-        
-        # Initialize common components via the base class
-        super().__init__(**kwargs)
-        self.gens = 0
-        self.evals = 0
-        self.pop_size = pop_size
-        self.name = f'PCEA(p={pop_size})'
-        self.type = 'PCEA'
-
-        # Register the mutation operator in the toolbox
-        self.toolbox.register("mate", complementary_crossover)
-
-        # Create the initial population of size mu
-        self.initialise_population(self.pop_size)
-        self.record_state(self.population)
-
-    def perform_generation(self):
-        """Perform generation of PCEA Evolutionary Algorithm"""
-        # Generate offspring 
-        offspring = []
-        for _ in range(len(self.population)):
-            parent1, parent2 = random.sample(self.population, 2)
-            offspring1, offspring2 = self.toolbox.mate(parent1, parent2)
-
-            # Invalidate fitness to ensure re-evaluation if needed
-            # del offspring1.fitness.values
-            # del offspring2.fitness.values
-
-            offspring1.fitness.values = self.toolbox.evaluate(offspring1)
-            offspring2.fitness.values = self.toolbox.evaluate(offspring2)
-            self.evals += 2
-
-            # Select the fitter offspring and add to new population
-            if offspring1.fitness.values[0] > offspring2.fitness.values[0]:  # Adjust for minimization
-                offspring.append(offspring1)
-            else:
-                offspring.append(offspring2)
-
-        self.population[:] = offspring # replace population
-
 # ==============================
 # Estimation of Distribution Algorithm Subclasses
 # ==============================
@@ -783,7 +690,7 @@ class MoUMDA(OptimisationAlgorithm):
 
         # Initialise & evaluate μ population
         self.initialise_population(self.pop_size)
-        self.record_state(self.population)  # optional first snapshot
+        # self.record_state(self.population)  # optional first snapshot
 
     def perform_generation(self):
         """One generation of MoUMDA."""
@@ -830,7 +737,7 @@ class MoUMDA_noDuplicates(OptimisationAlgorithm):
 
         # Initialise & evaluate μ population
         self.initialise_population(self.pop_size)
-        self.record_state(self.population)  # optional first snapshot
+        # self.record_state(self.population)  # optional first snapshot
 
     def perform_generation(self):
         """One generation of MoUMDA."""
@@ -850,7 +757,6 @@ class MoUMDA_noDuplicates(OptimisationAlgorithm):
         for ind, fit in zip(self.population, fitnesses):
             ind.fitness.values = fit
         self.evals += self.pop_size
-
 
 class MoUMDA_ParetoArchive(OptimisationAlgorithm):
     def __init__(
@@ -877,7 +783,7 @@ class MoUMDA_ParetoArchive(OptimisationAlgorithm):
 
         # keep your existing init behaviour
         self.initialise_population(self.pop_size)
-        self.record_state(self.population)
+        # self.record_state(self.population)
 
     def record_state_pareto(self, population):
         # Record PF/HV based on the archive
@@ -921,90 +827,6 @@ class MoUMDA_ParetoArchive(OptimisationAlgorithm):
         for ind, fit in zip(self.population, fitnesses):
             ind.fitness.values = fit
         self.evals += self.pop_size
-
-
-class CompactGA(OptimisationAlgorithm):
-    def __init__(self, 
-                 pop_size: int,
-                 **kwargs):
-        """
-        Compact Genetic Algorithm.
-        
-        Parameters:
-            cga_pop_size (int): The effective population size parameter used to
-                                determine the update step (1/cga_pop_size).
-            **kwargs: Other parameters passed to the base OptimisationAlgorithm.
-        """
-        super().__init__(**kwargs)
-        self.gens = 0
-        self.evals = 0
-        self.cga_pop_size = pop_size
-        self.name = f"cGA(p={pop_size})"
-        self.type = 'cGA'
-        # Initialize the probability vector (one value per gene)
-        self.p_vector = [0.5] * self.sol_length
-        # Record the initial state by sampling a candidate solution.
-        self.record_state([self.sample_solution()])
-
-    def sample_solution(self):
-        """
-        Generate a candidate solution by rounding the probability vector.
-        For example, if p >= 0.5, choose 1; otherwise, choose 0.
-        """
-        candidate_list = [1 if random.random() < p else 0 for p in self.p_vector]
-        candidate = creator.Individual(candidate_list)
-        candidate.fitness.values = self.toolbox.evaluate(candidate)
-        return candidate
-
-    def perform_generation(self):
-        """
-        Perform one generation of the compact GA.
-        
-        This involves:
-          1. Sampling two individuals from the current probability vector.
-          2. Evaluating their fitness.
-          3. Determining the winner and loser.
-          4. Updating the probability vector in each gene where they differ.
-        """
-        # Sample two individuals using the current probability vector.
-        x = [1 if random.random() < p else 0 for p in self.p_vector]
-        y = [1 if random.random() < p else 0 for p in self.p_vector]
-        # Evaluate both individuals.
-        fx = self.toolbox.evaluate(x)
-        fy = self.toolbox.evaluate(y)
-        self.evals += 2
-        # Determine winner and loser.
-        if fx[0] > fy[0]:
-            winner, loser = x, y
-        elif fy[0] > fx[0]:
-            winner, loser = y, x
-        else:
-            # In case of a tie, choose randomly.
-            if random.random() < 0.5:
-                winner, loser = x, y
-            else:
-                winner, loser = y, x
-        # Update each gene’s probability.
-        update_step = 1.0 / self.cga_pop_size
-        for i in range(self.sol_length):
-            if winner[i] != loser[i]:
-                if winner[i] == 1:
-                    self.p_vector[i] = min(1.0, self.p_vector[i] + update_step)
-                else:
-                    self.p_vector[i] = max(0.0, self.p_vector[i] - update_step)
-        # Optionally record a candidate solution for this generation.
-        candidate = self.sample_solution()
-        # We pass a list with the candidate to record_state (to mimic a population).
-        self.population = [candidate]
-    
-    # def stop_condition(self) -> bool:
-    #     """
-    #     Stop if the probability vector has converged (all entries are 0 or 1)
-    #     or if any base class stopping conditions are met.
-    #     """
-    #     if all(p in (0.0, 1.0) for p in self.p_vector):
-    #         return True
-    #     return super().stop_condition()
 
 class NSGA2(OptimisationAlgorithm):
     def __init__(
@@ -1062,7 +884,7 @@ class NSGA2(OptimisationAlgorithm):
         self.initialise_population(pop_size=self.pop_size)
         self.population = self.toolbox.select(self.population, len(self.population))
 
-        self.record_state(self.population)
+        # self.record_state(self.population)
         self.record_state_pareto(self.population)
 
     def perform_generation(self):

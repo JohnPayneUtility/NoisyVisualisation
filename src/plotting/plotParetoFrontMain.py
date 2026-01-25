@@ -35,9 +35,15 @@ def front_distance(frontA, frontB):
     return 0.5*(d1 + d2)
 
 
-def plotParetoFront(frontdata, series_labels):
+def plotParetoFront(frontdata, series_labels, continuous_colorscale=True, colorscale='Viridis'):
     """
     Function to generate pareto front plots based on various settings.
+
+    Args:
+        frontdata: Data for the Pareto fronts
+        series_labels: Labels for each series
+        continuous_colorscale: If True, use continuous color scale instead of discrete colors
+        colorscale: The colorscale to use when continuous_colorscale is True (e.g., 'Viridis', 'Plasma', 'Cividis')
     """
     fig = go.Figure()
 
@@ -57,6 +63,16 @@ def plotParetoFront(frontdata, series_labels):
     run_idx = 0
     gen_entries = runs_full[run_idx] if len(runs_full) > run_idx else []
 
+    if continuous_colorscale:
+        # Collect all generation indices to normalize the color scale
+        all_gens = [entry.get('gen_idx', 0) for entry in gen_entries if entry.get('algo_front_noisy_fitnesses')]
+        if all_gens:
+            min_gen = min(all_gens)
+            max_gen = max(all_gens)
+        else:
+            min_gen = max_gen = 0
+
+    first_trace = True
     for entry in gen_entries:
         pts = entry.get('algo_front_noisy_fitnesses') or []
         g   = entry.get('gen_idx', None)
@@ -66,20 +82,48 @@ def plotParetoFront(frontdata, series_labels):
         xs = [float(p[0]) for p in pts]
         ys = [float(p[1]) for p in pts]
 
-        fig.add_trace(
-            go.Scatter(
-                x=xs, y=ys,
-                mode="lines+markers",
-                name=f"G{g}"
+        if continuous_colorscale:
+            # Use continuous color scale with colorbar (only show colorbar for first trace)
+            fig.add_trace(
+                go.Scatter(
+                    x=xs, y=ys,
+                    mode="lines+markers",
+                    name=f"G{g}",
+                    marker=dict(
+                        color=[g] * len(xs),  # All points in this generation get the same color
+                        colorscale=colorscale,
+                        cmin=min_gen,
+                        cmax=max_gen,
+                        colorbar=dict(
+                            title="Generation",
+                            thickness=15,
+                            len=0.7
+                        ) if first_trace else None,
+                        showscale=first_trace  # Only show colorbar for first trace
+                    ),
+                    line=dict(
+                        color=f'rgba({int(255 * (g - min_gen) / max(1, max_gen - min_gen))}, {int(100 + 155 * (g - min_gen) / max(1, max_gen - min_gen))}, {int(255 - 155 * (g - min_gen) / max(1, max_gen - min_gen))}, 0.5)'
+                    ),
+                    showlegend=False  # Hide legend when using colorbar
+                )
             )
-        )
+            first_trace = False
+        else:
+            # Use discrete colors (original behavior)
+            fig.add_trace(
+                go.Scatter(
+                    x=xs, y=ys,
+                    mode="lines+markers",
+                    name=f"G{g}"
+                )
+            )
 
     fig.update_layout(
-        title=f"True Fitness of Noisy PF — {series_name}, Run {run_idx}",
+        title=f"Noisy PF — {series_name}, Run {run_idx}",
         xaxis_title="Objective 1",
         yaxis_title="Objective 2",
         template="plotly_white",
-        legend_title="Generation"
+        legend_title="Generation" if not continuous_colorscale else None
     )
     return fig
 
