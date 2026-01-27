@@ -85,11 +85,11 @@ problem:
     filename: f1_l-d_kp_10_269
   
   # Fitness function
-  fitness_fn: eval_noisy_kp_v1
+  fitness_fn: eval_noisy_kp_v2
   fitness_params:
     items_dict: null  # Will be set after problem loading
     capacity: null    # Will be set after problem loading
-    noise_intensity: 3
+    noise_intensity: 0
   
   # Attributes and weights
   attr_function: binary_attribute

@@ -21,6 +21,7 @@ from typing import List, Tuple, Any, Dict, Type
 from deap import tools
 
 from src.io.ExperimentsHelpers import save_or_append_results
+from src.algorithms.Logger import clear_active_logger
 from run_helpers import *
 
 # explicit mlflow path
@@ -135,8 +136,11 @@ def hydra_algo_data_single(prob_info: Dict[str, Any],
     algo_instance.run()  # This updates the instance's internal data.
     
     # Retrieve derived data from the run.
-    unique_sols, unique_fits, noisy_fits, sol_iterations, sol_transitions = algo_instance.get_trajectory_data()
+    unique_sols, unique_fits, noisy_fits, sol_iterations, sol_transitions = algo_instance.logger.get_trajectory_data()
     seed_signature = algo_instance.seed_signature
+
+    # Clear the logger to free memory (important for parallel runs)
+    clear_active_logger()
     
     return {
         "problem_name": prob_info['name'],
@@ -177,14 +181,19 @@ def hydra_algo_data_multi(prob_info: Dict[str, Any],
 
     results_list = []
     if parallel:
-        with concurrent.futures.ProcessPoolExecutor() as executor:
+        import os
+        max_workers = min(num_runs, os.cpu_count() or 1)
+        print(f"Running {num_runs} runs in PARALLEL with up to {max_workers} workers (CPUs available: {os.cpu_count()})")
+        with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
             futures = []
             for i in range(num_runs):
                 seed = base_seed + i
                 futures.append(executor.submit(hydra_algo_data_single, prob_info, algo_config, algo_params, seed))
             for future in concurrent.futures.as_completed(futures):
                 results_list.append(future.result())
+        print(f"Parallel execution complete.")
     else:
+        print(f"Running {num_runs} runs SEQUENTIALLY")
         for i in range(num_runs):
             seed = base_seed + i
             results_list.append(hydra_algo_data_single(prob_info, algo_config, algo_params, seed))
@@ -227,9 +236,6 @@ def main(cfg: DictConfig):
     fit_params = dict(cfg.problem.fitness_params)
 
     # Algorithm class and params
-    true_fit_params = fit_params.copy()
-    true_fit_params['noise_intensity'] = 0
-
     algo_params = {
         'sol_length':            cfg.problem.dimensions,
         'opt_weights':           tuple(cfg.problem.weights),
@@ -239,7 +245,6 @@ def main(cfg: DictConfig):
         'target_stop':           cfg.problem.opt_global,
         'gen_limit':             None,
         'fitness_function':      (fitness_fn, fit_params),
-        'true_fitness_function': (fitness_fn, true_fit_params)
     }
 
     # Run and log via MLflow

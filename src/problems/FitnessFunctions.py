@@ -2,6 +2,7 @@
 import numpy as np
 import random
 from ..algorithms.LONs import random_bit_flip
+from ..algorithms.Logger import get_active_logger
 
 # ==============================
 
@@ -103,7 +104,7 @@ def eval_noisy_kp_v1(individual, items_dict, capacity, noise_intensity=0, penalt
             return (0,)
     return (value,) # Not over capacity return value
 
-def eval_noisy_kp_v2(individual, items_dict, capacity, noise_intensity=0, penalty=1):
+def eval_noisy_kp_v2_backup(individual, items_dict, capacity, noise_intensity=0, penalty=1):
     """ Function calculates fitness for knapsack problem individual """
     n_items = len(individual)
     weight = sum(items_dict[i][1] * individual[i] for i in range(n_items)) # Calc solution weight
@@ -121,24 +122,91 @@ def eval_noisy_kp_v2(individual, items_dict, capacity, noise_intensity=0, penalt
             return (0,)
     return (value,) # Not over capacity return value
 
-def eval_noisy_kp_prior(individual, items_dict, capacity, noise_intensity=0, penalty=1, return_sol=False):
-    """ Function calculates fitness for knapsack problem individual """
-    n_items = len(individual)
-    noisy_individual = random_bit_flip(individual, n_flips=noise_intensity)
-    weight = sum(items_dict[i][1] * noisy_individual[i] for i in range(n_items)) # Calc solution weight
-    value = sum(items_dict[i][0] * noisy_individual[i] for i in range(n_items)) # Calc solution value
+def eval_noisy_kp_v2(individual, items_dict, capacity, noise_intensity=0, penalty=1):
+    """
+    Calculates fitness for knapsack problem with posterior noise.
 
-    # Check if over capacity and return reduced value
+    Noise is added to the fitness value after evaluation (not to the solution).
+    If a logger is active, the evaluation is recorded.
+    Note: For posterior noise, original and noisy individual are the same,
+    but true_fitness and noisy_fitness differ.
+    """
+    n_items = len(individual)
+    weight = sum(items_dict[i][1] * individual[i] for i in range(n_items))
+    value = sum(items_dict[i][0] * individual[i] for i in range(n_items))
+
+    # Calculate true fitness (no noise)
     if weight > capacity:
         if penalty == 1:
-            value_with_penalty = capacity - weight
-            if return_sol: return (value_with_penalty,), noisy_individual
-            else: return (value_with_penalty,)
+            true_fitness = capacity - weight
         else:
-            if return_sol: return (0,), noisy_individual
-            else: return (0,)
-    if return_sol: return (value,), noisy_individual
-    else: return (value,)
+            true_fitness = 0
+    else:
+        true_fitness = value
+
+    # Calculate noisy fitness
+    noise = random.gauss(0, noise_intensity * mean_weight(items_dict))
+    noisy_value = value + noise
+
+    if (weight + noise) > capacity:
+        if penalty == 1:
+            noisy_fitness = capacity - weight
+        else:
+            noisy_fitness = 0
+    else:
+        noisy_fitness = noisy_value
+
+    # Log the evaluation if logger is active
+    # For posterior noise: same solution, different fitnesses
+    logger = get_active_logger()
+    if logger:
+        logger.log_noisy_eval(individual, individual, true_fitness, noisy_fitness)
+
+    return (noisy_fitness,)
+
+def eval_noisy_kp_prior(individual, items_dict, capacity, noise_intensity=0, penalty=1):
+    """
+    Calculates fitness for knapsack problem with prior noise.
+
+    The individual is perturbed (bits flipped) before evaluation.
+    If a logger is active, the original and noisy solutions are recorded.
+    Note: For prior noise, original and noisy individual differ,
+    true_fitness is for original, noisy_fitness is for perturbed.
+    """
+    n_items = len(individual)
+
+    # Calculate true fitness of original (unperturbed) solution
+    orig_weight = sum(items_dict[i][1] * individual[i] for i in range(n_items))
+    orig_value = sum(items_dict[i][0] * individual[i] for i in range(n_items))
+
+    if orig_weight > capacity:
+        if penalty == 1:
+            true_fitness = capacity - orig_weight
+        else:
+            true_fitness = 0
+    else:
+        true_fitness = orig_value
+
+    # Create noisy (perturbed) solution and calculate its fitness
+    noisy_individual, _ = random_bit_flip(list(individual), n_flips=noise_intensity)
+    noisy_weight = sum(items_dict[i][1] * noisy_individual[i] for i in range(n_items))
+    noisy_value = sum(items_dict[i][0] * noisy_individual[i] for i in range(n_items))
+
+    if noisy_weight > capacity:
+        if penalty == 1:
+            noisy_fitness = capacity - noisy_weight
+        else:
+            noisy_fitness = 0
+    else:
+        noisy_fitness = noisy_value
+
+    # Log the evaluation if logger is active
+    # For prior noise: different solutions, with their respective fitnesses
+    logger = get_active_logger()
+    if logger:
+        logger.log_noisy_eval(individual, noisy_individual, true_fitness, noisy_fitness)
+
+    return (noisy_fitness,)
 
 # ==============================
 # Continuous Fitness Functions

@@ -85,11 +85,11 @@ problem:
     filename: knapPI_1_100_1000_1
   
   # Fitness function
-  fitness_fn: eval_noisy_kp_v1
+  fitness_fn: eval_noisy_kp_v2
   fitness_params:
     items_dict: null  # Will be set after problem loading
     capacity: null    # Will be set after problem loading
-    noise_intensity: 3
+    noise_intensity: 1
   
   # Attributes and weights
   attr_function: binary_attribute

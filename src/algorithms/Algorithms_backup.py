@@ -12,8 +12,6 @@ from deap import creator
 from deap import tools
 import optuna
 
-from .Logger import ExperimentLogger, set_active_logger, clear_active_logger
-
 # ==============================
 # Attribute Functions
 # ==============================
@@ -107,6 +105,68 @@ def umda_update_full(len_sol, population, pop_size, select_size, toolbox):
     return new_solutions
 
 # ==============================
+# Helper Functions
+# ==============================
+
+def record_population_state(data, population, toolbox, true_fitness_function):
+    """
+    Record the current state of the population.
+    """
+    all_generations, best_solutions, best_fitnesses, true_fitnesses = data
+
+    # Record a snapshot of the current population
+    all_generations.append([ind[:] for ind in population])
+    
+    # Identify the best individual in the current population
+    best_individual = tools.selBest(population, 1)[0]
+    best_solutions.append(toolbox.clone(best_individual))
+    best_fitnesses.append(best_individual.fitness.values[0])
+    
+    # If provided, record the true (noise-free) fitness
+    if true_fitness_function is not None:
+        true_fit = true_fitness_function[0](best_individual, **true_fitness_function[1])
+        true_fitnesses.append(true_fit[0])
+    else:
+        true_fitnesses.append(best_individual.fitness.values[0])
+
+def extract_trajectory_data(best_solutions, best_fitnesses, true_fitnesses):
+    # Extract unique solutions and their corresponding fitness values
+    unique_solutions = []
+    unique_fitnesses = []
+    noisy_fitnesses = []
+    solution_iterations = []
+    seen_solutions = {}
+
+    for solution, fitness, true_fitness in zip(best_solutions, best_fitnesses, true_fitnesses):
+        # Convert solution to a tuple to make it hashable
+        solution_tuple = tuple(solution)
+        if solution_tuple not in seen_solutions:
+            seen_solutions[solution_tuple] = 1
+            unique_solutions.append(solution)
+            unique_fitnesses.append(true_fitness)
+            noisy_fitnesses.append(fitness)
+        else:
+            seen_solutions[solution_tuple] += 1
+
+    # Create a list of iteration counts for each unique solution
+    for solution in unique_solutions:
+        solution_tuple = tuple(solution)
+        solution_iterations.append(seen_solutions[solution_tuple])
+
+    return unique_solutions, unique_fitnesses, noisy_fitnesses, solution_iterations
+
+def extract_transitions(unique_solutions):
+    # Extract transitions between solutions over generations
+    transitions = []
+
+    for i in range(1, len(unique_solutions)):
+        prev_solution = tuple(unique_solutions[i - 1])
+        current_solution = tuple(unique_solutions[i])
+        transitions.append((prev_solution, current_solution))
+
+    return transitions
+
+# ==============================
 # Base Algorithm Class
 # ==============================
 
@@ -120,17 +180,18 @@ class OptimisationAlgorithm:
     attr_function: Optional[Callable] = None
     fitness_function: Optional[Tuple[Callable, dict]] = None
     starting_solution: Optional[List[Any]] = None
-    # true_fitness_function: Optional[Tuple[Callable, dict]] = None  # No longer used - true fitness now logged during evaluation
-
-    # Logger for recording experiment data
-    logger: ExperimentLogger = field(default_factory=ExperimentLogger)
+    true_fitness_function: Optional[Tuple[Callable, dict]] = None
+    
+    # Create lists to store data, seperate for each instance
+    all_generations: List[List[Any]] = field(default_factory=list)
+    best_solutions: List[Any] = field(default_factory=list)
+    best_fitnesses: List[float] = field(default_factory=list)
+    true_fitnesses: List[float] = field(default_factory=list)
 
     def __post_init__(self):
         self.stop_trigger = ''
         self.seed_signature = random.randint(0, 10**6)
-
-        # Set this logger as the active logger for fitness functions to access
-        set_active_logger(self.logger)
+        self.data = [self.all_generations, self.best_solutions, self.best_fitnesses, self.true_fitnesses]
 
         # Fitness and individual creators
         # Check if CustomFitness exists with matching weights; recreate if weights differ
@@ -171,46 +232,35 @@ class OptimisationAlgorithm:
         if self.eval_limit is not None and self.evals >= self.eval_limit:
             self.stop_trigger = 'eval_limit'
             return True
-        if self.target_stop is not None and len(self.logger.generations) > 0:
-            if self.logger.generations[-1].true_fitness >= self.target_stop:
-                self.stop_trigger = 'target_reached'
-                return True
+        if self.target_stop is not None and self.true_fitnesses and self.true_fitnesses[-1] >= self.target_stop:
+            self.stop_trigger = 'target_reached'
+            return True
         if self.gen_limit is not None and self.gens >= self.gen_limit:
             self.stop_trigger = 'gen_limit'
             return True
         return False
-
+    
     def run(self):
         """Run the algorithm using the common loop logic."""
         while not self.stop_condition():
             self.gens += 1
-            self.logger.current_generation = self.gens
             self.perform_generation()
             self.record_state(self.population)
 
     def record_state(self, population):
-        """Record the current population state using the logger."""
-        # Identify the best individual in the current population (based on noisy fitness)
-        best_individual = tools.selBest(population, 1)[0]
-        best_fitness = best_individual.fitness.values[0]  # This is the noisy fitness
+        #Record the current population state.
+        record_population_state(self.data, population, self.toolbox, self.true_fitness_function)
 
-        # Look up true fitness from the evaluation log
-        key = tuple(best_individual)
-        if key in self.logger.evaluations and self.logger.evaluations[key]:
-            true_fitness = self.logger.evaluations[key][-1].true_fitness
-        else:
-            # Fallback if not in evaluation log
-            true_fitness = best_fitness
-
-        # Log the generation data
-        self.logger.log_generation(
-            generation=self.gens,
-            population=population,
-            best_solution=best_individual,
-            best_fitness=best_fitness,
-            true_fitness=true_fitness,
-            evals=self.evals
-        )
+    def get_classic_data(self):
+        return self.all_generations, self.best_solutions, self.best_fitnesses, self.true_fitnesses
+    
+    def get_solution_data(self):
+        return self.best_solutions, self.best_fitnesses, self.true_fitnesses
+    
+    def get_trajectory_data(self):
+        unique_sols, unique_fits, noisy_fitnesses, sol_iterations = extract_trajectory_data(self.best_solutions, self.best_fitnesses, self.true_fitnesses)
+        sol_transitions = extract_transitions(unique_sols)
+        return unique_sols, unique_fits, noisy_fitnesses, sol_iterations, sol_transitions
 
 # ==============================
 # Evolutionary Algorithm Subclasses
@@ -433,121 +483,38 @@ class CompactGA(OptimisationAlgorithm):
 # ==============================
 
 if __name__ == "__main__":
-    """
-    Example demonstrating the logging system.
+    
+    mutation_rate = 1 / 100  # for a 100-bit solution
+    mutate_function = (tools.mutFlipBit, {'indpb': mutation_rate})
+    # mutate_function = (mutSwapBit, {'indpb': mutation_rate})
 
-    The logger records two types of data:
-
-    1. GENERATION-LEVEL DATA (logger.generations)
-       - Recorded once per generation via record_state()
-       - Contains: generation number, population snapshot, best solution,
-         best_fitness (noisy), true_fitness, evals count
-       - Access via: logger.generations, logger.best_solutions,
-         logger.best_fitnesses, logger.true_fitnesses, logger.get_best_per_generation()
-
-    2. EVALUATION-LEVEL DATA (logger.evaluations)
-       - Recorded during each fitness evaluation (if using a logging fitness function)
-       - Contains: true_sol, noisy_sol, true_fitness, noisy_fitness, generation
-       - Keyed by original solution (as tuple)
-       - Access via: logger.evaluations[tuple(solution)], logger.get_noisy_variants(solution),
-         logger.get_all_evaluated_solutions(), logger.get_all_noisy_evals()
-
-    For PRIOR NOISE (eval_noisy_kp_prior):
-       - true_sol != noisy_sol (solution is perturbed before evaluation)
-       - true_fitness = fitness of original solution
-       - noisy_fitness = fitness of perturbed solution
-
-    For POSTERIOR NOISE (eval_noisy_kp_v2):
-       - true_sol == noisy_sol (solution unchanged, noise added to fitness)
-       - true_fitness = fitness without noise
-       - noisy_fitness = fitness with noise added
-    """
-
-    # ========== SETUP ==========
-    # Example using a logging fitness function for knapsack with prior noise
-    # (In practice, you would load your items_dict and capacity from a problem instance)
-
-    # For this example, we'll use a simple setup
-    # Uncomment below for knapsack:
-    # from .problems.FitnessFunctions import eval_noisy_kp_prior, eval_noisy_kp_v2
-    # fitness_function = (eval_noisy_kp_prior, {
-    #     'items_dict': items_dict,
-    #     'capacity': capacity,
-    #     'noise_intensity': 2,  # flip 2 bits for prior noise
-    #     'penalty': 1
-    # })
-
-    # Simple non-logging example (for testing without knapsack data)
-    from .problems.FitnessFunctions import OneMax_fitness
+    from FitnessFunctions import OneMax_fitness
     fitness_function = (OneMax_fitness, {'noise_intensity': 0})
+    true_fitness_function = (OneMax_fitness, {'noise_intensity': 0})
+
+    ss = np.zeros(100, dtype=int)
+
 
     base_params = {
-        'sol_length': 20,
-        'opt_weights': (1.0,),          # Maximization
-        'eval_limit': 1000,
+        'sol_length': 100,              # Length of the solution
+        'opt_weights': (1.0,),           # Maximization problem
+        'eval_limit': 10e3,               # Maximum fitness evaluations
         'attr_function': binary_attribute,
         'fitness_function': fitness_function,
+        'true_fitness_function': true_fitness_function,
+        'starting_solution': None
+        # 'target_stop': 80
     }
 
-    # Create and run algorithm
-    algo = MuPlusLamdaEA(
-        mu=1, lam=1,
-        mutate_function="probFlipBit",
-        mutate_params={'indpb': 0.05},
-        **base_params
-    )
-    algo.run()
+    # algo = MuPlusLamdaEA(mu=5, lam=1, mutate_function=mutate_function, **base_params)
+    algo = UMDA(pop_size=100, **base_params)
 
-    # ========== ACCESSING GENERATION-LEVEL DATA ==========
-    print(f"\n=== Generation-Level Data ===")
-    print(f"Algorithm: {algo.name}")
-    print(f"Generations run: {len(algo.logger)}")
-    print(f"Stop trigger: {algo.stop_trigger}")
-
-    # Property accessors (lists)
-    print(f"\nFinal best fitness (noisy): {algo.logger.best_fitnesses[-1]}")
-    print(f"Final true fitness: {algo.logger.true_fitnesses[-1]}")
-    print(f"Final best solution: {algo.logger.best_solutions[-1]}")
-
-    # Get best per generation with both fitnesses
-    print(f"\nBest per generation (last 5):")
-    for sol, noisy_fit, true_fit in algo.logger.get_best_per_generation()[-5:]:
-        print(f"  Solution sum={sum(sol)}, Noisy={noisy_fit:.2f}, True={true_fit:.2f}")
-
-    # Access full generation records
-    print(f"\nFull generation record example (gen 0):")
-    gen0 = algo.logger.generations[0]
-    print(f"  Generation: {gen0.generation}")
-    print(f"  Best fitness: {gen0.best_fitness}")
-    print(f"  True fitness: {gen0.true_fitness}")
-    print(f"  Evals so far: {gen0.evals_so_far}")
-
-    # ========== ACCESSING EVALUATION-LEVEL DATA ==========
-    # (Only populated if using a logging fitness function like eval_noisy_kp_prior)
-    print(f"\n=== Evaluation-Level Data ===")
-    print(f"Unique solutions evaluated: {len(algo.logger.get_all_evaluated_solutions())}")
-    print(f"Total evaluation records: {len(algo.logger.get_all_noisy_evals())}")
-
-    # Get all noisy variants for a specific solution
-    if algo.logger.evaluations:
-        example_sol = algo.logger.get_all_evaluated_solutions()[0]
-        variants = algo.logger.get_noisy_variants(example_sol)
-        print(f"\nExample solution had {len(variants)} evaluation(s):")
-        for record in variants[:3]:  # Show first 3
-            print(f"  Gen {record.generation}: true_fit={record.true_fitness:.2f}, noisy_fit={record.noisy_fitness:.2f}")
-            if record.true_sol != record.noisy_sol:
-                print(f"    (Prior noise: solution was perturbed)")
-            else:
-                print(f"    (Posterior noise: fitness was perturbed)")
-
-    # ========== TRAJECTORY DATA (for plotting) ==========
-    print(f"\n=== Trajectory Data ===")
-    unique_sols, unique_fits, noisy_fits, iterations, transitions = algo.logger.get_trajectory_data()
-    print(f"Unique best solutions visited: {len(unique_sols)}")
-    print(f"Transitions between solutions: {len(transitions)}")
-
-    # Show iteration counts (how long each solution was 'best')
-    print(f"\nSolution iteration counts (first 5):")
-    for i, (sol, true_f, noisy_f, iters) in enumerate(zip(unique_sols[:5], unique_fits[:5], noisy_fits[:5], iterations[:5])):
-        print(f"  Solution {i}: true_fit={true_f:.2f}, noisy_fit={noisy_f:.2f}, iterations={iters}")
+    # algo.run()
+    # all_gens, best_sols, best_fits, true_fits = algo.get_classic_data()
+    
+    # # (Optional) Print the final best fitness
+    # print("Algo name:", algo.name)
+    # print("Final best fitness:", true_fits[-1])
+    # # # print("First best sol:", best_sols[1])
+    # # # print("Final best sol:", best_sols[-1])
 
