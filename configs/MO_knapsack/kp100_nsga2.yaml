@@ -59,7 +59,7 @@ algo:
     mutate_op: "deap.tools.mutFlipBit"
 
     mutate_params:
-      indpb: 0.01
+      indpb: 0.05
 
 
 # ==============================

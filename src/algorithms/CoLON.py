@@ -29,6 +29,11 @@ def BinaryCoLON(pert_attempts, len_sol, weights,
         raise ValueError("violation_function is required (returns scalar v(x); <=0 means feasible).")
 
     # 1) Create Fitness and Individual classes if not existing
+    # Check if CustomFitness exists with matching weights; recreate if weights differ
+    if hasattr(creator, "CustomFitness"):
+        if creator.CustomFitness.weights != weights:
+            del creator.CustomFitness
+            del creator.Individual
     if not hasattr(creator, "CustomFitness"):
         creator.create("CustomFitness", base.Fitness, weights=weights)
     if not hasattr(creator, "Individual"):

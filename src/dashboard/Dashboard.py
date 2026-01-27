@@ -292,6 +292,7 @@ display1_df = display1_df[['problem_type',
                            'opt_global',
                         #    'mean_value',
                         #    'mean_weight',
+                           'fit_func',
                            'PID']].drop_duplicates()
 
 # For Table 2, group and aggregate data
@@ -1111,20 +1112,29 @@ def update_table2_store(selected_rows):
 )
 def filter_table2(selection1, selection2):
     union = set()
-    # For Table 1 (Tab 1), use display1_df to retrieve problem_name.
+    # For Table 1 (Tab 1), use display1_df to retrieve PID and fit_func.
     if selection1:
         for idx in selection1:
             if idx < len(display1_df):
-                union.add(display1_df.iloc[idx]['PID'])
+                row = display1_df.iloc[idx]
+                union.add((row['PID'], row['fit_func']))
+                # union.add(display1_df.iloc[idx]['PID'])  # Old: PID only
     # For Table 1 on Tab 2, also use display1_df.
     if selection2:
         for idx in selection2:
             if idx < len(display1_df):
-                union.add(display1_df.iloc[idx]['PID'])
+                row = display1_df.iloc[idx]
+                union.add((row['PID'], row['fit_func']))
+                # union.add(display1_df.iloc[idx]['PID'])  # Old: PID only
     if not union:
         return display2_df.to_dict("records")
     else:
-        filtered_df = display2_df[display2_df['PID'].isin(union)]
+        # Filter by both PID and fit_func
+        mask = display2_df.apply(
+            lambda r: (r['PID'], r['fit_func']) in union, axis=1
+        )
+        filtered_df = display2_df[mask]
+        # filtered_df = display2_df[display2_df['PID'].isin(union)]  # Old: PID only
         return filtered_df.to_dict("records")
 
 # Update table 2 to use problem specific data store

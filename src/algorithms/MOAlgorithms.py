@@ -496,6 +496,11 @@ class OptimisationAlgorithm:
         # self.data = [self.all_generations, self.best_solutions, self.best_fitnesses, self.true_fitnesses]
 
         # Fitness and individual creators
+        # Check if CustomFitness exists with matching weights; recreate if weights differ
+        if hasattr(creator, "CustomFitness"):
+            if creator.CustomFitness.weights != self.opt_weights:
+                del creator.CustomFitness
+                del creator.Individual
         if not hasattr(creator, "CustomFitness"):
             creator.create("CustomFitness", base.Fitness, weights=self.opt_weights)
         if not hasattr(creator, "Individual"):
