@@ -1,7 +1,7 @@
 # Nested config for OnePlusOneEA on Knapsack experiment
 # This shows how we could use nested structure with dependency resolution
 
-experiment_name: "test01_knapsack"
+experiment_name: "test02_knapsack"
 
 # ==============================
 # Run Configuration
@@ -89,7 +89,7 @@ problem:
   fitness_params:
     items_dict: null  # Will be set after problem loading
     capacity: null    # Will be set after problem loading
-    noise_intensity: 1
+    noise_intensity: 0
   
   # Attributes and weights
   attr_function: binary_attribute

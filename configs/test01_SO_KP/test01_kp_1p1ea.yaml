@@ -1,7 +1,7 @@
 # Nested config for OnePlusOneEA on Knapsack experiment
 # This shows how we could use nested structure with dependency resolution
 
-experiment_name: "test01_knapsack"
+experiment_name: "test01_knapsack2"
 
 # ==============================
 # Run Configuration

@@ -14,209 +14,10 @@ from concurrent.futures import ThreadPoolExecutor
 import os
 
 from .DashboardHelpers import *
-
-
-def compute_distance_matrix(distance_fn, items):
-    """
-    Compute full pairwise distance matrix for items.
-
-    Args:
-        distance_fn: Function that computes distance between two items
-        items: List of items
-
-    Returns:
-        D: numpy array of shape (n, n) with pairwise distances
-    """
-    n = len(items)
-    D = np.zeros((n, n), dtype=float)
-    for i in range(n):
-        for j in range(n):
-            if i != j:
-                D[i, j] = float(distance_fn(items[i], items[j]))
-    return D
-
-
-def _compute_distance_row(args):
-    """Helper function to compute one row of the distance matrix."""
-    i, items, distance_fn = args
-    n = len(items)
-    row = np.zeros(n, dtype=float)
-    for j in range(n):
-        if i != j:
-            row[j] = float(distance_fn(items[i], items[j]))
-    return i, row
-
-
-def compute_distance_matrix_parallel(distance_fn, items, parallel=None):
-    """
-    Compute full pairwise distance matrix for items with optional parallelization.
-
-    Args:
-        distance_fn: Function that computes distance between two items (must be picklable)
-        items: List of items
-        parallel: If None, no parallelization. If numeric, parallelize when n > parallel.
-
-    Returns:
-        D: numpy array of shape (n, n) with pairwise distances
-    """
-    n = len(items)
-    D = np.zeros((n, n), dtype=float)
-
-    use_parallel = parallel is not None and n > parallel
-
-    if use_parallel:
-        print(f'\033[33mUsing parallel distance matrix computation with {n} items\033[0m')
-        n_workers = min(os.cpu_count() or 4, 50)
-        with ThreadPoolExecutor(max_workers=n_workers) as executor:
-            futures = [executor.submit(_compute_distance_row, (i, items, distance_fn)) for i in range(n)]
-            for future in futures:
-                i, row = future.result()
-                D[i, :] = row
-    else:
-        for i in range(n):
-            for j in range(n):
-                if i != j:
-                    D[i, j] = float(distance_fn(items[i], items[j]))
-
-    return D
-
-
-def _select_landmarks_random(n, n_landmarks, distance_fn, items, rng):
-    """Random landmark selection."""
-    return rng.choice(n, n_landmarks, replace=False)
-
-
-def _select_landmarks_fps(n, n_landmarks, distance_fn, items, rng, r=1):
-    """
-    Furthest Point Sampling (FPS) landmark selection.
-
-    Selects landmarks that are well-spread across the space by iteratively
-    choosing points that are far from all existing landmarks.
-
-    Args:
-        n: Total number of items
-        n_landmarks: Number of landmarks to select
-        distance_fn: Function that computes distance between two items
-        items: List of items
-        rng: NumPy random generator
-        r: Number of candidates to consider at each step (adds randomization)
-
-    Returns:
-        Array of landmark indices
-    """
-    # Choose first landmark uniformly at random
-    first_landmark = rng.integers(0, n)
-    S = [first_landmark]
-
-    # Initialize minimum distances to first landmark
-    m = np.array([float(distance_fn(items[i], items[first_landmark]))
-                  if i != first_landmark else 0.0 for i in range(n)])
-
-    for k in range(1, n_landmarks):
-        # Find indices not in S
-        available = np.array([i for i in range(n) if i not in S])
-        m_available = m[available]
-
-        # Get indices of r largest distances (furthest from all landmarks)
-        r_actual = min(r, len(available))
-        candidate_positions = np.argpartition(m_available, -r_actual)[-r_actual:]
-        candidates = available[candidate_positions]
-
-        # Choose uniformly at random from candidates
-        new_landmark = rng.choice(candidates)
-        S.append(new_landmark)
-
-        # Update minimum distances
-        for i in range(n):
-            if i not in S:
-                d_new = float(distance_fn(items[i], items[new_landmark]))
-                m[i] = min(m[i], d_new)
-
-    return np.array(S)
-
-
-def landmark_mds(distance_fn, items, n_landmarks=None, landmark_method='random',
-                 fps_candidates=1, random_state=42):
-    """
-    Landmark MDS: Efficient MDS approximation for large datasets.
-
-    Args:
-        distance_fn: Function that computes distance between two items
-        items: List of items to embed
-        n_landmarks: Number of landmarks to use (default: sqrt(n))
-        landmark_method: Method for selecting landmarks ('random' or 'fps')
-        fps_candidates: For FPS method, number of candidates to consider at each step
-        random_state: Random seed for reproducibility
-
-    Returns:
-        XY: numpy array of shape (n, 2) with 2D coordinates
-    """
-    n = len(items)
-    if n_landmarks is None:
-        n_landmarks = min(max(20, int(np.sqrt(n))), n)
-
-    # Ensure we don't have more landmarks than items
-    n_landmarks = min(n_landmarks, n)
-
-    # Select landmarks based on method
-    rng = np.random.default_rng(random_state)
-    if landmark_method == 'random':
-        landmark_indices = _select_landmarks_random(n, n_landmarks, distance_fn, items, rng)
-    elif landmark_method == 'fps':
-        landmark_indices = _select_landmarks_fps(n, n_landmarks, distance_fn, items, rng,
-                                                  r=fps_candidates)
-    else:
-        raise ValueError(f"Unknown landmark_method: {landmark_method}. Use 'random' or 'fps'.")
-
-    # Compute n×k distance matrix (all points to landmarks)
-    D_to_landmarks = np.zeros((n, n_landmarks))
-    for i in range(n):
-        for j, lm_idx in enumerate(landmark_indices):
-            if i != lm_idx:
-                D_to_landmarks[i, j] = float(distance_fn(items[i], items[lm_idx]))
-
-    # Extract k×k landmark-to-landmark distance matrix
-    D_landmarks = D_to_landmarks[landmark_indices, :]
-
-    # Run MDS on landmarks only
-    # mds = MDS_sklearn(n_components=2, dissimilarity='precomputed', random_state=random_state)
-    # XY_landmarks = mds.fit_transform(D_landmarks)
-    cmds = ClassicalMDS(n_components=2, metric="precomputed")
-    XY_landmarks = cmds.fit_transform(D_landmarks)
-
-    # Initialize output coordinates
-    XY = np.zeros((n, 2))
-    XY[landmark_indices] = XY_landmarks
-
-    # Out-of-sample extension via lateration (least-squares distance matching)
-    landmark_set = set(landmark_indices)
-    X_L = XY_landmarks  # Landmark positions in 2D
-
-    # Precompute squared norms of landmark positions
-    X_L_sq_norms = np.sum(X_L ** 2, axis=1)
-
-    for i in range(n):
-        if i in landmark_set:
-            continue
-
-        # Distances from point i to all landmarks
-        delta = D_to_landmarks[i, :]
-        delta_sq = delta ** 2
-
-        # Use landmark 0 as reference
-        # Build system: A @ x = b
-        # A[a-1, :] = 2 * (X_L[a] - X_L[0])
-        # b[a-1] = ||X_L[a]||² - ||X_L[0]||² - (δ[a]² - δ[0]²)
-        A = 2 * (X_L[1:] - X_L[0])
-        b = X_L_sq_norms[1:] - X_L_sq_norms[0] - (delta_sq[1:] - delta_sq[0])
-
-        # Solve least-squares problem: argmin_x ||Ax - b||²
-        XY[i], residuals, rank, s = np.linalg.lstsq(A, b, rcond=None)
-
-    return XY
-
 from ..problems.FitnessFunctions import *
 from ..problems.ProblemScripts import load_problem_KP
+from .DimensionalityReduction import *
+
 from ..plotting.plotParetoFrontMain import plotParetoFront
 from ..plotting.plotParetoFrontMain import plotParetoFrontSubplots
 from ..plotting.plotParetoFrontMain import plotParetoFrontSubplotsMulti
@@ -230,8 +31,6 @@ from ..plotting.plotParetoFrontMain import plotProgressPerMovementRatio
 from ..plotting.plotParetoFrontMain import plotMovementCorrelation
 from ..plotting.plotParetoFrontMain import plotMoveDeltaHistograms
 from ..plotting.plotParetoFrontMain import plotObjectiveVsDecisionScatter
-
-import logging
 
 # ==========
 # Data Loading and Formating
@@ -295,31 +94,6 @@ display1_df = display1_df[['problem_type',
                            'fit_func',
                            'PID']].drop_duplicates()
 
-# For Table 2, group and aggregate data
-# display2_df = df[['problem_name',
-#                   'opt_global', 
-#                   'fit_func', 
-#                   'noise', 
-#                   'algo_type',
-#                   'algo_name', 
-#                   'n_unique_sols', 
-#                   'n_gens', 
-#                   'n_evals',
-#                   'final_fit',
-#                   'max_fit',
-#                   'min_fit']]
-# display2_df = df.groupby(
-#     ['problem_name', 'opt_global', 'fit_func', 'noise', 'algo_type']
-# ).agg({
-#     'n_unique_sols': 'median',
-#     'n_gens': 'median',
-#     'n_evals': 'median',
-#     'final_fit': 'mean',
-#     'max_fit': 'max',
-#     'min_fit': 'min'
-# }).reset_index()
-# display2_hidden_cols = ['problem_type', 'problem_goal', 'problem_name', 'dimensions', 'opt_global']
-
 display2_df = df.copy()
 display2_df.drop([
     'n_gens',
@@ -350,7 +124,10 @@ display2_df.drop([
     'min_true_hv',
     'final_noisy_pf_hv',
     'max_noisy_pf_hv',
-    'min_noisy_pf_hv'
+    'min_noisy_pf_hv',
+    'run_id',
+    'parent_run_id',
+    'payload_path',
 ], axis=1, errors='ignore', inplace=True)
 display2_hidden_cols = [
     'problem_type', 
@@ -358,9 +135,12 @@ display2_hidden_cols = [
     'problem_name', 
     'dimensions', 
     'opt_global',
-    'PID'
+    'PID',
     ]
-
+display2_df = display2_df.drop_duplicates(subset=[
+    "PID", "algo_type", "algo_name", "noise", "fit_func"
+])
+print(df.columns)
 # ==========
 # Main Dashboard App
 # ==========
@@ -1384,191 +1164,79 @@ def update_filtered_view(selected_rows, LON_table_data):
 
     return dict_result_SE
 
-
 # Filter main dataframe for STN data using table 2 selection
 # update STN data to contain data for selected rows
+# @app.callback(
+#     Output('STN_data', 'data'),
+#     Input("table2", "selected_rows"),
+#     State("table2", "data")
+# )
+# def update_filtered_view(selected_rows, table2_data):
+#     # Check if no selection has been made and if so return empty dataframe to store
+#     # print(f'table 2 selected_rows: {selected_rows}, length: {len(selected_rows)}')
+#     if len(selected_rows) == 0:
+#         blank_df = pd.DataFrame(columns=df.columns)
+#         return blank_df.to_dict('records')
+
+#     selected_data = [table2_data[i] for i in selected_rows]
+#     # print(selected_data)
+
+#     filter_columns = [col for col in display2_df.columns]
+    
+#     # Convert the filtered data to a DataFrame.
+#     df_filtered = pd.DataFrame(selected_data)
+#     # print("df_filtered:")
+#     # print(df_filtered.head())
+    
+#     mask = pd.Series(True, index=df.index)
+#     for col in filter_columns:
+#         if col in df_filtered.columns:
+#             allowed_values = df_filtered[col].unique()
+#             # print(f"Filtering column {col} with allowed values: {allowed_values}")
+#             # If any allowed value is null (None or np.nan), allow null rows.
+#             if any(pd.isnull(allowed_values)):
+#                 mask &= (df[col].isin(allowed_values) | df[col].isnull())
+#             else:
+#                 mask &= df[col].isin(allowed_values)
+    
+#     df_result = df[mask]
+#     # print("Filtered result (first few rows):")
+#     # print(df_result.head())
+#     # print(df_result.columns)
+#     return df_result.to_dict('records')
+
 @app.callback(
     Output('STN_data', 'data'),
     Input("table2", "selected_rows"),
     State("table2", "data")
 )
 def update_filtered_view(selected_rows, table2_data):
-    # Check if no selection has been made and if so return empty dataframe to store
-    # print(f'table 2 selected_rows: {selected_rows}, length: {len(selected_rows)}')
-    if len(selected_rows) == 0:
+    if not selected_rows:
         blank_df = pd.DataFrame(columns=df.columns)
         return blank_df.to_dict('records')
 
+    # rows selected in table2 (deduped algorithm rows)
     selected_data = [table2_data[i] for i in selected_rows]
-    # print(selected_data)
+    df_selected = pd.DataFrame(selected_data)
 
-    filter_columns = [col for col in display2_df.columns]
-    
-    # Convert the filtered data to a DataFrame.
-    df_filtered = pd.DataFrame(selected_data)
-    # print("df_filtered:")
-    # print(df_filtered.head())
-    
+    # Only filter by the identity keys for an algorithm series
+    KEYS = ["PID", "fit_func", "algo_type", "algo_name", "noise"]
+
     mask = pd.Series(True, index=df.index)
-    for col in filter_columns:
-        if col in df_filtered.columns:
-            allowed_values = df_filtered[col].unique()
-            # print(f"Filtering column {col} with allowed values: {allowed_values}")
-            # If any allowed value is null (None or np.nan), allow null rows.
-            if any(pd.isnull(allowed_values)):
-                mask &= (df[col].isin(allowed_values) | df[col].isnull())
-            else:
-                mask &= df[col].isin(allowed_values)
-    
+    for col in KEYS:
+        # skip if missing for any reason
+        if col not in df_selected.columns or col not in df.columns:
+            continue
+        allowed = df_selected[col].dropna().unique()
+        mask &= df[col].isin(allowed)
+
     df_result = df[mask]
-    # print("Filtered result (first few rows):")
-    # print(df_result.head())
-    # print(df_result.columns)
+
+    print(
+        f"[STN filter] selected_rows={selected_rows} -> matched_rows={len(df_result)}",
+        flush=True
+    )
     return df_result.to_dict('records')
-
-
-# @app.callback(
-#     [Output('STN_data_processed', 'data'),
-#      Output('STN_series_labels', 'data'),
-#      Output('noisy_fitnesses_data', 'data'),
-#      Output('STN_MO_data', 'data'),
-#      Output('STN_MO_series_labels', 'data')],
-#     Input('STN_data', 'data'),
-# )
-# def process_STN_data(df, group_cols=['algo_name', 'noise']):
-#     df = pd.DataFrame(df)
-#     STN_data, STN_series, Noise_data = [], [], []
-
-#     MO_data, MO_series = [], []
-
-#     if df.empty:
-#         return STN_data, STN_series, Noise_data, MO_data, MO_series
-
-#     grouped = df.groupby(group_cols)
-
-#     for group_key, group_df in grouped:
-#         # --- classic STN runs (unchanged) ---
-#         runs = []
-#         for _, row in group_df.iterrows():
-#             if all(k in row for k in ['unique_sols','unique_fits','noisy_fits','sol_iterations','sol_transitions']):
-#                 runs.append([
-#                     row['unique_sols'],
-#                     row['unique_fits'],
-#                     row['noisy_fits'],
-#                     row['sol_iterations'],
-#                     row['sol_transitions'],
-#                 ])
-#         STN_data.append(runs)
-#         STN_series.append(group_key)
-
-#         # --- MO runs (new) ---
-#         # Each row is a "run" with sequences per generation (lists)
-#         mo_runs = []
-#         for _, row in group_df.iterrows():
-#             if all(k in row for k in ['pareto_solutions','noisy_pf_noisy_hypervolumes']):
-#                 pareto_solutions = row['pareto_solutions'] or []
-#                 hypervolumes     = row.get('noisy_pf_noisy_hypervolumes', []) or []
-#                 hypervolumes_true  = row.get('noisy_pf_true_hypervolumes', []) or []
-#                 # guard differing lengths
-#                 Gmax = min(len(pareto_solutions), len(hypervolumes))
-#                 fronts = []
-#                 for g in range(Gmax):
-#                     fronts.append({
-#                         'front_solutions': pareto_solutions[g],  # list of bitstrings
-#                         'hypervolume': hypervolumes[g],
-#                         'hypervolume_true': hypervolumes_true[g],
-#                         'gen_idx': g
-#                     })
-#                 if fronts:
-#                     mo_runs.append(fronts)
-#         MO_data.append(mo_runs)
-#         MO_series.append(group_key)
-
-#     return STN_data, STN_series, Noise_data, MO_data, MO_series
-
-# @app.callback(
-#     [Output('STN_data_processed', 'data'),
-#      Output('STN_series_labels', 'data'),
-#      Output('noisy_fitnesses_data', 'data'),
-#      Output('STN_MO_data', 'data'),
-#      Output('STN_MO_series_labels', 'data')],
-#     [Input('STN_data', 'data'),
-#      Input('mo_plot_type', 'value')],
-# )
-# def process_STN_data(df, mo_plot_type, group_cols=['algo_name', 'noise']):
-#     df = pd.DataFrame(df)
-#     STN_data, STN_series, Noise_data = [], [], []
-#     MO_data, MO_series = [], []
-
-#     if df.empty:
-#         return STN_data, STN_series, Noise_data, MO_data, MO_series
-
-#     # default/fallback if somehow empty
-#     mode = mo_plot_type or 'npnhv'
-
-#     grouped = df.groupby(group_cols)
-
-#     for group_key, group_df in grouped:
-#         # --- classic STN runs (unchanged) ---
-#         runs = []
-#         for _, row in group_df.iterrows():
-#             if all(k in row for k in ['unique_sols','unique_fits','noisy_fits','sol_iterations','sol_transitions']):
-#                 runs.append([
-#                     row['unique_sols'],
-#                     row['unique_fits'],
-#                     row['noisy_fits'],
-#                     row['sol_iterations'],
-#                     row['sol_transitions'],
-#                 ])
-#         STN_data.append(runs)
-#         STN_series.append(group_key)
-
-#         # --- MO runs (mode-dependent) ---
-#         mo_runs = []
-#         for _, row in group_df.iterrows():
-#             # Select columns based on mode
-#             if mode == 'tpthv':
-#                 pareto_solutions = (row.get('true_pareto_solutions') or [])
-#                 hv_noisy         = (row.get('true_pf_hypervolumes') or [])
-#                 # hv_true          = hv_noisy
-#                 hv_true          = hv_noisy
-#             elif mode == 'npbhv':
-#                 pareto_solutions = (row.get('pareto_solutions') or [])
-#                 hv_noisy         = (row.get('noisy_pf_noisy_hypervolumes') or [])
-#                 hv_true          = (row.get('noisy_pf_true_hypervolumes') or [])
-#             elif mode == 'tpbhv':
-#                 pareto_solutions = (row.get('true_pareto_solutions') or [])
-#                 hv_noisy         = (row.get('true_pf_hypervolumes') or [])
-#                 hv_true          = (row.get('noisy_pf_noisy_hypervolumes') or [])
-#             else:  # 'npnhv' (default)
-#                 pareto_solutions = (row.get('pareto_solutions') or [])
-#                 hv_noisy         = (row.get('noisy_pf_noisy_hypervolumes') or [])
-#                 # hv_true          = (row.get('noisy_pf_true_hypervolumes') or [])
-#                 hv_true          = hv_noisy
-
-#             if not pareto_solutions:
-#                 continue
-
-#             Gmax = min(len(pareto_solutions), len(hv_noisy))
-#             if Gmax == 0:
-#                 continue
-
-#             fronts = []
-#             for g in range(Gmax):
-#                 fronts.append({
-#                     'front_solutions': pareto_solutions[g],   # list of bitstrings
-#                     'hypervolume': hv_noisy[g],               # primary HV used by your plot
-#                     # 'hypervolume_true': hv_true[g] if g < len(hv_true) else None,
-#                     'hypervolume_true': hv_true[g],
-#                     'gen_idx': g
-#                 })
-#             if fronts:
-#                 mo_runs.append(fronts)
-
-#         MO_data.append(mo_runs)
-#         MO_series.append(group_key)
-
-#     return STN_data, STN_series, Noise_data, MO_data, MO_series
 
 @app.callback(
     [Output('STN_data_processed', 'data'),
@@ -1595,18 +1263,40 @@ def process_STN_data(df, mo_plot_type, group_cols=['algo_name', 'noise']):
 
     grouped = df.groupby(group_cols)
 
+    # for group_key, group_df in grouped:
+    #     # --- classic STN runs ---
+    #     runs = []
+    #     for _, row in group_df.iterrows():
+    #         if all(k in row for k in ['unique_sols','unique_fits','noisy_fits','sol_iterations','sol_transitions']):
+    #             runs.append([
+    #                 row['unique_sols'],
+    #                 row['unique_fits'],
+    #                 row['noisy_fits'],
+    #                 row['sol_iterations'],
+    #                 row['sol_transitions'],
+    #             ])
+
+    
+    required = {'unique_sols','unique_fits','noisy_fits','sol_iterations','sol_transitions'}
+    has_required = required.issubset(df.columns)
+
     for group_key, group_df in grouped:
-        # --- classic STN runs (unchanged) ---
         runs = []
+
         for _, row in group_df.iterrows():
-            if all(k in row for k in ['unique_sols','unique_fits','noisy_fits','sol_iterations','sol_transitions']):
-                runs.append([
-                    row['unique_sols'],
-                    row['unique_fits'],
-                    row['noisy_fits'],
-                    row['sol_iterations'],
-                    row['sol_transitions'],
-                ])
+            if not has_required:
+                continue
+            if row['unique_sols'] is None:
+                continue
+
+            runs.append([
+                row['unique_sols'],
+                row['unique_fits'],
+                row['noisy_fits'],
+                row['sol_iterations'],
+                row['sol_transitions'],
+            ])
+
         STN_data.append(runs)
         STN_series.append(group_key)
 

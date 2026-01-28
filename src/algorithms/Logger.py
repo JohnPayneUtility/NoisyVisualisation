@@ -71,6 +71,9 @@ class ExperimentLogger:
     # Track current generation for evaluation logging
     current_generation: int = 0
 
+    # Cache for trajectory data (invalidated on clear())
+    _trajectory_cache: Optional[Dict] = field(default=None, init=False, repr=False)
+
     def log_generation(self, generation: int, population, best_solution,
                        best_fitness: float, true_fitness: float, evals: int = None):
         """Log the state at the end of a generation."""
@@ -164,24 +167,20 @@ class ExperimentLogger:
         return [(g.best_solution, g.best_fitness, g.true_fitness) for g in self.generations]
 
     # ==============================
-    # Trajectory Data Extraction
+    # Trajectory Data Extraction (with caching)
     # ==============================
 
-    def get_trajectory_data(self):
+    def _build_trajectory_cache(self):
         """
-        Extract trajectory data for plotting.
+        Build and cache trajectory data. Called once, then cached.
+        Cache is invalidated when clear() is called.
+        """
+        if hasattr(self, '_trajectory_cache') and self._trajectory_cache is not None:
+            return self._trajectory_cache
 
-        Returns:
-            unique_solutions: List of unique best solutions in order of first appearance
-            unique_fitnesses: True fitness for each unique solution
-            noisy_fitnesses: Noisy fitness for each unique solution
-            solution_iterations: How many generations each solution was best
-            solution_transitions: List of (from_solution, to_solution) tuples
-        """
         unique_solutions = []
-        unique_fitnesses = []
-        noisy_fitnesses = []
-        solution_iterations = []
+        unique_true_fitnesses = []
+        unique_noisy_fitnesses = []
         seen_solutions = {}
 
         for gen in self.generations:
@@ -189,34 +188,99 @@ class ExperimentLogger:
             if solution_tuple not in seen_solutions:
                 seen_solutions[solution_tuple] = 1
                 unique_solutions.append(gen.best_solution)
-                unique_fitnesses.append(gen.true_fitness)
-                noisy_fitnesses.append(gen.best_fitness)
+                unique_true_fitnesses.append(gen.true_fitness)
+                unique_noisy_fitnesses.append(gen.best_fitness)
             else:
                 seen_solutions[solution_tuple] += 1
 
-        # Create iteration counts for each unique solution
-        for solution in unique_solutions:
-            solution_tuple = tuple(solution)
-            solution_iterations.append(seen_solutions[solution_tuple])
+        # Create iteration counts in order of appearance
+        iteration_counts = [seen_solutions[tuple(sol)] for sol in unique_solutions]
 
-        # Extract transitions
-        solution_transitions = []
+        # Build transitions
+        transitions = []
         for i in range(1, len(unique_solutions)):
             prev_solution = tuple(unique_solutions[i - 1])
             current_solution = tuple(unique_solutions[i])
-            solution_transitions.append((prev_solution, current_solution))
+            transitions.append((prev_solution, current_solution))
 
-        return unique_solutions, unique_fitnesses, noisy_fitnesses, solution_iterations, solution_transitions
+        # Build noisy sol variants from evaluation records
+        noisy_sols_per_solution = []
+        for sol in unique_solutions:
+            key = tuple(sol)
+            if key in self.evaluations:
+                noisy_sols = [record.noisy_sol for record in self.evaluations[key]]
+            else:
+                noisy_sols = []
+            noisy_sols_per_solution.append(noisy_sols)
+
+        # Cache all computed data
+        self._trajectory_cache = {
+            'unique_solutions': unique_solutions,
+            'unique_true_fitnesses': unique_true_fitnesses,
+            'unique_noisy_fitnesses': unique_noisy_fitnesses,
+            'solution_iterations': iteration_counts,
+            'solution_transitions': transitions,
+            'unique_noisy_sols': noisy_sols_per_solution,
+        }
+        return self._trajectory_cache
+
+    @property
+    def unique_solutions(self) -> List[List]:
+        """List of unique best solutions in order of first appearance."""
+        return self._build_trajectory_cache()['unique_solutions']
+
+    @property
+    def unique_true_fitnesses(self) -> List[float]:
+        """True (noise-free) fitness for each unique solution."""
+        return self._build_trajectory_cache()['unique_true_fitnesses']
+
+    @property
+    def unique_noisy_fitnesses(self) -> List[float]:
+        """Noisy (observed) fitness for each unique solution."""
+        return self._build_trajectory_cache()['unique_noisy_fitnesses']
+
+    @property
+    def solution_iterations(self) -> List[int]:
+        """Count of how many generations each unique solution was best."""
+        return self._build_trajectory_cache()['solution_iterations']
+
+    @property
+    def solution_transitions(self) -> List[Tuple[Tuple, Tuple]]:
+        """List of (from_solution, to_solution) tuples for each transition."""
+        return self._build_trajectory_cache()['solution_transitions']
+
+    @property
+    def unique_noisy_sols(self) -> List[List[List]]:
+        """
+        Noisy solution variants for each unique solution from evaluation records.
+
+        For posterior noise: noisy_sol == true_sol (same solution)
+        For prior noise: noisy_sol != true_sol (perturbed solution)
+        """
+        return self._build_trajectory_cache()['unique_noisy_sols']
+
+    def get_trajectory_data(self):
+        """
+        Extract trajectory data for plotting (kept for backwards compatibility).
+
+        Returns:
+            unique_solutions, unique_true_fitnesses, unique_noisy_fitnesses,
+            solution_iterations, solution_transitions
+        """
+        return (self.unique_solutions, self.unique_true_fitnesses,
+                self.unique_noisy_fitnesses, self.solution_iterations,
+                self.solution_transitions)
 
     # ==============================
     # Utility Methods
     # ==============================
 
     def clear(self):
-        """Clear all logged data."""
+        """Clear all logged data and invalidate cache."""
         self.generations.clear()
         self.evaluations.clear()
         self.current_generation = 0
+        self._trajectory_cache = None  # Invalidate cache
 
     def __len__(self):
         """Return number of generations logged."""

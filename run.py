@@ -24,11 +24,19 @@ from src.io.ExperimentsHelpers import save_or_append_results
 from src.algorithms.Logger import clear_active_logger
 from run_helpers import *
 
+
 # explicit mlflow path
 from pathlib import Path
-base = Path(__file__).resolve().parents[1]  # project root
-mlruns_dir = base / "data" / "mlruns"
-mlflow.set_tracking_uri(f"file:{mlruns_dir}")
+# base = Path(__file__).resolve().parents[1]  # project root
+# mlruns_dir = base / "data" / "mlruns"
+# mlflow.set_tracking_uri(f"file:{mlruns_dir}")
+
+base = Path(__file__).resolve().parents[0]          # folder containing run.py
+project_root = base                                 # if run.py is in root
+mlruns_dir = project_root / "data" / "mlruns"
+mlruns_dir.mkdir(parents=True, exist_ok=True)
+
+mlflow.set_tracking_uri(f"file:{mlruns_dir.as_posix()}")
 
 print("RUN tracking:", mlflow.get_tracking_uri())
 # -------------------------------
@@ -121,91 +129,219 @@ def resolve_config_dependencies(cfg: DictConfig) -> DictConfig:
 # Run Functions
 # -------------------------------
 
-def hydra_algo_data_single(prob_info: Dict[str, Any], 
-                          algo_config: DictConfig, 
-                          algo_params: Dict[str, Any], 
-                          seed: int) -> Dict[str, Any]:
-    """
-    """
-    # Set the random seeds
+def hydra_algo_data_single(prob_info: Dict[str, Any],
+                          algo_config: Dict[str, Any],
+                          algo_params: Dict[str, Any],
+                          seed: int,
+                          payload_dir: str = "data/temp/payloads") -> Tuple[Dict[str, Any], str]:
+    # Seeds
     random.seed(seed)
     np.random.seed(seed)
-    
-    # Create and run the algorithm instance.
+
+    # Run algorithm
+    algo_config = OmegaConf.create(algo_config)
+    # algo_params = OmegaConf.create(algo_params)
     algo_instance = instantiate(algo_config, **algo_params)
-    algo_instance.run()  # This updates the instance's internal data.
-    
-    # Retrieve derived data from the run.
-    unique_sols, unique_fits, noisy_fits, sol_iterations, sol_transitions = algo_instance.logger.get_trajectory_data()
+    algo_instance.run()
+
+    logger = algo_instance.logger
+
+    # -------- BIG DATA: payload --------
+    payload = {
+        "unique_sols": logger.unique_solutions,
+        "unique_true_fits": logger.unique_true_fitnesses,
+        "unique_noisy_fits": logger.unique_noisy_fitnesses,
+        "sol_iterations": logger.solution_iterations,
+        "sol_transitions": logger.solution_transitions,
+        "noisy_sol_variants": logger.unique_noisy_sols,
+    }
+
     seed_signature = algo_instance.seed_signature
 
-    # Clear the logger to free memory (important for parallel runs)
-    clear_active_logger()
-    
-    return {
-        "problem_name": prob_info['name'],
-        "problem_type": prob_info['type'],
-        "problem_goal": prob_info['goal'],
-        "dimensions": prob_info['dimensions'],
-        "opt_global": prob_info['opt_global'],
-        "mean_value": prob_info['mean_value'],
-        "mean_weight": prob_info['mean_weight'],
-        'PID': prob_info['PID'],
-        "fit_func": algo_params['fitness_function'][0].__name__,
-        "noise": algo_params['fitness_function'][1]['noise_intensity'],
-        # "algo_class": algorithm_class.__name__,
+    # Write payload to disk (unique name, safe for parallel)
+    payload_dir = Path(payload_dir)
+    payload_dir.mkdir(parents=True, exist_ok=True)
+    payload_path = payload_dir / f"stn_payload_seed{seed}_sig{seed_signature}.pkl"
+    with open(payload_path, "wb") as f:
+        pickle.dump(payload, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+    # -------- SMALL DATA: row (scalars only) --------
+    unique_true_fits = payload["unique_true_fits"]
+    row = {
+        "problem_name": prob_info["name"],
+        "problem_type": prob_info["type"],
+        "problem_goal": prob_info["goal"],
+        "dimensions": prob_info["dimensions"],
+        "opt_global": prob_info["opt_global"],
+        "mean_value": prob_info["mean_value"],
+        "mean_weight": prob_info["mean_weight"],
+        "PID": prob_info["PID"],
+
+        "fit_func": algo_params["fitness_function"][0].__name__,
+        "noise": algo_params["fitness_function"][1]["noise_intensity"],
         "algo_type": algo_instance.type,
         "algo_name": algo_instance.name,
+
         "n_gens": algo_instance.gens,
         "n_evals": algo_instance.evals,
         "stop_trigger": algo_instance.stop_trigger,
-        "n_unique_sols": len(unique_sols),
-        "unique_sols": unique_sols,
-        "unique_fits": unique_fits,
-        "noisy_fits": noisy_fits,
-        "final_fit": unique_fits[-1],
-        "max_fit": max(unique_fits),
-        "min_fit": min(unique_fits),
-        "sol_iterations": sol_iterations,
-        "sol_transitions": sol_transitions,
+        "n_unique_sols": len(payload["unique_sols"]),
+
+        "final_fit": unique_true_fits[-1] if unique_true_fits else None,
+        "max_fit": max(unique_true_fits) if unique_true_fits else None,
+        "min_fit": min(unique_true_fits) if unique_true_fits else None,
+
         "seed": seed,
         "seed_signature": seed_signature,
+
+        # Keep track of where payload is (for main process logging)
+        "payload_path": str(payload_path),
     }
 
+    # Cleanup (important for sequential + parallel)
+    clear_active_logger()
+    algo_instance.logger.clear()
+    if hasattr(algo_instance, "population"):
+        del algo_instance.population
+
+    return row, str(payload_path)
+
+
 def hydra_algo_data_multi(prob_info: Dict[str, Any],
-                    algo_config: DictConfig, 
-                    algo_params: Dict[str, Any], 
-                    num_runs: int, 
-                    base_seed: int = 0, 
-                    parallel: bool = False) -> pd.DataFrame:
+                          algo_config: Dict[str, Any],
+                          algo_params: Dict[str, Any],
+                          num_runs: int,
+                          base_seed: int = 0,
+                          parallel: bool = False) -> pd.DataFrame:
 
     results_list = []
+
     if parallel:
         import os
         max_workers = min(num_runs, os.cpu_count() or 1)
-        print(f"Running {num_runs} runs in PARALLEL with up to {max_workers} workers (CPUs available: {os.cpu_count()})")
+        print(f"Running {num_runs} runs in PARALLEL with up to {max_workers} workers")
+
         with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
             futures = []
             for i in range(num_runs):
                 seed = base_seed + i
-                futures.append(executor.submit(hydra_algo_data_single, prob_info, algo_config, algo_params, seed))
+                futures.append(
+                    executor.submit(hydra_algo_data_single, prob_info, algo_config, algo_params, seed)
+                )
+
             for future in concurrent.futures.as_completed(futures):
-                results_list.append(future.result())
-        print(f"Parallel execution complete.")
+                row, payload_path = future.result()
+                results_list.append(row)
+
+        print("Parallel execution complete.")
     else:
         print(f"Running {num_runs} runs SEQUENTIALLY")
         for i in range(num_runs):
             seed = base_seed + i
-            results_list.append(hydra_algo_data_single(prob_info, algo_config, algo_params, seed))
-    
-    # Create a DataFrame from the list of dictionaries.
+            row, payload_path = hydra_algo_data_single(prob_info, algo_config, algo_params, seed)
+            results_list.append(row)
+
     df = pd.DataFrame(results_list)
-    df_sorted = df.sort_values(by='seed')
+    df_sorted = df.sort_values(by="seed")
     return df_sorted
 
-# -------------------------------
-# Hydra config management
-# -------------------------------
+def mlflow_log_child_from_row(row: Dict[str, Any], algo_params: Dict[str, Any]) -> str:
+    """
+    Create one child run for this seed and log params/metrics/artifacts.
+    Returns run_id.
+    """
+    # Descriptive child name
+    child_name = (
+        f"PID={row['PID']} | {row['algo_name']} | noise={row['noise']} | seed={row['seed']}"
+    )
+
+    with mlflow.start_run(run_name=child_name, nested=True) as child:
+        run_id = child.info.run_id
+
+        # ---- Params (config-ish) ----
+        mlflow.log_params({
+            "PID": row["PID"],
+            "problem_name": row["problem_name"],
+            "problem_type": row["problem_type"],
+            "problem_goal": row["problem_goal"],
+            "dimensions": row["dimensions"],
+            "algo_type": row["algo_type"],
+            "algo_name": row["algo_name"],
+            "fit_func": row["fit_func"],
+            "noise": row["noise"],
+            "seed": row["seed"],
+            "seed_signature": row["seed_signature"],
+            "eval_limit": algo_params.get("eval_limit"),
+        })
+
+        # ---- Metrics (numbers) ----
+        metrics = {
+            "n_evals": int(row["n_evals"]),
+            "n_gens": int(row["n_gens"]),
+            "n_unique_sols": int(row["n_unique_sols"]),
+        }
+        if row["final_fit"] is not None: metrics["final_fit"] = float(row["final_fit"])
+        if row["max_fit"] is not None:   metrics["max_fit"] = float(row["max_fit"])
+        if row["min_fit"] is not None:   metrics["min_fit"] = float(row["min_fit"])
+        mlflow.log_metrics(metrics)
+
+        # ---- Artifacts (payload pickle) ----
+        # Log with a FIXED name inside each run for easy dashboard retrieval later
+        # We copy/rename into temp so MLflow sees "stn_payload.pkl" consistently.
+        payload_src = Path(row["payload_path"])
+        payload_tmp = payload_src.parent / "stn_payload.pkl"
+        if payload_src.name != "stn_payload.pkl":
+            # copy bytes (avoid shutil import if you want)
+            payload_tmp.write_bytes(payload_src.read_bytes())
+            mlflow.log_artifact(str(payload_tmp), artifact_path="payloads")
+            # optional: remove tmp copy afterwards
+            try:
+                payload_tmp.unlink()
+            except Exception:
+                pass
+        else:
+            mlflow.log_artifact(str(payload_src), artifact_path="payloads")
+
+        return run_id
+    
+# Temp function for dashboard transition
+def enrich_df_with_payloads(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Rehydrate heavy trajectory columns from payload pickles so that
+    algo_results.pkl remains dashboard-compatible.
+    """
+    df = df.copy()
+
+    # Initialise columns (important so Pandas knows they exist)
+    df["unique_sols"] = None
+    df["unique_fits"] = None
+    df["noisy_fits"] = None
+    df["sol_iterations"] = None
+    df["sol_transitions"] = None
+    df["noisy_sol_variants"] = None
+
+    for idx, row in df.iterrows():
+        payload_path = row.get("payload_path")
+        if not payload_path:
+            continue
+
+        try:
+            with open(payload_path, "rb") as f:
+                payload = pickle.load(f)
+        except Exception as e:
+            print(f"[WARN] Failed to load payload {payload_path}: {e}")
+            continue
+
+        # Map payload keys → legacy dashboard column names
+        df.at[idx, "unique_sols"] = payload.get("unique_sols", [])
+        df.at[idx, "unique_fits"] = payload.get("unique_true_fits", [])
+        df.at[idx, "noisy_fits"]  = payload.get("unique_noisy_fits", [])
+        df.at[idx, "sol_iterations"] = payload.get("sol_iterations", [])
+        df.at[idx, "sol_transitions"] = payload.get("sol_transitions", [])
+        df.at[idx, "noisy_sol_variants"] = payload.get("noisy_sol_variants", [])
+
+    return df
+
 
 @hydra.main(version_base=None, config_path="configs", config_name="test1_kp_1p1")
 def main(cfg: DictConfig):
@@ -215,7 +351,7 @@ def main(cfg: DictConfig):
     cfg = resolve_config_dependencies(cfg)
     
     # Initialise MLflow
-    mlflow.set_tracking_uri(cfg.mlflow.tracking_uri)
+    # mlflow.set_tracking_uri(cfg.mlflow.tracking_uri)
     mlflow.set_experiment(cfg.experiment_name)
 
     # Problem metadata
@@ -248,37 +384,56 @@ def main(cfg: DictConfig):
     }
 
     # Run and log via MLflow
-    with mlflow.start_run(run_name=cfg.algo.name):
-        # Log parameters
-        print("RUN artifact root:", mlflow.get_artifact_uri())
+    with mlflow.start_run(run_name=f"SWEEP | PID={cfg.problem.PID} | {cfg.algo.name}") as parent:
+        parent_run_id = parent.info.run_id
+        print("PARENT artifact root:", mlflow.get_artifact_uri())
+
+        # ---- Parent-level params ----
         mlflow.log_params({
-            'dimensions':  cfg.problem.dimensions,
-            'seed':        cfg.run.seed,
-            'max_gens':    cfg.run.max_gens,
+            "PID": cfg.problem.PID,
+            "problem_name": cfg.problem.prob_name,
+            "dimensions": cfg.problem.dimensions,
+            "base_seed": cfg.run.seed,
+            "num_runs": cfg.run.num_runs,
+            "eval_limit": cfg.run.eval_limit,
+            "max_gens": cfg.run.max_gens,
             **{f"fit_{k}": v for k, v in fit_params.items()}
         })
 
-        # Execute experiment (single or multirun seed)
+        # Convert configs to plain python before passing to workers
+        algo_config_plain = OmegaConf.to_container(cfg.algo.init_args, resolve=True)
+        # algo_params_plain = OmegaConf.to_container(OmegaConf.create(algo_params), resolve=True)
+        prob_info_plain   = dict(prob_info)
+
+        # ---- Parallel compute (no MLflow inside workers) ----
         df = hydra_algo_data_multi(
-            prob_info,
-            cfg.algo.init_args,
+            prob_info_plain,
+            algo_config_plain,
             algo_params,
             num_runs=cfg.run.num_runs,
             base_seed=cfg.run.seed,
-            parallel=cfg.run.parallel
+            parallel=cfg.run.parallel   # parallel is now safe
         )
 
-        # Log metrics and artifacts
-        for row in df.itertuples():
-            mlflow.log_metric('final_fitness', row.final_fit, step=row.seed)
-        df.to_csv('data/temp/results.csv', index=False) # save csv
+        # ---- Child runs: log results + artifacts ----
+        seed_to_runid = {}
+        for row in df.to_dict(orient="records"):
+            seed_to_runid[row["seed"]] = mlflow_log_child_from_row(row, algo_params)
+
+        df["run_id"] = df["seed"].map(seed_to_runid)
+        df["parent_run_id"] = parent_run_id
+
+        # ---- Keep CSV unchanged (backup) ----
+        df.to_csv('data/temp/results.csv', index=False)
         mlflow.log_artifact('data/temp/results.csv')
-        df.to_pickle("data/temp/results.pkl") # save pickle
-        save_or_append_results(df, 'data/dashboard_dw/algo_results.pkl')
+
+        # Keep your pickle + dashboard append unchanged for now
+        df.to_pickle("data/temp/results.pkl")
         mlflow.log_artifact("data/temp/results.pkl")
+        df_dashboard = enrich_df_with_payloads(df)
+        save_or_append_results(df_dashboard, 'data/dashboard_dw/algo_results.pkl')
+
         mlflow.log_artifact("data/outputs/.hydra/config.yaml")
-    
-    mlflow.end_run(status="FINISHED")
 
     # Print summary
     print(df[['seed', 'final_fit']])

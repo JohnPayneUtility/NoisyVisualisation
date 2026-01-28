@@ -1,6 +1,6 @@
 # NSGA-II on MO Knapsack (matches SEMO experiment/problem settings)
 
-experiment_name: "MO_knapsack"
+experiment_name: "MO_knapsack2"
 
 # ==============================
 # Run Configuration
