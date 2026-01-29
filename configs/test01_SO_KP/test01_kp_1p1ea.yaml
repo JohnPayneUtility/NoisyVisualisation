@@ -89,7 +89,7 @@ problem:
   fitness_params:
     items_dict: null  # Will be set after problem loading
     capacity: null    # Will be set after problem loading
-    noise_intensity: 0
+    noise_intensity: 1
   
   # Attributes and weights
   attr_function: binary_attribute

@@ -209,21 +209,33 @@ def create_pareto_front_section():
 
 def create_multiobjective_options_section():
     """
-    Create the multiobjective plotting options section.
+    Create the STN plot type selection and multiobjective plotting options section.
 
     Returns:
-        list: List of MO options components.
+        list: List of STN plot type and MO options components.
     """
     return [
         html.Hr(),
+        html.Label("STN plot type:", style={'fontWeight': 'bold'}),
+        html.Br(),
+        html.Div(
+            dcc.Dropdown(
+                id='stn-plot-type',
+                options=[
+                    {'label': 'Posterior noise STN plot', 'value': 'posterior'},
+                    {'label': 'Prior noise STN plot', 'value': 'prior'},
+                    {'label': 'Prior noise STN V2 plot', 'value': 'prior_v2'},
+                    {'label': 'Multiobjective STN plot', 'value': 'multiobjective'},
+                ],
+                value='posterior',
+                clearable=False,
+                style=DROPDOWN_STYLE
+            ),
+            style=INLINE_DROPDOWN_WRAPPER_STYLE
+        ),
+        html.Br(),
         html.Label("Multiobjective options:", style={'fontWeight': 'bold'}),
         html.Br(),
-        dcc.Checklist(
-            id='stn-mo-mode',
-            options=[{'label': 'Multiobjective STN mode', 'value': 'mo'}],
-            value=[],
-            labelStyle={'display': 'inline-block', 'margin-right': '10px'}
-        ),
         html.Div(
             dcc.Dropdown(
                 id='mo_plot_type',
@@ -290,6 +302,7 @@ def create_stn_options_section():
                 {'label': 'Show median run', 'value': 'show_median'},
                 {'label': 'Show worst run', 'value': 'show_worst'},
                 {'label': 'Hamming distance labels', 'value': 'STN-hamming'},
+                {'label': 'Dedup prior noise', 'value': 'dedup-prior-noise'},
             ],
             value=[],
             labelStyle={'display': 'inline-block', 'margin-right': '10px'}

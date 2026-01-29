@@ -306,7 +306,7 @@ def should_label_edge(u, v, STN_hamming, LON_hamming):
     if ("Noisy" in u) or ("Noisy" in v):
         return False
 
-    is_STN = ("STN" in u)
+    is_STN = ("STN" in u) or u.startswith("MO_")
     is_LON = ("Local Optimum" in u) or ("Local Optimum" in v)
 
     # If edge qualifies as both STN and LON, only label if both enabled

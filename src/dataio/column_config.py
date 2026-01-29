@@ -48,6 +48,8 @@ DISPLAY1_COLUMNS = [
 LIST_COLUMNS = [
     'unique_sols',
     'unique_fits',
+    'noisy_sol_variants',
+    'noisy_variant_fitnesses',
     'noisy_fits',
     'sol_iterations',
     'sol_transitions',
@@ -71,6 +73,8 @@ DISPLAY2_DROP_COLUMNS = [
     'n_unique_sols',
     'unique_sols',
     'unique_fits',
+    'noisy_sol_variants',
+    'noisy_variant_fitnesses',
     'noisy_fits',
     'final_fit',
     'max_fit',

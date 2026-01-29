@@ -67,6 +67,7 @@ class STNConfig:
     stride: int = 1  # 1 = keep all, 2 = every 2nd, etc.
     edge_size: float = 2.0
     show_hamming: bool = False
+    dedup_prior_noise: bool = False
 
 
 @dataclass
@@ -112,7 +113,7 @@ class PlotConfig:
     show_worst: bool = False
 
     # Mode settings
-    mo_mode: bool = False
+    stn_plot_type: str = 'posterior'  # 'posterior', 'prior', 'multiobjective'
     layout_type: str = 'mds'
     plot_type: str = 'RegLon'
     hover_info: str = 'fitness'
@@ -174,7 +175,7 @@ def parse_callback_inputs(
     lon_node_max: float,
     lon_edge_size_slider: float,
     stn_edge_size_slider: float,
-    stn_mo_mode: Optional[List[str]],
+    stn_plot_type: str,
 ) -> PlotConfig:
     """
     Parse raw callback inputs into a structured PlotConfig object.
@@ -192,7 +193,6 @@ def parse_callback_inputs(
     options = options or []
     run_options = run_options or []
     lon_options = lon_options or []
-    stn_mo_mode = stn_mo_mode or []
     lon_edge_colour_feas = lon_edge_colour_feas or []
 
     return PlotConfig(
@@ -213,7 +213,7 @@ def parse_callback_inputs(
         show_worst='show_worst' in run_options,
 
         # Mode settings
-        mo_mode='mo' in stn_mo_mode,
+        stn_plot_type=stn_plot_type or 'posterior',
         layout_type=layout_value,
         plot_type=plot_type,
         hover_info=hover_info_value,
@@ -257,6 +257,7 @@ def parse_callback_inputs(
             lower_fit_limit=stn_lower_fit_limit,
             edge_size=stn_edge_size_slider,
             show_hamming='STN-hamming' in run_options,
+            dedup_prior_noise='dedup-prior-noise' in run_options,
         ),
         lon=LONConfig(
             filter_negative='LON-filter-neg' in lon_options,

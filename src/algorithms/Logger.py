@@ -203,15 +203,19 @@ class ExperimentLogger:
             current_solution = tuple(unique_solutions[i])
             transitions.append((prev_solution, current_solution))
 
-        # Build noisy sol variants from evaluation records
+        # Build noisy sol variants and their fitnesses from evaluation records
         noisy_sols_per_solution = []
+        noisy_variant_fitnesses_per_solution = []
         for sol in unique_solutions:
             key = tuple(sol)
             if key in self.evaluations:
                 noisy_sols = [record.noisy_sol for record in self.evaluations[key]]
+                noisy_fits = [record.noisy_fitness for record in self.evaluations[key]]
             else:
                 noisy_sols = []
+                noisy_fits = []
             noisy_sols_per_solution.append(noisy_sols)
+            noisy_variant_fitnesses_per_solution.append(noisy_fits)
 
         # Cache all computed data
         self._trajectory_cache = {
@@ -221,6 +225,7 @@ class ExperimentLogger:
             'solution_iterations': iteration_counts,
             'solution_transitions': transitions,
             'unique_noisy_sols': noisy_sols_per_solution,
+            'noisy_variant_fitnesses': noisy_variant_fitnesses_per_solution,
         }
         return self._trajectory_cache
 
@@ -258,6 +263,15 @@ class ExperimentLogger:
         For prior noise: noisy_sol != true_sol (perturbed solution)
         """
         return self._build_trajectory_cache()['unique_noisy_sols']
+
+    @property
+    def noisy_variant_fitnesses(self) -> List[List[float]]:
+        """
+        Noisy fitness values for each variant in unique_noisy_sols.
+        Parallel structure: noisy_variant_fitnesses[i][j] is the noisy fitness
+        for unique_noisy_sols[i][j].
+        """
+        return self._build_trajectory_cache()['noisy_variant_fitnesses']
 
     def get_trajectory_data(self):
         """

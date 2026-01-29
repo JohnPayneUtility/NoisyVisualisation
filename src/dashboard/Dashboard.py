@@ -26,6 +26,8 @@ from ..visualization import (
     generate_run_summary_string,
     add_stn_trajectories,
     add_mo_fronts,
+    add_prior_noise_stn,
+    add_prior_noise_stn_v2,
     add_lon_nodes,
     add_lon_edges,
     debug_mo_counts,
@@ -537,6 +539,8 @@ def process_STN_data(df, mo_plot_type, group_cols=['algo_name', 'noise']):
                 row['noisy_fits'],
                 row['sol_iterations'],
                 row['sol_transitions'],
+                row.get('noisy_sol_variants', []),
+                row.get('noisy_variant_fitnesses', []),
             ])
 
         STN_data.append(runs)
@@ -712,7 +716,7 @@ def clean_axis_values(custom_x_min, custom_x_max, custom_y_min, custom_y_max, cu
      Input('LON-edge-size-slider', 'value'),
      Input('STN-edge-size-slider', 'value'),
      Input('noisy_fitnesses_data', 'data'),
-     Input('stn-mo-mode', 'value'),
+     Input('stn-plot-type', 'value'),
      Input('STN_MO_data', 'data'),
      Input('STN_MO_series_labels', 'data')]
 )
@@ -724,7 +728,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                 opacity_noise_bar, LON_node_opacity, LON_edge_opacity, STN_node_opacity, STN_edge_opacity,
                 STN_node_min, STN_node_max, LON_node_min, LON_node_max,
                 LON_edge_size_slider, STN_edge_size_slider, noisy_fitnesses_list,
-                stn_mo_mode, STN_MO_data, STN_MO_series_labels):
+                stn_plot_type, STN_MO_data, STN_MO_series_labels):
     """
     Main visualization callback - orchestrates the visualization pipeline.
 
@@ -769,7 +773,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
         lon_node_max=LON_node_max,
         lon_edge_size_slider=LON_edge_size_slider,
         stn_edge_size_slider=STN_edge_size_slider,
-        stn_mo_mode=stn_mo_mode,
+        stn_plot_type=stn_plot_type,
     )
 
     # ==========
@@ -785,7 +789,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
     # ==========
     # STEP 3: Build graph - add nodes and edges
     # ==========
-    if config.mo_mode:
+    if config.stn_plot_type == 'multiobjective':
         # Multi-objective mode
         print('ADDING NODES IN MULTIOBJECTIVE MODE')
         for idx, mo_runs in enumerate(STN_MO_data or []):
@@ -796,6 +800,78 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
             add_mo_fronts(G, selected_runs, edge_color, idx, config.noisy_node_color)
 
         debug_summary_component = html.Div("None implemented for MO")
+
+    elif config.stn_plot_type == 'prior' and all_trajectories_list:
+        # Prior noise STN mode
+        print('ADDING NODES IN PRIOR NOISE STN MODE')
+        optimisation_goal = opt_goal[:3].lower() if opt_goal else 'max'
+
+        for idx, all_run_trajectories in enumerate(all_trajectories_list):
+            edge_color = config.algo_colors[idx % len(config.algo_colors)]
+
+            selected_trajectories = []
+            if config.n_runs_display > 0:
+                selected_trajectories.extend(all_run_trajectories[config.run_start_index:config.run_start_index + config.n_runs_display])
+            if config.show_best:
+                selected_trajectories.extend(select_top_runs_by_fitness(all_run_trajectories, 1, optimisation_goal))
+            if config.show_mean:
+                selected_trajectories.extend([get_mean_run(all_run_trajectories)])
+            if config.show_median:
+                selected_trajectories.extend([get_median_run(all_run_trajectories)])
+            if config.show_worst:
+                anti_optimisation_goal = 'min' if optimisation_goal == 'max' else 'max'
+                selected_trajectories.extend(select_top_runs_by_fitness(all_run_trajectories, 1, anti_optimisation_goal))
+
+            add_prior_noise_stn(
+                G, selected_trajectories, edge_color, idx, config.noisy_node_color,
+                dedup=config.stn.dedup_prior_noise
+            )
+
+            summary_str = generate_run_summary_string(selected_trajectories)
+            debug_summaries.append((summary_str, edge_color))
+
+        summary_components = []
+        for summary_str, color in debug_summaries:
+            summary_components.append(
+                html.Div(summary_str, style={'color': color, 'whiteSpace': 'pre-wrap', 'marginBottom': '10px'})
+            )
+        debug_summary_component = html.Div(summary_components)
+
+    elif config.stn_plot_type == 'prior_v2' and all_trajectories_list:
+        # Prior noise STN V2 mode
+        print('ADDING NODES IN PRIOR NOISE STN V2 MODE')
+        optimisation_goal = opt_goal[:3].lower() if opt_goal else 'max'
+
+        for idx, all_run_trajectories in enumerate(all_trajectories_list):
+            edge_color = config.algo_colors[idx % len(config.algo_colors)]
+
+            selected_trajectories = []
+            if config.n_runs_display > 0:
+                selected_trajectories.extend(all_run_trajectories[config.run_start_index:config.run_start_index + config.n_runs_display])
+            if config.show_best:
+                selected_trajectories.extend(select_top_runs_by_fitness(all_run_trajectories, 1, optimisation_goal))
+            if config.show_mean:
+                selected_trajectories.extend([get_mean_run(all_run_trajectories)])
+            if config.show_median:
+                selected_trajectories.extend([get_median_run(all_run_trajectories)])
+            if config.show_worst:
+                anti_optimisation_goal = 'min' if optimisation_goal == 'max' else 'max'
+                selected_trajectories.extend(select_top_runs_by_fitness(all_run_trajectories, 1, anti_optimisation_goal))
+
+            add_prior_noise_stn_v2(
+                G, selected_trajectories, edge_color, idx, config.noisy_node_color,
+                dedup=config.stn.dedup_prior_noise
+            )
+
+            summary_str = generate_run_summary_string(selected_trajectories)
+            debug_summaries.append((summary_str, edge_color))
+
+        summary_components = []
+        for summary_str, color in debug_summaries:
+            summary_components.append(
+                html.Div(summary_str, style={'color': color, 'whiteSpace': 'pre-wrap', 'marginBottom': '10px'})
+            )
+        debug_summary_component = html.Div(summary_components)
 
     elif all_trajectories_list:
         # Single-objective STN mode
@@ -878,7 +954,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
     # ==========
     # STEP 7: Calculate node positions
     # ==========
-    pos = calculate_positions(G, config.layout_type, config.mo_mode, config.plot_3d)
+    pos = calculate_positions(G, config.layout_type, config.stn_plot_type, config.plot_3d)
 
     # ==========
     # STEP 8: Build visualization traces

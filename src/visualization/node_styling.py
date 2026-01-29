@@ -117,7 +117,7 @@ def apply_node_sizes(
             continue  # skip remaining checks, already set size
 
         elif "STN" in node:
-            # For STN nodes: weight comes from the 'iterations' attribute
+            # For STN/SO nodes: weight comes from the 'iterations' attribute
             iter_val = G.nodes[node].get('iterations', 1)
             # Normalize to the 0-1 range
             norm_iter = (iter_val - min_STN_iter) / (max_STN_iter - min_STN_iter) if max_STN_iter > min_STN_iter else 0.5
@@ -223,7 +223,7 @@ def style_nodes(
     optimum = config.optimum
 
     # Apply generation coloring first (for MO mode)
-    if config.mo_mode:
+    if config.stn_plot_type == 'multiobjective':
         apply_generation_coloring(G)
 
     # Apply sizes

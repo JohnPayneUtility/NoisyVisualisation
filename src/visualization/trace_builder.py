@@ -27,7 +27,7 @@ def _precalculate_stn_edge_colors(G: nx.MultiDiGraph) -> Dict[Tuple, Dict[str, i
     """
     stn_edges_by_pair_color = {}
     for u_pre, v_pre, key_pre, data_pre in G.edges(data=True, keys=True):
-        if data_pre.get("edge_type") == "STN":
+        if data_pre.get("edge_type") in ("STN", "STN_SO"):
             pair_pre = (u_pre, v_pre)
             color_pre = data_pre.get('color', 'default_color')
             if pair_pre not in stn_edges_by_pair_color:
@@ -103,9 +103,9 @@ def create_edge_traces(
         # Determine opacity based on edge type
         if edge_type == 'LON':
             edge_opacity = LON_edge_opacity
-        elif edge_type == 'STN':
+        elif edge_type in ('STN', 'STN_SO'):
             edge_opacity = STN_edge_opacity
-        elif edge_type == 'Noise':
+        elif edge_type in ('Noise', 'Noise_SO'):
             edge_opacity = STN_edge_opacity
 
         # Get start and end points (2D position + Z fitness)
@@ -117,7 +117,7 @@ def create_edge_traces(
         z1 = float(z1) if z1 is not None else 0
 
         # Process curved STN edges
-        if option_curve_edges and edge_type == "STN" and (u, v) in color_indices_for_pair:
+        if option_curve_edges and edge_type in ("STN", "STN_SO") and (u, v) in color_indices_for_pair:
             pair = (u, v)
             current_edge_color = data.get('color', 'default_color')
 
@@ -185,11 +185,11 @@ def create_edge_traces(
                 norm_w = data.get('norm_weight', 0)
                 line_width = 1 + norm_w * (LON_edge_size_slider - 1)
                 edge_color = data.get('color', 'black')
-            elif edge_type == 'Noise':
+            elif edge_type in ('Noise', 'Noise_SO'):
                 line_width = 3
                 dash_style = 'solid'
                 edge_color = data.get('color', 'grey')
-            elif edge_type == 'STN':
+            elif edge_type in ('STN', 'STN_SO'):
                 line_width = STN_edge_size_slider
                 edge_color = data.get('color', 'green')
 
@@ -509,7 +509,7 @@ def create_axis_settings(
         showticklabels=False
     )
 
-    z_axis_title = 'hypervolume' if config.mo_mode else 'fitness'
+    z_axis_title = 'hypervolume' if config.stn_plot_type == 'multiobjective' else 'fitness'
     zaxis_settings = dict(
         title=z_axis_title,
         titlefont=dict(size=24, color='black'),

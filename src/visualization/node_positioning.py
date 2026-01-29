@@ -320,19 +320,18 @@ def calculate_positions_so(
 def calculate_positions(
     G: nx.MultiDiGraph,
     layout_type: str,
-    mo_mode: bool = False,
+    stn_plot_type: str = 'posterior',
     plot_3d: bool = False
 ) -> Dict[str, Tuple[float, float]]:
     """
     Calculate 2D positions for all nodes in the graph.
 
-    Routes to the appropriate positioning function based on whether
-    multi-objective mode is enabled.
+    Routes to the appropriate positioning function based on the STN plot type.
 
     Args:
         G: NetworkX graph containing nodes
         layout_type: Layout algorithm to use
-        mo_mode: Whether multi-objective mode is enabled
+        stn_plot_type: STN plot type ('posterior', 'prior', 'multiobjective')
         plot_3d: Whether 3D plotting is enabled
 
     Returns:
@@ -340,9 +339,10 @@ def calculate_positions(
     """
     print('\033[33mCalculating node positions...\033[0m')
 
-    if mo_mode:
+    if stn_plot_type == 'multiobjective':
         pos = calculate_positions_mo(G, layout_type)
     else:
+        # Both 'posterior' and 'prior' use SO positioning (Hamming distance)
         pos = calculate_positions_so(G, layout_type, plot_3d)
 
     print('\033[32mNode Positions Calculated\033[0m')
