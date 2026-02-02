@@ -151,6 +151,7 @@ def hydra_algo_data_single(prob_info: Dict[str, Any],
         "unique_sols": logger.unique_solutions,
         "unique_true_fits": logger.unique_true_fitnesses,
         "unique_noisy_fits": logger.unique_noisy_fitnesses,
+        "unique_noisy_sols": logger.unique_noisy_solutions,
         "sol_iterations": logger.solution_iterations,
         "sol_transitions": logger.solution_transitions,
         "noisy_sol_variants": logger.unique_noisy_sols,
@@ -319,6 +320,7 @@ def enrich_df_with_payloads(df: pd.DataFrame) -> pd.DataFrame:
     df["noisy_fits"] = None
     df["sol_iterations"] = None
     df["sol_transitions"] = None
+    df["unique_noisy_sols"] = None
     df["noisy_sol_variants"] = None
     df["noisy_variant_fitnesses"] = None
 
@@ -340,6 +342,7 @@ def enrich_df_with_payloads(df: pd.DataFrame) -> pd.DataFrame:
         df.at[idx, "noisy_fits"]  = payload.get("unique_noisy_fits", [])
         df.at[idx, "sol_iterations"] = payload.get("sol_iterations", [])
         df.at[idx, "sol_transitions"] = payload.get("sol_transitions", [])
+        df.at[idx, "unique_noisy_sols"] = payload.get("unique_noisy_sols", [])
         df.at[idx, "noisy_sol_variants"] = payload.get("noisy_sol_variants", [])
         df.at[idx, "noisy_variant_fitnesses"] = payload.get("noisy_variant_fitnesses", [])
 

@@ -15,14 +15,46 @@ def mean_weight(items_dict):
 # Combinatorial Fitness Functions
 # ==============================
 
-def OneMax_fitness(individual, noise_function=None, noise_intensity=0):
-    """ Function calculates fitness for OneMax problem individual """
-    if noise_function is not None: # Provide noise function for noise applied to individual
-        individual = noise_function(individual[:], noise_intensity)
-        fitness = sum(individual)
-    else: # standard noisy
-        fitness = sum(individual) + random.gauss(0, noise_intensity)
-    return (fitness,)
+def OneMax_fitness(individual, noise_intensity=0):
+    """
+    Calculates fitness for OneMax problem with posterior noise.
+
+    Gaussian noise is added to the fitness value after evaluation.
+    If a logger is active, the evaluation is recorded.
+    """
+    # Calculate true fitness (no noise)
+    true_fitness = sum(individual)
+
+    # Posterior noise: add noise to fitness value
+    noisy_fitness = true_fitness + random.gauss(0, noise_intensity)
+
+    # Log the evaluation if logger is active
+    logger = get_active_logger()
+    if logger:
+        logger.log_noisy_eval(individual, individual, true_fitness, noisy_fitness)
+
+    return (noisy_fitness,)
+
+def OneMax_prior_fitness(individual, noise_intensity=0):
+    """
+    Calculates fitness for OneMax problem with prior noise.
+
+    The individual is perturbed via random bit flips before evaluation.
+    If a logger is active, the original and noisy solutions are recorded.
+    """
+    # Calculate true fitness (no noise)
+    true_fitness = sum(individual)
+
+    # Prior noise: perturb individual via random bit flips, then evaluate
+    noisy_individual, _ = random_bit_flip(list(individual), n_flips=noise_intensity)
+    noisy_fitness = sum(noisy_individual)
+
+    # Log the evaluation if logger is active
+    logger = get_active_logger()
+    if logger:
+        logger.log_noisy_eval(individual, noisy_individual, true_fitness, noisy_fitness)
+
+    return (noisy_fitness,)
 
 def jump_fitness(individual, gap_size, noise_intensity):
     """ Calculates fitness for jump problem """

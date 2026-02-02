@@ -194,13 +194,16 @@ class OptimisationAlgorithm:
         best_individual = tools.selBest(population, 1)[0]
         best_fitness = best_individual.fitness.values[0]  # This is the noisy fitness
 
-        # Look up true fitness from the evaluation log
+        # Look up true fitness and noisy solution from the evaluation log
         key = tuple(best_individual)
         if key in self.logger.evaluations and self.logger.evaluations[key]:
-            true_fitness = self.logger.evaluations[key][-1].true_fitness
+            last_eval = self.logger.evaluations[key][-1]
+            true_fitness = last_eval.true_fitness
+            noisy_solution = last_eval.noisy_sol
         else:
             # Fallback if not in evaluation log
             true_fitness = best_fitness
+            noisy_solution = None
 
         # Log the generation data
         self.logger.log_generation(
@@ -209,6 +212,7 @@ class OptimisationAlgorithm:
             best_solution=best_individual,
             best_fitness=best_fitness,
             true_fitness=true_fitness,
+            noisy_solution=noisy_solution,
             evals=self.evals
         )
 

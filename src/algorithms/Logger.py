@@ -35,6 +35,7 @@ class GenerationRecord:
     best_solution: List
     best_fitness: float          # Observed (possibly noisy)
     true_fitness: float          # Noise-free
+    noisy_solution: List = None  # Perturbed solution (prior noise) or same as best_solution (posterior)
     evals_so_far: int = None
 
 @dataclass
@@ -75,7 +76,8 @@ class ExperimentLogger:
     _trajectory_cache: Optional[Dict] = field(default=None, init=False, repr=False)
 
     def log_generation(self, generation: int, population, best_solution,
-                       best_fitness: float, true_fitness: float, evals: int = None):
+                       best_fitness: float, true_fitness: float,
+                       noisy_solution=None, evals: int = None):
         """Log the state at the end of a generation."""
         record = GenerationRecord(
             generation=generation,
@@ -83,6 +85,7 @@ class ExperimentLogger:
             best_solution=best_solution[:],
             best_fitness=best_fitness,
             true_fitness=true_fitness,
+            noisy_solution=list(noisy_solution) if noisy_solution is not None else None,
             evals_so_far=evals
         )
         self.generations.append(record)
@@ -183,6 +186,8 @@ class ExperimentLogger:
         unique_noisy_fitnesses = []
         seen_solutions = {}
 
+        unique_noisy_solutions = []
+
         for gen in self.generations:
             solution_tuple = tuple(gen.best_solution)
             if solution_tuple not in seen_solutions:
@@ -190,6 +195,7 @@ class ExperimentLogger:
                 unique_solutions.append(gen.best_solution)
                 unique_true_fitnesses.append(gen.true_fitness)
                 unique_noisy_fitnesses.append(gen.best_fitness)
+                unique_noisy_solutions.append(gen.noisy_solution)
             else:
                 seen_solutions[solution_tuple] += 1
 
@@ -222,6 +228,7 @@ class ExperimentLogger:
             'unique_solutions': unique_solutions,
             'unique_true_fitnesses': unique_true_fitnesses,
             'unique_noisy_fitnesses': unique_noisy_fitnesses,
+            'unique_noisy_solutions': unique_noisy_solutions,
             'solution_iterations': iteration_counts,
             'solution_transitions': transitions,
             'unique_noisy_sols': noisy_sols_per_solution,
@@ -243,6 +250,11 @@ class ExperimentLogger:
     def unique_noisy_fitnesses(self) -> List[float]:
         """Noisy (observed) fitness for each unique solution."""
         return self._build_trajectory_cache()['unique_noisy_fitnesses']
+
+    @property
+    def unique_noisy_solutions(self) -> List[List]:
+        """Noisy (perturbed) solution for each unique solution, from when it first became best."""
+        return self._build_trajectory_cache()['unique_noisy_solutions']
 
     @property
     def solution_iterations(self) -> List[int]:
