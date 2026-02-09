@@ -36,9 +36,12 @@ mlflow:
 # Hydra Configuration
 # ==============================
 hydra:
-  run:
-    dir: "data/outputs"
-
+  mode: MULTIRUN
+  sweeper:
+    params:
+      problem.fitness_params.noise_intensity: 0,1
+  sweep:
+    dir: data/outputs
 # ==============================
 # Algorithm Configuration
 # ==============================

@@ -109,8 +109,8 @@ def create_edge_traces(
             edge_opacity = STN_edge_opacity
 
         # Get start and end points (2D position + Z fitness)
-        x0, y0 = pos[u]
-        x1, y1 = pos[v]
+        x0, y0 = pos[u][:2]
+        x1, y1 = pos[v][:2]
         z0 = G.nodes[u].get('fitness', 0)
         z1 = G.nodes[v].get('fitness', 0)
         z0 = float(z0) if z0 is not None else 0
@@ -496,17 +496,18 @@ def create_axis_settings(
     else:
         x_min_sub = x_max_sub = y_min_sub = y_max_sub = z_min_sub = z_max_sub = 1
 
+    show_xy_labels = config.layout_type == 'raw'
     xaxis_settings = dict(
-        title='',
+        title='x1' if show_xy_labels else '',
         titlefont=dict(size=24, color='black'),
         tickfont=dict(size=16, color='black'),
-        showticklabels=False
+        showticklabels=show_xy_labels
     )
     yaxis_settings = dict(
-        title='',
+        title='x2' if show_xy_labels else '',
         titlefont=dict(size=24, color='black'),
         tickfont=dict(size=16, color='black'),
-        showticklabels=False
+        showticklabels=show_xy_labels
     )
 
     z_axis_title = 'hypervolume' if config.stn_plot_type == 'multiobjective' else 'fitness'

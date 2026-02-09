@@ -6,6 +6,7 @@ between solutions, fronts, and other data structures. These functions have
 no dependencies on graph or plotting state and can be used independently.
 """
 
+import math
 from typing import List, Tuple, Union
 
 # Type aliases for clarity
@@ -66,6 +67,49 @@ def sol_tuple_ints(sol: Solution) -> Tuple[int, ...]:
         A tuple of integers representing the solution.
     """
     return tuple(int(x) for x in sol)
+
+
+def euclidean_distance(sol1: Solution, sol2: Solution) -> float:
+    """
+    Calculate the Euclidean distance between two solutions.
+
+    Args:
+        sol1: First solution (list or tuple of numeric values)
+        sol2: Second solution (list or tuple of numeric values)
+
+    Returns:
+        The Euclidean distance between the two solutions.
+    """
+    return math.sqrt(sum((a - b) ** 2 for a, b in zip(sol1, sol2)))
+
+
+def sol_tuple_floats(sol: Solution) -> Tuple[float, ...]:
+    """
+    Convert any iterable solution into a tuple of floats.
+
+    Preserves continuous values for use as dictionary keys.
+    Use this instead of sol_tuple_ints for continuous problems.
+
+    Args:
+        sol: Solution to convert
+
+    Returns:
+        A tuple of floats representing the solution.
+    """
+    return tuple(float(x) for x in sol)
+
+
+def is_continuous_solution(sol: Solution) -> bool:
+    """
+    Check if a solution contains continuous (non-integer) values.
+
+    Args:
+        sol: Solution to check
+
+    Returns:
+        True if any value in the solution is a non-integer float.
+    """
+    return any(isinstance(x, float) and not x.is_integer() for x in sol)
 
 
 def avg_min_hamming_A_to_B(front_a: Front, front_b: Front) -> float:

@@ -11,7 +11,11 @@ import numpy as np
 from sklearn.manifold import MDS as MDS_sklearn
 from sklearn.manifold import TSNE
 
-from ..common import hamming_distance, sol_tuple_ints, front_distance
+from ..common import (
+    hamming_distance, euclidean_distance,
+    sol_tuple_ints, sol_tuple_floats, is_continuous_solution,
+    front_distance,
+)
 from ..dashboard.DimensionalityReduction import landmark_mds, compute_distance_matrix
 
 
@@ -135,10 +139,26 @@ def calculate_positions_so(
     """
     print('\033[33mCompiling Solutions...\033[0m')
 
+    # Detect whether solutions are continuous (floats) or discrete (ints)
+    continuous = False
+    for _, data in G.nodes(data=True):
+        sol = data.get('solution', [])
+        if sol and is_continuous_solution(sol):
+            continuous = True
+            break
+
+    # Choose key function and distance function based on solution type
+    sol_key_fn = sol_tuple_floats if continuous else sol_tuple_ints
+    dist_fn = euclidean_distance if continuous else hamming_distance
+    if continuous:
+        print('\033[33mDetected continuous solutions — using Euclidean distance\033[0m')
+    else:
+        print('\033[33mDetected discrete solutions — using Hamming distance\033[0m')
+
     # Collect unique solutions
     solutions_set = set()
     for node, data in G.nodes(data=True):
-        sol = sol_tuple_ints(data.get('solution', []))
+        sol = sol_key_fn(data.get('solution', []))
         if sol:  # Only add non-empty solutions
             solutions_set.add(sol)
     solutions_list = list(solutions_set)
@@ -154,14 +174,14 @@ def calculate_positions_so(
     if layout_type == 'lmds':
         print(f'\033[33mUsing Landmark MDS with {K} solutions\033[0m')
         # Use Landmark MDS for efficient embedding
-        positions_2d = landmark_mds(hamming_distance, solutions_list, n_landmarks=None, random_state=42)
+        positions_2d = landmark_mds(dist_fn, solutions_list, n_landmarks=None, random_state=42)
 
         solution_positions = {}
         for i, sol in enumerate(solutions_list):
             solution_positions[sol] = positions_2d[i]
 
         for node, data in G.nodes(data=True):
-            sol = tuple(data.get('solution', []))
+            sol = sol_key_fn(data.get('solution', []))
             if sol in solution_positions:
                 pos[node] = solution_positions[sol]
 
@@ -170,7 +190,7 @@ def calculate_positions_so(
         dissimilarity_matrix = np.zeros((K, K))
         for i in range(K):
             for j in range(K):
-                dissimilarity_matrix[i, j] = hamming_distance(solutions_list[i], solutions_list[j])
+                dissimilarity_matrix[i, j] = dist_fn(solutions_list[i], solutions_list[j])
 
         mds = MDS_sklearn(n_components=2, dissimilarity='precomputed', random_state=42)
         positions_2d = mds.fit_transform(dissimilarity_matrix)
@@ -180,7 +200,7 @@ def calculate_positions_so(
             solution_positions[sol] = positions_2d[i]
 
         for node, data in G.nodes(data=True):
-            sol = tuple(data.get('solution', []))
+            sol = sol_key_fn(data.get('solution', []))
             if sol in solution_positions:
                 pos[node] = solution_positions[sol]
 
@@ -189,7 +209,7 @@ def calculate_positions_so(
         dissimilarity_matrix = np.zeros((len(solutions_list), len(solutions_list)))
         for i in range(len(solutions_list)):
             for j in range(len(solutions_list)):
-                dissimilarity_matrix[i, j] = hamming_distance(solutions_list[i], solutions_list[j])
+                dissimilarity_matrix[i, j] = dist_fn(solutions_list[i], solutions_list[j])
 
         tsne = TSNE(n_components=2, metric='precomputed', random_state=42, init='random')
         positions_2d = tsne.fit_transform(dissimilarity_matrix)
@@ -199,7 +219,7 @@ def calculate_positions_so(
             solution_positions[sol] = positions_2d[i]
 
         for node, data in G.nodes(data=True):
-            sol = tuple(data.get('solution', []))
+            sol = sol_key_fn(data.get('solution', []))
             if sol in solution_positions:
                 pos[node] = solution_positions[sol]
 
@@ -232,10 +252,10 @@ def calculate_positions_so(
                 sol_data = data.get('solution')
                 if sol_data is not None:
                     try:
-                        sol_tuple = sol_tuple_ints(sol_data)
-                        if sol_tuple not in positions_by_solution:
-                            positions_by_solution[sol_tuple] = []
-                        positions_by_solution[sol_tuple].append(node_pos)
+                        sol_t = sol_key_fn(sol_data)
+                        if sol_t not in positions_by_solution:
+                            positions_by_solution[sol_t] = []
+                        positions_by_solution[sol_t].append(node_pos)
                     except Exception as e_conv:
                         print(f"Warning: Could not process solution for node {node}: {e_conv}.")
                         nodes_without_solution_or_pos.append(node)
@@ -262,9 +282,9 @@ def calculate_positions_so(
                 assigned = False
                 if sol_data is not None:
                     try:
-                        sol_tuple = sol_tuple_ints(sol_data)
-                        if sol_tuple in final_solution_positions:
-                            pos[node] = final_solution_positions[sol_tuple]
+                        sol_t = sol_key_fn(sol_data)
+                        if sol_t in final_solution_positions:
+                            pos[node] = final_solution_positions[sol_t]
                             assigned = True
                             assigned_count += 1
                     except Exception:
@@ -285,10 +305,10 @@ def calculate_positions_so(
         # Build a complete graph of unique solutions
         CG = nx.complete_graph(n)
         mapping = {i: solutions_list[i] for i in range(n)}
-        # For each pair, set the edge weight to be the Hamming distance
+        # For each pair, set the edge weight to be the distance
         for i in range(n):
             for j in range(i + 1, n):
-                weight = hamming_distance(solutions_list[i], solutions_list[j])
+                weight = dist_fn(solutions_list[i], solutions_list[j])
                 CG[i][j]['weight'] = weight
 
         # Compute the Kamada-Kawai layout on H using the weight attribute
@@ -299,9 +319,16 @@ def calculate_positions_so(
 
         # For every node in G, assign the position corresponding to its solution
         for node, data in G.nodes(data=True):
-            sol = tuple(data.get('solution', []))
+            sol = sol_key_fn(data.get('solution', []))
             if sol in solution_positions:
                 pos[node] = solution_positions[sol]
+
+    elif layout_type == 'raw':
+        print('\033[33mUsing Raw Solution Values as positions\033[0m')
+        for node, data in G.nodes(data=True):
+            sol = data.get('solution', [])
+            if sol is not None and len(sol) >= 2:
+                pos[node] = (float(sol[0]), float(sol[1]))
 
     else:
         # Default: spring layout

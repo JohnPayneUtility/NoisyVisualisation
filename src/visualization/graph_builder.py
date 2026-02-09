@@ -31,8 +31,6 @@ def generate_run_summary_string(selected_trajectories: List) -> str:
             lines.append(f"Skipping malformed entry in run {run_idx}")
             continue
         unique_solutions, unique_fitnesses, noisy_fitnesses, solution_iterations, transitions = entry[:5]
-        # Convert noisy fitnesses to ints if needed
-        noisy_fitnesses = [int(fit) for fit in noisy_fitnesses]
         lines.append(f"Run {run_idx}:")
         for i, solution in enumerate(unique_solutions):
             lines.append(f"  Solution: {solution} | Fitness: {unique_fitnesses[i]} | Noisy Fitness: {noisy_fitnesses[i]}")
@@ -132,7 +130,6 @@ def add_stn_trajectories(
             print(f"Skipping malformed entry {entry}, expected at least 5 elements but got {len(entry)}")
             continue
         unique_solutions, unique_fitnesses, noisy_fitnesses, solution_iterations, transitions = entry[:5]
-        noisy_fitnesses = [int(fit) for fit in noisy_fitnesses]
         if any(x is None for x in (unique_solutions, unique_fitnesses, noisy_fitnesses, solution_iterations, transitions)):
             print(f"Skipping run {run_idx} due to None values: {entry}")
             continue
@@ -172,15 +169,15 @@ def add_stn_trajectories(
             if noisy_node_label not in G.nodes():
                 try:
                     G.add_node(noisy_node_label, solution=solution, fitness=noisy_fitnesses[i], color=edge_color)
+                    G.add_edge(
+                        node_label,
+                        noisy_node_label,
+                        weight=edge_size,
+                        color=edge_color,
+                        edge_type='Noise'
+                    )
                 except Exception as e:
                     print(f"Error adding noisy node: {noisy_node_label}, {e}")
-                G.add_edge(
-                    node_label,
-                    noisy_node_label,
-                    weight=edge_size,
-                    color=edge_color,
-                    edge_type='Noise'
-                )
 
         # Add transitions as STN edges
         for j, (prev_solution, current_solution) in enumerate(transitions):

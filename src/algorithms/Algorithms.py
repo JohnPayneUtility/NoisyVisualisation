@@ -172,7 +172,12 @@ class OptimisationAlgorithm:
             self.stop_trigger = 'eval_limit'
             return True
         if self.target_stop is not None and len(self.logger.generations) > 0:
-            if self.logger.generations[-1].true_fitness >= self.target_stop:
+            current_fitness = self.logger.generations[-1].true_fitness
+            if self.opt_weights[0] > 0:
+                reached = current_fitness >= self.target_stop
+            else:
+                reached = current_fitness <= self.target_stop
+            if reached:
                 self.stop_trigger = 'target_reached'
                 return True
         if self.gen_limit is not None and self.gens >= self.gen_limit:
@@ -248,6 +253,8 @@ class MuPlusLamdaEA(OptimisationAlgorithm):
             self.toolbox.register("mutate", lambda ind: tools.mutFlipBit(ind, **mutate_params))
         elif mutate_function == "probSwapBit":
             self.toolbox.register("mutate", lambda ind: mutSwapBit(ind, **mutate_params))
+        elif mutate_function == "mutGaussian":
+            self.toolbox.register("mutate", lambda ind: tools.mutGaussian(ind, **mutate_params))
         # self.toolbox.register("mutate", lambda ind: mutate_function(ind, **mutate_params))
 
         # Create the initial population of size mu

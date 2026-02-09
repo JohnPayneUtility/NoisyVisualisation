@@ -1,0 +1,95 @@
+# Config for (1+1)EA on Rastrigin problem
+
+experiment_name: "Rastrigin"
+
+# ==============================
+# Run Configuration
+# ==============================
+run:
+  max_gens: 10e6
+  eval_limit: 10000
+  use_noise_dependent_eval_limit: true
+  eval_limit_for_noise:
+    "0": 38392
+    "1": 38392
+    "2": 41066
+    "3": 44477
+    "4": 50728
+    "5": 56851
+    "6": 64079
+    "7": 70736
+    "8": 790344
+    "9": 86078
+    "10": 93638
+  seed: 1
+  num_runs: 10
+  parallel: true
+
+# ==============================
+# MLflow Configuration
+# ==============================
+mlflow:
+  tracking_uri: "data/mlruns"
+
+# ==============================
+# Hydra Configuration
+# ==============================
+hydra:
+  mode: MULTIRUN
+  sweeper:
+    params:
+      problem.fitness_params.noise_intensity: 0,1,2
+  sweep:
+    dir: data/outputs
+
+# ==============================
+# Algorithm Configuration
+# ==============================
+algo:
+  name: OnePlusOneEA
+  type: MuPlusLamdaEA
+  use_dynamic_pop_size: false
+  static_indpb: 0.1
+  use_dynamic_mutation: true  # 1/n mutation rate
+
+  # Dynamic mutation rate function
+  indpb_fn:
+    _target_: run_helpers.inverse_n_mut_rate
+    n_items: null  # Will be resolved after problem loading
+    noise: null
+
+  # Algorithm initialization parameters
+  init_args:
+    _target_: src.algorithms.Algorithms.MuPlusLamdaEA
+    mu: 1
+    lam: 1
+    mutate_function: "mutGaussian"
+    mutate_params:
+      mu: 0
+      sigma: 0.5
+      indpb: null  # Will be resolved dynamically
+
+# ==============================
+# Problem Configuration
+# ==============================
+problem:
+  prob_name: rastrigin
+  prob_type: continuous
+  opt_goal: minimise
+  dimensions: 10
+  opt_global: null
+  capacity: 0
+  mean_value: 0
+  mean_weight: 0
+
+  # Problem loading - Rastrigin doesn't need a loader
+  loader: null
+
+  # Fitness function
+  fitness_fn: rastrigin_eval
+  fitness_params:
+    noise_intensity: 0
+
+  # Attributes and weights
+  attr_function: Rastrigin_attribute
+  weights: [-1.0]

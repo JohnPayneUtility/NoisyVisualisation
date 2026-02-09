@@ -14,11 +14,14 @@ from .distance_metrics import (
     # Distance functions
     hamming_distance,
     normed_hamming_distance,
+    euclidean_distance,
     avg_min_hamming_A_to_B,
     front_distance,
 
     # Solution utilities
     sol_tuple_ints,
+    sol_tuple_floats,
+    is_continuous_solution,
     sol_key_str,
     lookup_map,
 )
@@ -31,11 +34,14 @@ __all__ = [
     # Distance functions
     'hamming_distance',
     'normed_hamming_distance',
+    'euclidean_distance',
     'avg_min_hamming_A_to_B',
     'front_distance',
 
     # Solution utilities
     'sol_tuple_ints',
+    'sol_tuple_floats',
+    'is_continuous_solution',
     'sol_key_str',
     'lookup_map',
 ]
