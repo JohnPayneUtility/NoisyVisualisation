@@ -1,0 +1,90 @@
+# Nested config for OnePlusOneEA on Knapsack experiment
+# This shows how we could use nested structure with dependency resolution
+
+experiment_name: "SOknapsackPriorNoise"
+
+# ==============================
+# Run Configuration
+# ==============================
+run:
+  max_gens: 100
+  eval_limit: 10000
+  use_noise_dependent_eval_limit: true
+  eval_limit_for_noise:
+    "0": 38392
+    "1": 38392
+    "2": 41066
+    "3": 44477
+    "4": 50728
+    "5": 56851
+    "6": 64079
+    "7": 70736
+    "8": 790344
+    "9": 86078
+    "10": 93638
+  seed: 1
+  num_runs: 10
+  parallel: true
+
+# ==============================
+# MLflow Configuration
+# ==============================
+mlflow:
+  tracking_uri: "data/mlruns"
+
+# ==============================
+# Hydra Configuration
+# ==============================
+hydra:
+  mode: MULTIRUN
+  sweeper:
+    params:
+      problem.fitness_params.noise_intensity: 0,1
+  sweep:
+    dir: data/outputs
+# ==============================
+# Algorithm Configuration
+# ==============================
+algo:
+  name: UMDA
+  type: UMDA
+  use_dynamic_pop_size: false
+  pop_size: 100
+  select_size: 50
+
+  # Algorithm initialization parameters
+  init_args:
+    _target_: src.algorithms.Algorithms.UMDA
+    pop_size: 100
+    select_size: 50
+
+# ==============================
+# Problem Configuration
+# ==============================
+problem:
+  PID: f10_l-d_kp_20_879
+  prob_name: knapsack
+  prob_type: discrete
+  opt_goal: maximise
+  dimensions: null  # Will be set after loading
+  opt_global: null  # Will be set after loading
+  capacity: null    # Will be set after loading
+  mean_value: null  # Will be set after loading
+  mean_weight: null # Will be set after loading
+  items_dict: null  # Will be set after loading
+  
+  # Problem loading
+  loader:
+    _target_: src.problems.ProblemScripts.load_problem_KP
+    filename: f10_l-d_kp_20_879
+  
+  # Fitness function
+  fitness_fn: eval_noisy_kp_prior
+  fitness_params:
+    items_dict: null  # Will be set after problem loading
+    capacity: null    # Will be set after problem loading
+    noise_intensity: 0
+  
+  # Attributes and weights
+  attr_function: binary_attribute
+  weights: [1.0] 
