@@ -134,6 +134,12 @@ def add_stn_trajectories(
             print(f"Skipping run {run_idx} due to None values: {entry}")
             continue
 
+        # Extract estimated fitness data (indices 8-11, if present)
+        estimated_fits_adopted = entry[8] if len(entry) > 8 else []
+        estimated_fits_discarded = entry[9] if len(entry) > 9 else []
+        count_fits_adopted = entry[10] if len(entry) > 10 else []
+        count_fits_discarded = entry[11] if len(entry) > 11 else []
+
         # Create nodes and store node labels in order for this run
         for i, solution in enumerate(unique_solutions):
             current_fitness = unique_fitnesses[i]
@@ -148,10 +154,21 @@ def add_stn_trajectories(
             if key not in stn_node_mapping:
                 node_label = f"STN_{len(stn_node_mapping) + 1}"
                 stn_node_mapping[key] = node_label
+
+                # Get estimated fitness values and counts for this node
+                est_adopted = estimated_fits_adopted[i] if i < len(estimated_fits_adopted) else None
+                est_discarded = estimated_fits_discarded[i] if i < len(estimated_fits_discarded) else None
+                cnt_adopted = count_fits_adopted[i] if i < len(count_fits_adopted) else None
+                cnt_discarded = count_fits_discarded[i] if i < len(count_fits_discarded) else None
+
                 G.add_node(
                     node_label,
                     solution=solution,
                     fitness=unique_fitnesses[i],
+                    estimated_fitness_adopted=est_adopted,
+                    estimated_fitness_discarded=est_discarded,
+                    count_estimated_adopted=cnt_adopted,
+                    count_estimated_discarded=cnt_discarded,
                     iterations=solution_iterations[i],
                     type="STN",
                     run_idx=run_idx,

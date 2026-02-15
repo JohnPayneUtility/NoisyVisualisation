@@ -306,6 +306,8 @@ def create_stn_options_section():
                 {'label': 'Show worst run', 'value': 'show_worst'},
                 {'label': 'Hamming distance labels', 'value': 'STN-hamming'},
                 {'label': 'Dedup prior noise', 'value': 'dedup-prior-noise'},
+                {'label': 'Show estimated fitness (adopted)', 'value': 'show_estimated_adopted'},
+                {'label': 'Show estimated fitness (discarded)', 'value': 'show_estimated_discarded'},
             ],
             value=[],
             labelStyle={'display': 'inline-block', 'margin-right': '10px'}

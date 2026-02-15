@@ -112,6 +112,10 @@ class PlotConfig:
     show_median: bool = False
     show_worst: bool = False
 
+    # Estimated fitness display
+    show_estimated_adopted: bool = False
+    show_estimated_discarded: bool = False
+
     # Mode settings
     stn_plot_type: str = 'posterior'  # 'posterior', 'prior', 'multiobjective'
     layout_type: str = 'mds'
@@ -211,6 +215,10 @@ def parse_callback_inputs(
         show_mean='show_mean' in run_options,
         show_median='show_median' in run_options,
         show_worst='show_worst' in run_options,
+
+        # Estimated fitness display
+        show_estimated_adopted='show_estimated_adopted' in run_options,
+        show_estimated_discarded='show_estimated_discarded' in run_options,
 
         # Mode settings
         stn_plot_type=stn_plot_type or 'posterior',

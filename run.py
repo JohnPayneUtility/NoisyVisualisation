@@ -152,6 +152,10 @@ def hydra_algo_data_single(prob_info: Dict[str, Any],
         "unique_true_fits": logger.unique_true_fitnesses,
         "unique_noisy_fits": logger.unique_noisy_fitnesses,
         "unique_noisy_sols": logger.unique_noisy_solutions,
+        "unique_estimated_true_fits_whenadopted": logger.unique_estimated_true_fits_whenadopted,
+        "unique_estimated_true_fits_whendiscarded": logger.unique_estimated_true_fits_whendiscarded,
+        "count_estimated_fits_whenadopted": logger.count_estimated_fits_whenadopted,
+        "count_estimated_fits_whendiscarded": logger.count_estimated_fits_whendiscarded,
         "sol_iterations": logger.solution_iterations,
         "sol_transitions": logger.solution_transitions,
         "noisy_sol_variants": logger.unique_noisy_sols,
@@ -318,6 +322,10 @@ def enrich_df_with_payloads(df: pd.DataFrame) -> pd.DataFrame:
     df["unique_sols"] = None
     df["unique_fits"] = None
     df["noisy_fits"] = None
+    df["estimated_fits_whenadopted"] = None
+    df["estimated_fits_whendiscarded"] = None
+    df["count_estimated_fits_whenadopted"] = None
+    df["count_estimated_fits_whendiscarded"] = None
     df["sol_iterations"] = None
     df["sol_transitions"] = None
     df["unique_noisy_sols"] = None
@@ -340,6 +348,10 @@ def enrich_df_with_payloads(df: pd.DataFrame) -> pd.DataFrame:
         df.at[idx, "unique_sols"] = payload.get("unique_sols", [])
         df.at[idx, "unique_fits"] = payload.get("unique_true_fits", [])
         df.at[idx, "noisy_fits"]  = payload.get("unique_noisy_fits", [])
+        df.at[idx, "estimated_fits_whenadopted"] = payload.get("unique_estimated_true_fits_whenadopted", [])
+        df.at[idx, "estimated_fits_whendiscarded"] = payload.get("unique_estimated_true_fits_whendiscarded", [])
+        df.at[idx, "count_estimated_fits_whenadopted"] = payload.get("count_estimated_fits_whenadopted", [])
+        df.at[idx, "count_estimated_fits_whendiscarded"] = payload.get("count_estimated_fits_whendiscarded", [])
         df.at[idx, "sol_iterations"] = payload.get("sol_iterations", [])
         df.at[idx, "sol_transitions"] = payload.get("sol_transitions", [])
         df.at[idx, "unique_noisy_sols"] = payload.get("unique_noisy_sols", [])

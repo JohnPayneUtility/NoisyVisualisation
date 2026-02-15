@@ -1,6 +1,7 @@
 # IMPORTS
 from collections import defaultdict
 from dataclasses import dataclass, field
+from statistics import median
 from typing import Dict, List, Tuple, Optional, Any
 
 # ==============================
@@ -185,6 +186,9 @@ class ExperimentLogger:
         unique_true_fitnesses = []
         unique_noisy_fitnesses = []
         seen_solutions = {}
+        # Track first and last generation number for each unique solution
+        first_gen = {}
+        last_gen = {}
 
         unique_noisy_solutions = []
 
@@ -196,8 +200,10 @@ class ExperimentLogger:
                 unique_true_fitnesses.append(gen.true_fitness)
                 unique_noisy_fitnesses.append(gen.best_fitness)
                 unique_noisy_solutions.append(gen.noisy_solution)
+                first_gen[solution_tuple] = gen.generation
             else:
                 seen_solutions[solution_tuple] += 1
+            last_gen[solution_tuple] = gen.generation
 
         # Create iteration counts in order of appearance
         iteration_counts = [seen_solutions[tuple(sol)] for sol in unique_solutions]
@@ -212,16 +218,39 @@ class ExperimentLogger:
         # Build noisy sol variants and their fitnesses from evaluation records
         noisy_sols_per_solution = []
         noisy_variant_fitnesses_per_solution = []
+        # Build estimated true fitness (median of noisy evals up to a cutoff)
+        estimated_true_fits_whenadopted = []
+        estimated_true_fits_whendiscarded = []
+        count_estimated_fits_whenadopted = []
+        count_estimated_fits_whendiscarded = []
         for sol in unique_solutions:
             key = tuple(sol)
             if key in self.evaluations:
                 noisy_sols = [record.noisy_sol for record in self.evaluations[key]]
                 noisy_fits = [record.noisy_fitness for record in self.evaluations[key]]
+
+                # Estimated fit when adopted: evals up to first generation as best
+                adopted_cutoff = first_gen[key]
+                adopted_fits = [r.noisy_fitness for r in self.evaluations[key]
+                                if r.generation <= adopted_cutoff]
+                # Estimated fit when discarded: evals up to last generation as best
+                discarded_cutoff = last_gen[key]
+                discarded_fits = [r.noisy_fitness for r in self.evaluations[key]
+                                  if r.generation <= discarded_cutoff]
             else:
                 noisy_sols = []
                 noisy_fits = []
+                adopted_fits = []
+                discarded_fits = []
+
             noisy_sols_per_solution.append(noisy_sols)
             noisy_variant_fitnesses_per_solution.append(noisy_fits)
+            estimated_true_fits_whenadopted.append(
+                median(adopted_fits) if adopted_fits else None)
+            estimated_true_fits_whendiscarded.append(
+                median(discarded_fits) if discarded_fits else None)
+            count_estimated_fits_whenadopted.append(len(adopted_fits))
+            count_estimated_fits_whendiscarded.append(len(discarded_fits))
 
         # Cache all computed data
         self._trajectory_cache = {
@@ -233,6 +262,10 @@ class ExperimentLogger:
             'solution_transitions': transitions,
             'unique_noisy_sols': noisy_sols_per_solution,
             'noisy_variant_fitnesses': noisy_variant_fitnesses_per_solution,
+            'unique_estimated_true_fits_whenadopted': estimated_true_fits_whenadopted,
+            'unique_estimated_true_fits_whendiscarded': estimated_true_fits_whendiscarded,
+            'count_estimated_fits_whenadopted': count_estimated_fits_whenadopted,
+            'count_estimated_fits_whendiscarded': count_estimated_fits_whendiscarded,
         }
         return self._trajectory_cache
 
@@ -284,6 +317,32 @@ class ExperimentLogger:
         for unique_noisy_sols[i][j].
         """
         return self._build_trajectory_cache()['noisy_variant_fitnesses']
+
+    @property
+    def unique_estimated_true_fits_whenadopted(self) -> List[Optional[float]]:
+        """
+        Estimated true fitness for each unique solution, computed as the median
+        of all noisy evaluations up to the generation it first became best.
+        """
+        return self._build_trajectory_cache()['unique_estimated_true_fits_whenadopted']
+
+    @property
+    def unique_estimated_true_fits_whendiscarded(self) -> List[Optional[float]]:
+        """
+        Estimated true fitness for each unique solution, computed as the median
+        of all noisy evaluations up to the last generation it was best.
+        """
+        return self._build_trajectory_cache()['unique_estimated_true_fits_whendiscarded']
+
+    @property
+    def count_estimated_fits_whenadopted(self) -> List[int]:
+        """Number of noisy evaluations used to compute each whenadopted estimate."""
+        return self._build_trajectory_cache()['count_estimated_fits_whenadopted']
+
+    @property
+    def count_estimated_fits_whendiscarded(self) -> List[int]:
+        """Number of noisy evaluations used to compute each whendiscarded estimate."""
+        return self._build_trajectory_cache()['count_estimated_fits_whendiscarded']
 
     def get_trajectory_data(self):
         """

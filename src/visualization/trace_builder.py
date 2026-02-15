@@ -327,6 +327,80 @@ def create_node_traces(
     return LON_node_trace, node_trace
 
 
+def create_estimated_fitness_traces(
+    G: nx.MultiDiGraph,
+    pos: Dict[str, Tuple[float, float]],
+    config: PlotConfig
+) -> List[go.Scatter3d]:
+    """
+    Create cross marker traces for estimated fitness values.
+
+    For each STN node that has an estimated fitness, places a cross marker
+    at the same x,y position but at the estimated fitness z-value.
+
+    Args:
+        G: NetworkX graph containing nodes with estimated fitness attributes
+        pos: Dictionary mapping node names to (x, y) positions
+        config: PlotConfig object with settings
+
+    Returns:
+        List of Scatter3d traces for cross markers
+    """
+    traces = []
+
+    for attr_key, count_key, color, label in [
+        ('estimated_fitness_adopted', 'count_estimated_adopted', 'purple', 'Est. fitness (adopted)'),
+        ('estimated_fitness_discarded', 'count_estimated_discarded', 'orange', 'Est. fitness (discarded)'),
+    ]:
+        # Check if this variant is enabled
+        if attr_key == 'estimated_fitness_adopted' and not config.show_estimated_adopted:
+            continue
+        if attr_key == 'estimated_fitness_discarded' and not config.show_estimated_discarded:
+            continue
+
+        cross_x, cross_y, cross_z = [], [], []
+        hover_texts = []
+
+        for node, attr in G.nodes(data=True):
+            if node not in pos:
+                continue
+            if attr.get('type') != 'STN':
+                continue
+
+            est_fit = attr.get(attr_key)
+            if est_fit is None:
+                continue
+
+            x, y = pos[node][:2]
+            cross_x.append(x)
+            cross_y.append(y)
+            cross_z.append(float(est_fit))
+            true_fit = attr.get('fitness', 0)
+            n_evals = attr.get(count_key, '?')
+            hover_texts.append(f"True: {true_fit}<br>Est: {est_fit}<br>n: {n_evals}")
+
+        if cross_x:
+            trace = go.Scatter3d(
+                x=cross_x,
+                y=cross_y,
+                z=cross_z,
+                mode='markers',
+                marker=dict(
+                    size=5,
+                    color=color,
+                    symbol='cross',
+                    opacity=1,
+                ),
+                text=hover_texts,
+                hoverinfo='text',
+                name=label,
+                showlegend=True,
+            )
+            traces.append(trace)
+
+    return traces
+
+
 def create_boxplot_traces(
     pos: Dict[str, Tuple[float, float]],
     node_noise: Dict[str, List[float]],
@@ -626,5 +700,10 @@ def build_all_traces(
     if config.plot_type == 'NLon_box' and node_noise and fitness_dict:
         boxplot_traces = create_boxplot_traces(pos, node_noise, fitness_dict, config)
         traces.extend(boxplot_traces)
+
+    # Add estimated fitness cross markers if enabled
+    if config.show_estimated_adopted or config.show_estimated_discarded:
+        estimated_traces = create_estimated_fitness_traces(G, pos, config)
+        traces.extend(estimated_traces)
 
     return traces

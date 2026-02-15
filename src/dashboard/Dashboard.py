@@ -545,6 +545,10 @@ def process_STN_data(df, mo_plot_type, group_cols=['algo_name', 'noise']):
                 row.get('noisy_sol_variants', []),
                 row.get('noisy_variant_fitnesses', []),
                 row.get('unique_noisy_sols', []),
+                row.get('estimated_fits_whenadopted', []),
+                row.get('estimated_fits_whendiscarded', []),
+                row.get('count_estimated_fits_whenadopted', []),
+                row.get('count_estimated_fits_whendiscarded', []),
             ])
 
         STN_data.append(runs)
