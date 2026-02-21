@@ -308,6 +308,7 @@ def create_stn_options_section():
                 {'label': 'Dedup prior noise', 'value': 'dedup-prior-noise'},
                 {'label': 'Show estimated fitness (adopted)', 'value': 'show_estimated_adopted'},
                 {'label': 'Show estimated fitness (discarded)', 'value': 'show_estimated_discarded'},
+                {'label': 'Show fitness box plots', 'value': 'show_stn_boxplots'},
             ],
             value=[],
             labelStyle={'display': 'inline-block', 'margin-right': '10px'}

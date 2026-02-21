@@ -701,6 +701,21 @@ def build_all_traces(
         boxplot_traces = create_boxplot_traces(pos, node_noise, fitness_dict, config)
         traces.extend(boxplot_traces)
 
+    # Add STN fitness boxplots if enabled
+    if config.show_stn_boxplots:
+        stn_node_noise = {}
+        stn_fitness_dict = {}
+        for node, attr in G.nodes(data=True):
+            if attr.get('type') != 'STN' or node not in pos:
+                continue
+            variant_fits = attr.get('noisy_variant_fitnesses', [])
+            if len(variant_fits) > 1:
+                stn_node_noise[node] = variant_fits
+                stn_fitness_dict[node] = attr.get('fitness', 0)
+        if stn_node_noise:
+            stn_boxplot_traces = create_boxplot_traces(pos, stn_node_noise, stn_fitness_dict, config)
+            traces.extend(stn_boxplot_traces)
+
     # Add estimated fitness cross markers if enabled
     if config.show_estimated_adopted or config.show_estimated_discarded:
         estimated_traces = create_estimated_fitness_traces(G, pos, config)

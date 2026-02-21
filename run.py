@@ -396,7 +396,7 @@ def main(cfg: DictConfig):
         'eval_limit':            cfg.run.eval_limit,
         'attr_function':         getattr(sys.modules['src.algorithms'], cfg.problem.attr_function),
         'starting_solution':     None,
-        'target_stop':           cfg.problem.opt_global,
+        'target_stop':           cfg.problem.opt_global if getattr(cfg.run, 'target_stop', False) else None,
         'gen_limit':             None,
         'fitness_function':      (fitness_fn, fit_params),
     }

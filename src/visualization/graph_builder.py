@@ -134,7 +134,8 @@ def add_stn_trajectories(
             print(f"Skipping run {run_idx} due to None values: {entry}")
             continue
 
-        # Extract estimated fitness data (indices 8-11, if present)
+        # Extract noisy variant fitnesses (index 6) and estimated fitness data (indices 8-11)
+        noisy_variant_fitnesses = entry[6] if len(entry) > 6 else []
         estimated_fits_adopted = entry[8] if len(entry) > 8 else []
         estimated_fits_discarded = entry[9] if len(entry) > 9 else []
         count_fits_adopted = entry[10] if len(entry) > 10 else []
@@ -160,6 +161,7 @@ def add_stn_trajectories(
                 est_discarded = estimated_fits_discarded[i] if i < len(estimated_fits_discarded) else None
                 cnt_adopted = count_fits_adopted[i] if i < len(count_fits_adopted) else None
                 cnt_discarded = count_fits_discarded[i] if i < len(count_fits_discarded) else None
+                variant_fits = noisy_variant_fitnesses[i] if i < len(noisy_variant_fitnesses) else []
 
                 G.add_node(
                     node_label,
@@ -169,6 +171,7 @@ def add_stn_trajectories(
                     estimated_fitness_discarded=est_discarded,
                     count_estimated_adopted=cnt_adopted,
                     count_estimated_discarded=cnt_discarded,
+                    noisy_variant_fitnesses=variant_fits,
                     iterations=solution_iterations[i],
                     type="STN",
                     run_idx=run_idx,

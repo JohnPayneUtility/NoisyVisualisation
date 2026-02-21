@@ -115,6 +115,7 @@ class PlotConfig:
     # Estimated fitness display
     show_estimated_adopted: bool = False
     show_estimated_discarded: bool = False
+    show_stn_boxplots: bool = False
 
     # Mode settings
     stn_plot_type: str = 'posterior'  # 'posterior', 'prior', 'multiobjective'
@@ -219,6 +220,7 @@ def parse_callback_inputs(
         # Estimated fitness display
         show_estimated_adopted='show_estimated_adopted' in run_options,
         show_estimated_discarded='show_estimated_discarded' in run_options,
+        show_stn_boxplots='show_stn_boxplots' in run_options,
 
         # Mode settings
         stn_plot_type=stn_plot_type or 'posterior',

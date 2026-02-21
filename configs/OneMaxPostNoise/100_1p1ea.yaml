@@ -9,6 +9,7 @@ experiment_name: "OneMaxPostNoise"
 run:
   max_gens: 10e6
   eval_limit: 10e6
+  target_stop: true  # If true, stop when the known optimum (opt_global) is reached
   use_noise_dependent_eval_limit: true
   eval_limit_for_noise:
     "0": 38392
