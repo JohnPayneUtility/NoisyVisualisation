@@ -35,7 +35,7 @@ def OneMax_fitness(individual, noise_intensity=0):
 
     return (noisy_fitness,)
 
-def OneMax_prior_fitness(individual, noise_intensity=0):
+def OneMax_prior_bitflip_fitness(individual, noise_intensity=0):
     """
     Calculates fitness for OneMax problem with prior noise.
 
@@ -47,6 +47,31 @@ def OneMax_prior_fitness(individual, noise_intensity=0):
 
     # Prior noise: perturb individual via random bit flips, then evaluate
     noisy_individual, _ = random_bit_flip(list(individual), n_flips=noise_intensity)
+    noisy_fitness = sum(noisy_individual)
+
+    # Log the evaluation if logger is active
+    logger = get_active_logger()
+    if logger:
+        logger.log_noisy_eval(individual, noisy_individual, true_fitness, noisy_fitness)
+
+    return (noisy_fitness,)
+
+def OneMax_prior_bitwise_fitness(individual, noise_intensity=1):
+    """
+    Calculates fitness for OneMax problem with prior bitwise noise.
+
+    Each bit in the individual is independently flipped with probability
+    noise_intensity * 1/n before evaluation.
+    If a logger is active, the original and noisy solutions are recorded.
+    """
+    n = len(individual)
+    p = noise_intensity / n
+
+    # Calculate true fitness (no noise)
+    true_fitness = sum(individual)
+
+    # Prior noise: flip each bit independently with probability p
+    noisy_individual = [1 - b if random.random() < p else b for b in individual]
     noisy_fitness = sum(noisy_individual)
 
     # Log the evaluation if logger is active

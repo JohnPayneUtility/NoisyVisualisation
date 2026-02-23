@@ -44,7 +44,7 @@ from ..visualization import (
 
 # Plotting module imports - using registry for dynamic dispatch
 from ..plotting import get_pareto_plot
-from ..plotting.performance import plot2d_line, plot2d_box, plot2d_line_mo, plot2d_box_mo
+from ..plotting.performance import plot2d_line, plot2d_box, plot2d_line_mo, plot2d_box_mo, plot2d_line_evals, plot2d_box_evals
 
 # ==========
 # Data Loading
@@ -344,6 +344,28 @@ def display_stored_data_mo_box(data):
     plot = plot2d_box_mo(plot_df)
     return plot
 
+# 2D line plot (evals, single-objective)
+@app.callback(
+    Output('2DLinePlotEvalsSO', 'figure'),
+    Input('plot_2d_data', 'data'),
+    Input('line-evals-show-std', 'value')
+)
+def display_line_evals_so(data, std_checkbox):
+    plot_df = pd.DataFrame(data)
+    show_std = bool(std_checkbox and 'show' in std_checkbox)
+    plot = plot2d_line_evals(plot_df, show_std=show_std)
+    return plot
+
+# 2D box plot (evals, single-objective)
+@app.callback(
+    Output('2DBoxPlotEvalsSO', 'figure'),
+    Input('plot_2d_data', 'data')
+)
+def display_box_evals_so(data):
+    plot_df = pd.DataFrame(data)
+    plot = plot2d_box_evals(plot_df)
+    return plot
+
 # ---------- Render 2D plot content in tabbed view ----------
 @app.callback(
     Output('2DPlotTabContent', 'children'),
@@ -366,6 +388,19 @@ def render_content_2DPlot_tab(tab):
     elif tab == 'p4':
         return html.Div([
             dcc.Graph(id='2DBoxPlotMO', style={'width': '800px', 'height': '600px'}),
+        ])
+    elif tab == 'p6':
+        return html.Div([
+            dcc.Checklist(
+                id='line-evals-show-std',
+                options=[{'label': ' Show standard deviation (symmetric around mean)', 'value': 'show'}],
+                value=[],
+            ),
+            dcc.Graph(id='2DLinePlotEvalsSO'),
+        ])
+    elif tab == 'p7':
+        return html.Div([
+            dcc.Graph(id='2DBoxPlotEvalsSO', style={'width': '800px', 'height': '600px'}),
         ])
     elif tab == 'p5':
         return html.Div([
@@ -524,7 +559,7 @@ def process_STN_data(df, mo_plot_type, group_cols=['algo_name', 'noise']):
 
     grouped = df.groupby(group_cols)
     
-    required = {'unique_sols','unique_fits','noisy_fits','sol_iterations','sol_transitions'}
+    required = {'rep_sols','rep_fits','rep_noisy_fits','sol_iterations','sol_transitions'}
     has_required = required.issubset(df.columns)
 
     for group_key, group_df in grouped:
@@ -533,22 +568,23 @@ def process_STN_data(df, mo_plot_type, group_cols=['algo_name', 'noise']):
         for _, row in group_df.iterrows():
             if not has_required:
                 continue
-            if row['unique_sols'] is None:
+            if row['rep_sols'] is None:
                 continue
 
             runs.append([
-                row['unique_sols'],
-                row['unique_fits'],
-                row['noisy_fits'],
+                row['rep_sols'],
+                row['rep_fits'],
+                row['rep_noisy_fits'],
                 row['sol_iterations'],
                 row['sol_transitions'],
                 row.get('noisy_sol_variants', []),
                 row.get('noisy_variant_fitnesses', []),
-                row.get('unique_noisy_sols', []),
-                row.get('estimated_fits_whenadopted', []),
-                row.get('estimated_fits_whendiscarded', []),
+                row.get('rep_noisy_sols', []),
+                row.get('rep_estimated_fits_whenadopted', []),
+                row.get('rep_estimated_fits_whendiscarded', []),
                 row.get('count_estimated_fits_whenadopted', []),
                 row.get('count_estimated_fits_whendiscarded', []),
+                row.get('sol_iterations_evals', []),  # index 12: evals-based iterations
             ])
 
         STN_data.append(runs)
@@ -726,7 +762,8 @@ def clean_axis_values(custom_x_min, custom_x_max, custom_y_min, custom_y_max, cu
      Input('noisy_fitnesses_data', 'data'),
      Input('stn-plot-type', 'value'),
      Input('STN_MO_data', 'data'),
-     Input('STN_MO_series_labels', 'data')]
+     Input('STN_MO_series_labels', 'data'),
+     Input('stn-node-size-metric', 'value')]
 )
 def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limit,
                 LO_fit_percent, LON_options, LON_node_colour_mode, LON_edge_colour_feas,
@@ -736,7 +773,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                 opacity_noise_bar, LON_node_opacity, LON_edge_opacity, STN_node_opacity, STN_edge_opacity,
                 STN_node_min, STN_node_max, LON_node_min, LON_node_max,
                 LON_edge_size_slider, STN_edge_size_slider, noisy_fitnesses_list,
-                stn_plot_type, STN_MO_data, STN_MO_series_labels):
+                stn_plot_type, STN_MO_data, STN_MO_series_labels, stn_node_size_metric):
     """
     Main visualization callback - orchestrates the visualization pipeline.
 
@@ -782,6 +819,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
         lon_edge_size_slider=LON_edge_size_slider,
         stn_edge_size_slider=STN_edge_size_slider,
         stn_plot_type=stn_plot_type,
+        node_size_metric=stn_node_size_metric or 'generations',
     )
 
     # ==========
@@ -797,6 +835,15 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
     # ==========
     # STEP 3: Build graph - add nodes and edges
     # ==========
+
+    # If 'evaluations' node size metric is selected, swap sol_iterations (index 3)
+    # with sol_iterations_evals (index 12) in each run entry before graph building.
+    if config.node_size_metric == 'evaluations' and all_trajectories_list:
+        for series_entries in all_trajectories_list:
+            for entry in series_entries:
+                if len(entry) > 12 and entry[12]:
+                    entry[3] = entry[12]
+
     if config.stn_plot_type == 'multiobjective':
         # Multi-objective mode
         print('ADDING NODES IN MULTIOBJECTIVE MODE')

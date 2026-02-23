@@ -273,10 +273,10 @@ def create_node_traces(
     print('Plotting nodes...')
 
     node_x, node_y, node_z = [], [], []
-    node_sizes, node_colors = [], []
+    node_sizes, node_colors, node_hover = [], [], []
 
     LON_node_x, LON_node_y, LON_node_z = [], [], []
-    LON_node_sizes, LON_node_colors = [], []
+    LON_node_sizes, LON_node_colors, LON_node_hover = [], [], []
 
     for node, attr in G.nodes(data=True):
         if node not in pos:
@@ -284,6 +284,10 @@ def create_node_traces(
 
         x, y = pos[node][:2]
         z = attr.get('fitness', 0)
+        fitness = attr.get('fitness', '')
+        iterations = attr.get('iterations', '')
+        evals = attr.get('evals', '')
+        hover = f"Fitness: {fitness}<br>Gens: {iterations}<br>Evals: {evals}"
 
         if "Local Optimum" in node:
             LON_node_x.append(x)
@@ -291,12 +295,14 @@ def create_node_traces(
             LON_node_z.append(z)
             LON_node_sizes.append(attr.get('size', 1))
             LON_node_colors.append(attr.get('color', 'grey'))
+            LON_node_hover.append(hover)
         else:
             node_x.append(x)
             node_y.append(y)
             node_z.append(z)
             node_sizes.append(attr.get('size', 1))
             node_colors.append(attr.get('color', 'blue'))
+            node_hover.append(hover)
 
     LON_node_trace = go.Scatter3d(
         x=LON_node_x,
@@ -308,6 +314,8 @@ def create_node_traces(
             color=LON_node_colors,
             opacity=config.opacity.lon_node
         ),
+        text=LON_node_hover,
+        hoverinfo='text',
         showlegend=False
     )
 
@@ -321,6 +329,8 @@ def create_node_traces(
             color=node_colors
         ),
         opacity=config.opacity.stn_node,
+        text=node_hover,
+        hoverinfo='text',
         showlegend=False
     )
 

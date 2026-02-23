@@ -9,6 +9,7 @@ experiment_name: "SOknapsackPriorNoise"
 run:
   max_gens: 100
   eval_limit: 10000
+  target_stop: true
   use_noise_dependent_eval_limit: true
   eval_limit_for_noise:
     "0": 38392
@@ -39,7 +40,7 @@ hydra:
   mode: MULTIRUN
   sweeper:
     params:
-      problem.fitness_params.noise_intensity: 0,1
+      problem.fitness_params.noise_intensity: 0,1,2,3,4,5
   sweep:
     dir: data/outputs
 
@@ -50,14 +51,12 @@ algo:
   name: UMDA
   type: UMDA
   use_dynamic_pop_size: false
-  pop_size: 100
-  select_size: 50
 
   # Algorithm initialization parameters
   init_args:
     _target_: src.algorithms.Algorithms.UMDA
-    pop_size: 100
-    select_size: 50
+    pop_size: 921
+    select_size: 460
 
 # ==============================
 # Problem Configuration

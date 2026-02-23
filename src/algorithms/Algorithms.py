@@ -276,7 +276,12 @@ class MuPlusLamdaEA(OptimisationAlgorithm):
 
             self.population.append(offspring)
         # Update population
-        self.population = tools.selBest(self.population, self.mu)
+        if self.mu == 1 and self.lam == 1:
+            # Classic (1+1)EA: accept offspring if not worse, allowing lateral moves on plateaus
+            parent, offspring = self.population[0], self.population[1]
+            self.population = [offspring if offspring.fitness >= parent.fitness else parent]
+        else:
+            self.population = tools.selBest(self.population, self.mu)
 
 class PCEA(OptimisationAlgorithm):
     def __init__(self, 
@@ -315,10 +320,7 @@ class PCEA(OptimisationAlgorithm):
             self.evals += 2
 
             # Select the fitter offspring and add to new population
-            if offspring1.fitness.values[0] > offspring2.fitness.values[0]:  # Adjust for minimization
-                offspring.append(offspring1)
-            else:
-                offspring.append(offspring2)
+            offspring.append(tools.selBest([offspring1, offspring2], 1)[0])
 
         self.population[:] = offspring # replace population
 

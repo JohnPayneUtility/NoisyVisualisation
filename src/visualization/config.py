@@ -101,7 +101,7 @@ class PlotConfig:
     hide_stn_nodes: bool = False
     hide_lon_nodes: bool = False
     plot_3d: bool = True
-    use_solution_iterations: bool = False
+    node_size_metric: str = 'generations'  # 'generations' or 'evaluations'
     lon_node_strength: bool = False
     local_optima_color: bool = False
     curve_edges: bool = True
@@ -181,6 +181,7 @@ def parse_callback_inputs(
     lon_edge_size_slider: float,
     stn_edge_size_slider: float,
     stn_plot_type: str,
+    node_size_metric: str = 'generations',
 ) -> PlotConfig:
     """
     Parse raw callback inputs into a structured PlotConfig object.
@@ -206,7 +207,7 @@ def parse_callback_inputs(
         hide_stn_nodes='hide_STN_nodes' in options,
         hide_lon_nodes='hide_LON_nodes' in options,
         plot_3d='plot_3D' in options,
-        use_solution_iterations='use_solution_iterations' in options,
+        node_size_metric=node_size_metric or 'generations',
         lon_node_strength='LON_node_strength' in options,
         local_optima_color='local_optima_color' in options,
         curve_edges=True,

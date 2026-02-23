@@ -48,21 +48,21 @@ hydra:
 # Algorithm Configuration
 # ==============================
 algo:
-  name: UMDA
-  type: UMDA
+  name: PCEA
+  type: PCEA
   use_dynamic_pop_size: false
 
   # Algorithm initialization parameters
   init_args:
-    _target_: src.algorithms.Algorithms.UMDA
-    pop_size: 921
-    select_size: 460
+    _target_: src.algorithms.Algorithms.PCEA
+    pop_size: 461
+
 
 # ==============================
 # Problem Configuration
 # ==============================
 problem:
-  PID: f10_l-d_kp_20_879
+  PID: f1_l-d_kp_10_269
   prob_name: knapsack
   prob_type: discrete
   opt_goal: maximise
@@ -76,7 +76,7 @@ problem:
   # Problem loading
   loader:
     _target_: src.problems.ProblemScripts.load_problem_KP
-    filename: f10_l-d_kp_20_879
+    filename: f1_l-d_kp_10_269
   
   # Fitness function
   fitness_fn: eval_noisy_kp_v2

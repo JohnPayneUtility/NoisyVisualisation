@@ -48,15 +48,14 @@ hydra:
 # Algorithm Configuration
 # ==============================
 algo:
-  name: UMDA
-  type: UMDA
+  name: PCEA
+  type: PCEA
   use_dynamic_pop_size: false
 
   # Algorithm initialization parameters
   init_args:
-    _target_: src.algorithms.Algorithms.UMDA
-    pop_size: 921
-    select_size: 460
+    _target_: src.algorithms.Algorithms.PCEA
+    pop_size: 461
 
 # ==============================
 # Problem Configuration

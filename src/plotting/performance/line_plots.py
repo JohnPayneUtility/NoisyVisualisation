@@ -60,6 +60,56 @@ def plot_line(dataframe, value='final'):
     return fig
 
 
+def plot_line_evals(dataframe, show_std=True):
+    """
+    Create a line plot comparing algorithm runtime (evaluations) across noise levels.
+
+    Shows mean n_evals, optionally with standard deviation error bars, for each algorithm.
+
+    Args:
+        dataframe: DataFrame with columns:
+            - algo_name: Algorithm identifier
+            - noise: Noise level
+            - n_evals: Total fitness evaluations used by the algorithm
+        show_std: Whether to show symmetric std error bars (default True)
+
+    Returns:
+        go.Figure: Line plot with optional error bars
+    """
+    df = dataframe.copy()
+    df = df[['algo_name', 'noise', 'n_evals']]
+
+    stats = df.groupby(['algo_name', 'noise'])['n_evals'].agg(['mean', 'std']).reset_index()
+
+    fig = go.Figure()
+    for algo in stats['algo_name'].unique():
+        subset = stats[stats['algo_name'] == algo]
+        error_y = dict(
+            type='data',
+            array=subset['std'],
+            visible=True,
+            thickness=1.5,
+            width=5
+        ) if show_std else None
+        fig.add_trace(go.Scatter(
+            x=subset['noise'],
+            y=subset['mean'],
+            error_y=error_y,
+            mode='lines+markers',
+            name=algo
+        ))
+
+    fig.update_layout(
+        title='title',
+        xaxis_title=r'$\sigma$ (Standard Deviation of Gaussian Noise $N(0,\sigma)$)',
+        yaxis_title='Runtime (evaluations)',
+        legend_title='Algo Name',
+        template=DEFAULT_TEMPLATE
+    )
+
+    return fig
+
+
 def plot_line_mo(dataframe):
     """
     Create a line plot for multi-objective performance using hypervolume.

@@ -1,7 +1,7 @@
 # Nested config for OnePlusOneEA on Knapsack experiment
 # This shows how we could use nested structure with dependency resolution
 
-experiment_name: "OneMaxPostNoise"
+experiment_name: "SOOneMaxPriorBitwiseNoise"
 
 # ==============================
 # Run Configuration
@@ -9,6 +9,7 @@ experiment_name: "OneMaxPostNoise"
 run:
   max_gens: 10e6
   eval_limit: 10e6
+  target_stop: true
   use_noise_dependent_eval_limit: true
   eval_limit_for_noise:
     "0": 38392
@@ -23,7 +24,7 @@ run:
     "9": 86078
     "10": 93638
   seed: 1
-  num_runs: 30
+  num_runs: 50
   parallel: true
 
 # ==============================
@@ -39,7 +40,7 @@ hydra:
   mode: MULTIRUN
   sweeper:
     params:
-      problem.fitness_params.noise_intensity: 0,1
+      problem.fitness_params.noise_intensity: 0,1,2,3,4,5
   sweep:
     dir: data/outputs
 
@@ -50,14 +51,12 @@ algo:
   name: UMDA
   type: UMDA
   use_dynamic_pop_size: false
-  pop_size: 100
-  select_size: 50
 
   # Algorithm initialization parameters
   init_args:
     _target_: src.algorithms.Algorithms.UMDA
-    pop_size: 100
-    select_size: 50
+    pop_size: 921
+    select_size: 460
 
 # ==============================
 # Problem Configuration
@@ -76,7 +75,7 @@ problem:
   loader: null
   
   # Fitness function
-  fitness_fn: OneMax_fitness
+  fitness_fn: OneMax_prior_bitwise_fitness
   fitness_params:
     noise_intensity: 1  # Set to noise intensity 1 as requested
   

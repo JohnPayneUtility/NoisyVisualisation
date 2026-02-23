@@ -1,14 +1,14 @@
 # Nested config for OnePlusOneEA on Knapsack experiment
 # This shows how we could use nested structure with dependency resolution
 
-experiment_name: "SOknapsackPriorNoise"
+experiment_name: "SOOneMaxPriorBitwiseNoise"
 
 # ==============================
 # Run Configuration
 # ==============================
 run:
-  max_gens: 100
-  eval_limit: 10000
+  max_gens: 10e6
+  eval_limit: 10e6
   target_stop: true
   use_noise_dependent_eval_limit: true
   eval_limit_for_noise:
@@ -24,7 +24,7 @@ run:
     "9": 86078
     "10": 93638
   seed: 1
-  num_runs: 10
+  num_runs: 50
   parallel: true
 
 # ==============================
@@ -48,42 +48,47 @@ hydra:
 # Algorithm Configuration
 # ==============================
 algo:
-  name: UMDA
-  type: UMDA
+  name: OnePlusOneEA
+  type: MuPlusLamdaEA
   use_dynamic_pop_size: false
-
+  static_indpb: 0.01
+  use_dynamic_mutation: true # 1/n mutation rate
+  
+  # Dynamic mutation rate function
+  indpb_fn:
+    _target_: run_helpers.inverse_n_mut_rate
+    n_items: null  # Will be resolved after problem loading
+    noise: null
+  
   # Algorithm initialization parameters
   init_args:
-    _target_: src.algorithms.Algorithms.UMDA
-    pop_size: 921
-    select_size: 460
+    _target_: src.algorithms.Algorithms.MuPlusLamdaEA
+    mu: 1
+    lam: 1
+    mutate_function: "probFlipBit"
+    mutate_params:
+      indpb: null  # Will be resolved dynamically
 
 # ==============================
 # Problem Configuration
 # ==============================
 problem:
-  PID: f10_l-d_kp_20_879
-  prob_name: knapsack
+  prob_name: onemax
   prob_type: discrete
   opt_goal: maximise
-  dimensions: null  # Will be set after loading
-  opt_global: null  # Will be set after loading
-  capacity: null    # Will be set after loading
-  mean_value: null  # Will be set after loading
-  mean_weight: null # Will be set after loading
-  items_dict: null  # Will be set after loading
+  dimensions: 100        # bit-string length
+  opt_global: 100        # known optimum
+  capacity: 0            # Not applicable for OneMax, set to 0
+  mean_value: 50.0       # Not applicable for OneMax, set to middle value
+  mean_weight: 0.5       # Not applicable for OneMax, set to middle value
   
-  # Problem loading
-  loader:
-    _target_: src.problems.ProblemScripts.load_problem_KP
-    filename: f10_l-d_kp_20_879
+  # Problem loading - OneMax doesn't need a loader, dimensions are fixed
+  loader: null
   
   # Fitness function
-  fitness_fn: eval_noisy_kp_v2
+  fitness_fn: OneMax_prior_bitwise_fitness
   fitness_params:
-    items_dict: null  # Will be set after problem loading
-    capacity: null    # Will be set after problem loading
-    noise_intensity: 0
+    noise_intensity: 1  # Set to noise intensity 1 as requested
   
   # Attributes and weights
   attr_function: binary_attribute

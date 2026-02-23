@@ -75,6 +75,18 @@ def create_2d_plot_tabs():
                 selected_style=TAB_SELECTED_STYLE
             ),
             dcc.Tab(
+                label='Line plot evals (SO)',
+                value='p6',
+                style=TAB_STYLE,
+                selected_style=TAB_SELECTED_STYLE
+            ),
+            dcc.Tab(
+                label='Box plot evals (SO)',
+                value='p7',
+                style=TAB_STYLE,
+                selected_style=TAB_SELECTED_STYLE
+            ),
+            dcc.Tab(
                 label='Line plot (MO)',
                 value='p3',
                 style=TAB_STYLE,
@@ -313,6 +325,16 @@ def create_stn_options_section():
             value=[],
             labelStyle={'display': 'inline-block', 'margin-right': '10px'}
         ),
+        dcc.Dropdown(
+            id='stn-node-size-metric',
+            options=[
+                {'label': 'Generations as representative sol', 'value': 'generations'},
+                {'label': 'Evaluations as representative sol', 'value': 'evaluations'},
+            ],
+            value='generations',
+            placeholder='Node size',
+            style=DROPDOWN_STYLE_WITH_MARGIN
+        ),
         html.Hr(),
     ]
 
@@ -442,7 +464,6 @@ def create_plot_options_section():
                 {'label': 'Hide STN Nodes', 'value': 'hide_STN_nodes'},
                 {'label': 'Hide LON Nodes', 'value': 'hide_LON_nodes'},
                 {'label': '3D Plot', 'value': 'plot_3D'},
-                {'label': 'Use Solution Iterations', 'value': 'use_solution_iterations'},
                 {'label': 'Use strength for LON node size', 'value': 'LON_node_strength'},
             ],
             value=['plot_3D', 'LON_node_strength']

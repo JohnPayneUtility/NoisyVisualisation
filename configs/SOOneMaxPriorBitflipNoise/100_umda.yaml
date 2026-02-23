@@ -1,7 +1,7 @@
 # Nested config for OnePlusOneEA on Knapsack experiment
 # This shows how we could use nested structure with dependency resolution
 
-experiment_name: "OneMaxPriorNoise"
+experiment_name: "SOOneMaxPriorBitflipNoise"
 
 # ==============================
 # Run Configuration
@@ -9,6 +9,7 @@ experiment_name: "OneMaxPriorNoise"
 run:
   max_gens: 10e6
   eval_limit: 10e6
+  target_stop: true
   use_noise_dependent_eval_limit: true
   eval_limit_for_noise:
     "0": 38392
@@ -23,7 +24,7 @@ run:
     "9": 86078
     "10": 93638
   seed: 1
-  num_runs: 30
+  num_runs: 50
   parallel: true
 
 # ==============================
@@ -39,7 +40,7 @@ hydra:
   mode: MULTIRUN
   sweeper:
     params:
-      problem.fitness_params.noise_intensity: 0,1,2,3
+      problem.fitness_params.noise_intensity: 0,1,2,3,4,5
   sweep:
     dir: data/outputs
 
@@ -47,26 +48,16 @@ hydra:
 # Algorithm Configuration
 # ==============================
 algo:
-  name: OnePlusOneEA
-  type: MuPlusLamdaEA
+  name: UMDA
+  type: UMDA
   use_dynamic_pop_size: false
-  static_indpb: 0.01
-  use_dynamic_mutation: true # 1/n mutation rate
-  
-  # Dynamic mutation rate function
-  indpb_fn:
-    _target_: run_helpers.inverse_n_mut_rate
-    n_items: null  # Will be resolved after problem loading
-    noise: null
-  
+
+
   # Algorithm initialization parameters
   init_args:
-    _target_: src.algorithms.Algorithms.MuPlusLamdaEA
-    mu: 1
-    lam: 1
-    mutate_function: "probFlipBit"
-    mutate_params:
-      indpb: null  # Will be resolved dynamically
+    _target_: src.algorithms.Algorithms.UMDA
+    pop_size: 921
+    select_size: 460
 
 # ==============================
 # Problem Configuration
@@ -85,9 +76,9 @@ problem:
   loader: null
   
   # Fitness function
-  fitness_fn: OneMax_prior_fitness
+  fitness_fn: OneMax_prior_bitflip_fitness
   fitness_params:
-    noise_intensity: 0
+    noise_intensity: 1  # Set to noise intensity 1 as requested
   
   # Attributes and weights
   attr_function: binary_attribute

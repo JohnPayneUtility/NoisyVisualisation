@@ -148,17 +148,18 @@ def hydra_algo_data_single(prob_info: Dict[str, Any],
 
     # -------- BIG DATA: payload --------
     payload = {
-        "unique_sols": logger.unique_solutions,
-        "unique_true_fits": logger.unique_true_fitnesses,
-        "unique_noisy_fits": logger.unique_noisy_fitnesses,
-        "unique_noisy_sols": logger.unique_noisy_solutions,
-        "unique_estimated_true_fits_whenadopted": logger.unique_estimated_true_fits_whenadopted,
-        "unique_estimated_true_fits_whendiscarded": logger.unique_estimated_true_fits_whendiscarded,
+        "rep_sols": logger.representative_solutions,
+        "rep_true_fits": logger.representative_true_fitnesses,
+        "rep_noisy_fits": logger.representative_noisy_fitnesses,
+        "rep_noisy_sols": logger.representative_noisy_solutions,
+        "rep_estimated_true_fits_whenadopted": logger.representative_estimated_true_fits_whenadopted,
+        "rep_estimated_true_fits_whendiscarded": logger.representative_estimated_true_fits_whendiscarded,
         "count_estimated_fits_whenadopted": logger.count_estimated_fits_whenadopted,
         "count_estimated_fits_whendiscarded": logger.count_estimated_fits_whendiscarded,
         "sol_iterations": logger.solution_iterations,
+        "sol_iterations_evals": logger.solution_evals,
         "sol_transitions": logger.solution_transitions,
-        "noisy_sol_variants": logger.unique_noisy_sols,
+        "noisy_sol_variants": logger.representative_noisy_sols,
         "noisy_variant_fitnesses": logger.noisy_variant_fitnesses,
     }
 
@@ -172,7 +173,7 @@ def hydra_algo_data_single(prob_info: Dict[str, Any],
         pickle.dump(payload, f, protocol=pickle.HIGHEST_PROTOCOL)
 
     # -------- SMALL DATA: row (scalars only) --------
-    unique_true_fits = payload["unique_true_fits"]
+    rep_true_fits = payload["rep_true_fits"]
     row = {
         "problem_name": prob_info["name"],
         "problem_type": prob_info["type"],
@@ -191,11 +192,11 @@ def hydra_algo_data_single(prob_info: Dict[str, Any],
         "n_gens": algo_instance.gens,
         "n_evals": algo_instance.evals,
         "stop_trigger": algo_instance.stop_trigger,
-        "n_unique_sols": len(payload["unique_sols"]),
+        "n_unique_sols": len(payload["rep_sols"]),
 
-        "final_fit": unique_true_fits[-1] if unique_true_fits else None,
-        "max_fit": max(unique_true_fits) if unique_true_fits else None,
-        "min_fit": min(unique_true_fits) if unique_true_fits else None,
+        "final_fit": rep_true_fits[-1] if rep_true_fits else None,
+        "max_fit": max(rep_true_fits) if rep_true_fits else None,
+        "min_fit": min(rep_true_fits) if rep_true_fits else None,
 
         "seed": seed,
         "seed_signature": seed_signature,
@@ -319,16 +320,17 @@ def enrich_df_with_payloads(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
     # Initialise columns (important so Pandas knows they exist)
-    df["unique_sols"] = None
-    df["unique_fits"] = None
-    df["noisy_fits"] = None
-    df["estimated_fits_whenadopted"] = None
-    df["estimated_fits_whendiscarded"] = None
+    df["rep_sols"] = None
+    df["rep_fits"] = None
+    df["rep_noisy_fits"] = None
+    df["rep_estimated_fits_whenadopted"] = None
+    df["rep_estimated_fits_whendiscarded"] = None
     df["count_estimated_fits_whenadopted"] = None
     df["count_estimated_fits_whendiscarded"] = None
     df["sol_iterations"] = None
+    df["sol_iterations_evals"] = None
     df["sol_transitions"] = None
-    df["unique_noisy_sols"] = None
+    df["rep_noisy_sols"] = None
     df["noisy_sol_variants"] = None
     df["noisy_variant_fitnesses"] = None
 
@@ -344,17 +346,18 @@ def enrich_df_with_payloads(df: pd.DataFrame) -> pd.DataFrame:
             print(f"[WARN] Failed to load payload {payload_path}: {e}")
             continue
 
-        # Map payload keys → legacy dashboard column names
-        df.at[idx, "unique_sols"] = payload.get("unique_sols", [])
-        df.at[idx, "unique_fits"] = payload.get("unique_true_fits", [])
-        df.at[idx, "noisy_fits"]  = payload.get("unique_noisy_fits", [])
-        df.at[idx, "estimated_fits_whenadopted"] = payload.get("unique_estimated_true_fits_whenadopted", [])
-        df.at[idx, "estimated_fits_whendiscarded"] = payload.get("unique_estimated_true_fits_whendiscarded", [])
+        # Map payload keys → dashboard column names
+        df.at[idx, "rep_sols"] = payload.get("rep_sols", [])
+        df.at[idx, "rep_fits"] = payload.get("rep_true_fits", [])
+        df.at[idx, "rep_noisy_fits"] = payload.get("rep_noisy_fits", [])
+        df.at[idx, "rep_estimated_fits_whenadopted"] = payload.get("rep_estimated_true_fits_whenadopted", [])
+        df.at[idx, "rep_estimated_fits_whendiscarded"] = payload.get("rep_estimated_true_fits_whendiscarded", [])
         df.at[idx, "count_estimated_fits_whenadopted"] = payload.get("count_estimated_fits_whenadopted", [])
         df.at[idx, "count_estimated_fits_whendiscarded"] = payload.get("count_estimated_fits_whendiscarded", [])
         df.at[idx, "sol_iterations"] = payload.get("sol_iterations", [])
+        df.at[idx, "sol_iterations_evals"] = payload.get("sol_iterations_evals", [])
         df.at[idx, "sol_transitions"] = payload.get("sol_transitions", [])
-        df.at[idx, "unique_noisy_sols"] = payload.get("unique_noisy_sols", [])
+        df.at[idx, "rep_noisy_sols"] = payload.get("rep_noisy_sols", [])
         df.at[idx, "noisy_sol_variants"] = payload.get("noisy_sol_variants", [])
         df.at[idx, "noisy_variant_fitnesses"] = payload.get("noisy_variant_fitnesses", [])
 

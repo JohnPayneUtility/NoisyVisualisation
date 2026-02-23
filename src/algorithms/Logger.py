@@ -178,121 +178,154 @@ class ExperimentLogger:
         """
         Build and cache trajectory data. Called once, then cached.
         Cache is invalidated when clear() is called.
+
+        Records every adoption of a solution as a separate representative entry,
+        including revisits. sol1 -> sol2 -> sol1 produces three entries.
+        solution_iterations[i] is the number of consecutive generations for visit i.
         """
         if hasattr(self, '_trajectory_cache') and self._trajectory_cache is not None:
             return self._trajectory_cache
 
-        unique_solutions = []
-        unique_true_fitnesses = []
-        unique_noisy_fitnesses = []
-        seen_solutions = {}
-        # Track first and last generation number for each unique solution
-        first_gen = {}
-        last_gen = {}
-
-        unique_noisy_solutions = []
-
-        for gen in self.generations:
-            solution_tuple = tuple(gen.best_solution)
-            if solution_tuple not in seen_solutions:
-                seen_solutions[solution_tuple] = 1
-                unique_solutions.append(gen.best_solution)
-                unique_true_fitnesses.append(gen.true_fitness)
-                unique_noisy_fitnesses.append(gen.best_fitness)
-                unique_noisy_solutions.append(gen.noisy_solution)
-                first_gen[solution_tuple] = gen.generation
-            else:
-                seen_solutions[solution_tuple] += 1
-            last_gen[solution_tuple] = gen.generation
-
-        # Create iteration counts in order of appearance
-        iteration_counts = [seen_solutions[tuple(sol)] for sol in unique_solutions]
-
-        # Build transitions
+        representative_solutions = []
+        representative_true_fitnesses = []
+        representative_noisy_fitnesses = []
+        representative_noisy_solutions = []
+        sol_iterations = []
+        sol_evals = []
         transitions = []
-        for i in range(1, len(unique_solutions)):
-            prev_solution = tuple(unique_solutions[i - 1])
-            current_solution = tuple(unique_solutions[i])
-            transitions.append((prev_solution, current_solution))
+        visit_start_gens = []
+        visit_end_gens = []
 
-        # Build noisy sol variants and their fitnesses from evaluation records
-        noisy_sols_per_solution = []
-        noisy_variant_fitnesses_per_solution = []
-        # Build estimated true fitness (median of noisy evals up to a cutoff)
-        estimated_true_fits_whenadopted = []
-        estimated_true_fits_whendiscarded = []
-        count_estimated_fits_whenadopted = []
-        count_estimated_fits_whendiscarded = []
-        for sol in unique_solutions:
+        current_sol = None
+        current_count = 0
+        current_visit_start_idx = 0
+        evals_before_visit = 0  # cumulative evals at the end of the previous visit
+
+        for idx, gen in enumerate(self.generations):
+            solution_tuple = tuple(gen.best_solution)
+            if current_sol is None:
+                # First generation — start first visit
+                current_sol = solution_tuple
+                current_count = 1
+                current_visit_start_idx = idx
+                evals_before_visit = 0
+                representative_solutions.append(gen.best_solution)
+                representative_true_fitnesses.append(gen.true_fitness)
+                representative_noisy_fitnesses.append(gen.best_fitness)
+                representative_noisy_solutions.append(gen.noisy_solution)
+            elif solution_tuple == current_sol:
+                # Same solution — continue current visit
+                current_count += 1
+            else:
+                # Solution changed — close current visit, open new one
+                sol_iterations.append(current_count)
+                end_evals = self.generations[idx - 1].evals_so_far or 0
+                sol_evals.append(end_evals - evals_before_visit)
+                evals_before_visit = end_evals
+                visit_start_gens.append(self.generations[current_visit_start_idx].generation)
+                visit_end_gens.append(self.generations[idx - 1].generation)
+                transitions.append((current_sol, solution_tuple))
+                current_sol = solution_tuple
+                current_count = 1
+                current_visit_start_idx = idx
+                representative_solutions.append(gen.best_solution)
+                representative_true_fitnesses.append(gen.true_fitness)
+                representative_noisy_fitnesses.append(gen.best_fitness)
+                representative_noisy_solutions.append(gen.noisy_solution)
+
+        # Close the last visit
+        if current_sol is not None:
+            sol_iterations.append(current_count)
+            end_evals = self.generations[-1].evals_so_far or 0
+            sol_evals.append(end_evals - evals_before_visit)
+            visit_start_gens.append(self.generations[current_visit_start_idx].generation)
+            visit_end_gens.append(self.generations[-1].generation)
+
+        # Build noisy sol variants and estimated fits per visit (filtered to visit window)
+        representative_noisy_sols = []
+        representative_noisy_variant_fitnesses = []
+        representative_estimated_true_fits_whenadopted = []
+        representative_estimated_true_fits_whendiscarded = []
+        representative_count_estimated_fits_whenadopted = []
+        representative_count_estimated_fits_whendiscarded = []
+
+        for i, sol in enumerate(representative_solutions):
             key = tuple(sol)
-            if key in self.evaluations:
-                noisy_sols = [record.noisy_sol for record in self.evaluations[key]]
-                noisy_fits = [record.noisy_fitness for record in self.evaluations[key]]
+            visit_start = visit_start_gens[i]
+            visit_end = visit_end_gens[i]
 
-                # Estimated fit when adopted: evals up to first generation as best
-                adopted_cutoff = first_gen[key]
-                adopted_fits = [r.noisy_fitness for r in self.evaluations[key]
-                                if r.generation <= adopted_cutoff]
-                # Estimated fit when discarded: evals up to last generation as best
-                discarded_cutoff = last_gen[key]
-                discarded_fits = [r.noisy_fitness for r in self.evaluations[key]
-                                  if r.generation <= discarded_cutoff]
+            if key in self.evaluations:
+                visit_evals = [r for r in self.evaluations[key]
+                               if visit_start <= r.generation <= visit_end]
+                noisy_sols = [r.noisy_sol for r in visit_evals]
+                noisy_fits = [r.noisy_fitness for r in visit_evals]
+                # whenadopted: evals recorded at the moment of adoption
+                adopted_fits = [r.noisy_fitness for r in visit_evals
+                                if r.generation <= visit_start]
+                # whendiscarded: all evals during the visit
+                discarded_fits = noisy_fits
             else:
                 noisy_sols = []
                 noisy_fits = []
                 adopted_fits = []
                 discarded_fits = []
 
-            noisy_sols_per_solution.append(noisy_sols)
-            noisy_variant_fitnesses_per_solution.append(noisy_fits)
-            estimated_true_fits_whenadopted.append(
+            representative_noisy_sols.append(noisy_sols)
+            representative_noisy_variant_fitnesses.append(noisy_fits)
+            representative_estimated_true_fits_whenadopted.append(
                 median(adopted_fits) if adopted_fits else None)
-            estimated_true_fits_whendiscarded.append(
+            representative_estimated_true_fits_whendiscarded.append(
                 median(discarded_fits) if discarded_fits else None)
-            count_estimated_fits_whenadopted.append(len(adopted_fits))
-            count_estimated_fits_whendiscarded.append(len(discarded_fits))
+            representative_count_estimated_fits_whenadopted.append(len(adopted_fits))
+            representative_count_estimated_fits_whendiscarded.append(len(discarded_fits))
 
         # Cache all computed data
         self._trajectory_cache = {
-            'unique_solutions': unique_solutions,
-            'unique_true_fitnesses': unique_true_fitnesses,
-            'unique_noisy_fitnesses': unique_noisy_fitnesses,
-            'unique_noisy_solutions': unique_noisy_solutions,
-            'solution_iterations': iteration_counts,
+            'representative_solutions': representative_solutions,
+            'representative_true_fitnesses': representative_true_fitnesses,
+            'representative_noisy_fitnesses': representative_noisy_fitnesses,
+            'representative_noisy_solutions': representative_noisy_solutions,
+            'solution_iterations': sol_iterations,
+            'solution_evals': sol_evals,
             'solution_transitions': transitions,
-            'unique_noisy_sols': noisy_sols_per_solution,
-            'noisy_variant_fitnesses': noisy_variant_fitnesses_per_solution,
-            'unique_estimated_true_fits_whenadopted': estimated_true_fits_whenadopted,
-            'unique_estimated_true_fits_whendiscarded': estimated_true_fits_whendiscarded,
-            'count_estimated_fits_whenadopted': count_estimated_fits_whenadopted,
-            'count_estimated_fits_whendiscarded': count_estimated_fits_whendiscarded,
+            'representative_noisy_sols': representative_noisy_sols,
+            'noisy_variant_fitnesses': representative_noisy_variant_fitnesses,
+            'representative_estimated_true_fits_whenadopted': representative_estimated_true_fits_whenadopted,
+            'representative_estimated_true_fits_whendiscarded': representative_estimated_true_fits_whendiscarded,
+            'count_estimated_fits_whenadopted': representative_count_estimated_fits_whenadopted,
+            'count_estimated_fits_whendiscarded': representative_count_estimated_fits_whendiscarded,
         }
         return self._trajectory_cache
 
     @property
-    def unique_solutions(self) -> List[List]:
-        """List of unique best solutions in order of first appearance."""
-        return self._build_trajectory_cache()['unique_solutions']
+    def representative_solutions(self) -> List[List]:
+        """Representative solutions in order of adoption, including revisits."""
+        return self._build_trajectory_cache()['representative_solutions']
 
     @property
-    def unique_true_fitnesses(self) -> List[float]:
-        """True (noise-free) fitness for each unique solution."""
-        return self._build_trajectory_cache()['unique_true_fitnesses']
+    def representative_true_fitnesses(self) -> List[float]:
+        """True (noise-free) fitness for each representative solution."""
+        return self._build_trajectory_cache()['representative_true_fitnesses']
 
     @property
-    def unique_noisy_fitnesses(self) -> List[float]:
-        """Noisy (observed) fitness for each unique solution."""
-        return self._build_trajectory_cache()['unique_noisy_fitnesses']
+    def representative_noisy_fitnesses(self) -> List[float]:
+        """Noisy (observed) fitness for each representative solution."""
+        return self._build_trajectory_cache()['representative_noisy_fitnesses']
 
     @property
-    def unique_noisy_solutions(self) -> List[List]:
-        """Noisy (perturbed) solution for each unique solution, from when it first became best."""
-        return self._build_trajectory_cache()['unique_noisy_solutions']
+    def representative_noisy_solutions(self) -> List[List]:
+        """Noisy (perturbed) solution at the time each representative solution was adopted."""
+        return self._build_trajectory_cache()['representative_noisy_solutions']
 
     @property
     def solution_iterations(self) -> List[int]:
-        """Count of how many generations each unique solution was best."""
+        """Consecutive generation count for each visit (entry in representative_solutions)."""
         return self._build_trajectory_cache()['solution_iterations']
+
+    @property
+    def solution_evals(self) -> List[int]:
+        """Number of algorithm fitness evaluations consumed during each visit (entry in representative_solutions)."""
+        return self._build_trajectory_cache()['solution_evals']
 
     @property
     def solution_transitions(self) -> List[Tuple[Tuple, Tuple]]:
@@ -300,39 +333,40 @@ class ExperimentLogger:
         return self._build_trajectory_cache()['solution_transitions']
 
     @property
-    def unique_noisy_sols(self) -> List[List[List]]:
+    def representative_noisy_sols(self) -> List[List[List]]:
         """
-        Noisy solution variants for each unique solution from evaluation records.
+        Noisy solution variants for each representative solution from evaluation
+        records during that visit.
 
         For posterior noise: noisy_sol == true_sol (same solution)
         For prior noise: noisy_sol != true_sol (perturbed solution)
         """
-        return self._build_trajectory_cache()['unique_noisy_sols']
+        return self._build_trajectory_cache()['representative_noisy_sols']
 
     @property
     def noisy_variant_fitnesses(self) -> List[List[float]]:
         """
-        Noisy fitness values for each variant in unique_noisy_sols.
+        Noisy fitness values for each variant in representative_noisy_sols.
         Parallel structure: noisy_variant_fitnesses[i][j] is the noisy fitness
-        for unique_noisy_sols[i][j].
+        for representative_noisy_sols[i][j].
         """
         return self._build_trajectory_cache()['noisy_variant_fitnesses']
 
     @property
-    def unique_estimated_true_fits_whenadopted(self) -> List[Optional[float]]:
+    def representative_estimated_true_fits_whenadopted(self) -> List[Optional[float]]:
         """
-        Estimated true fitness for each unique solution, computed as the median
-        of all noisy evaluations up to the generation it first became best.
+        Estimated true fitness for each representative solution, computed as the median
+        of noisy evaluations up to the generation it was adopted as best.
         """
-        return self._build_trajectory_cache()['unique_estimated_true_fits_whenadopted']
+        return self._build_trajectory_cache()['representative_estimated_true_fits_whenadopted']
 
     @property
-    def unique_estimated_true_fits_whendiscarded(self) -> List[Optional[float]]:
+    def representative_estimated_true_fits_whendiscarded(self) -> List[Optional[float]]:
         """
-        Estimated true fitness for each unique solution, computed as the median
-        of all noisy evaluations up to the last generation it was best.
+        Estimated true fitness for each representative solution, computed as the median
+        of all noisy evaluations during the visit.
         """
-        return self._build_trajectory_cache()['unique_estimated_true_fits_whendiscarded']
+        return self._build_trajectory_cache()['representative_estimated_true_fits_whendiscarded']
 
     @property
     def count_estimated_fits_whenadopted(self) -> List[int]:
@@ -349,11 +383,11 @@ class ExperimentLogger:
         Extract trajectory data for plotting (kept for backwards compatibility).
 
         Returns:
-            unique_solutions, unique_true_fitnesses, unique_noisy_fitnesses,
-            solution_iterations, solution_transitions
+            representative_solutions, representative_true_fitnesses,
+            representative_noisy_fitnesses, solution_iterations, solution_transitions
         """
-        return (self.unique_solutions, self.unique_true_fitnesses,
-                self.unique_noisy_fitnesses, self.solution_iterations,
+        return (self.representative_solutions, self.representative_true_fitnesses,
+                self.representative_noisy_fitnesses, self.solution_iterations,
                 self.solution_transitions)
 
     # ==============================

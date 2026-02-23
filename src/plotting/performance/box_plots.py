@@ -69,6 +69,61 @@ def plot_box(dataframe, value='final'):
     return fig
 
 
+def plot_box_evals(dataframe):
+    """
+    Create a box plot comparing algorithm runtime (evaluations) across noise levels.
+
+    Shows the distribution of n_evals for each algorithm at each noise level.
+
+    Args:
+        dataframe: DataFrame with columns:
+            - algo_name: Algorithm identifier
+            - noise: Noise level
+            - n_evals: Total fitness evaluations used by the algorithm
+
+    Returns:
+        go.Figure: Box plot comparing algorithms
+    """
+    df = dataframe.copy()
+    df = df[['algo_name', 'noise', 'n_evals']]
+
+    noise_levels = sorted(df['noise'].unique())
+
+    fig = px.box(
+        df,
+        x="noise",
+        y="n_evals",
+        color="algo_name",
+        category_orders={"noise": noise_levels},
+        points=False
+    )
+
+    fig.update_layout(
+        xaxis=dict(
+            title=dict(
+                text="d, where d x mean(W) is s.d. of noise",
+                font=dict(size=24, color="black")
+            ),
+            tickfont=dict(size=20, color="black")
+        ),
+        yaxis=dict(
+            title=dict(
+                text="Runtime (evaluations)",
+                font=dict(size=24, color="black")
+            ),
+            tickfont=dict(size=20, color="black")
+        ),
+        legend=dict(
+            title=dict(font=dict(size=24, color="black")),
+            font=dict(size=20, color="black")
+        ),
+        boxmode="group",
+        template=DEFAULT_TEMPLATE
+    )
+
+    return fig
+
+
 def plot_box_mo(dataframe):
     """
     Create a box plot for multi-objective performance using hypervolume.

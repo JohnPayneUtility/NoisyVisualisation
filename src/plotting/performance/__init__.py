@@ -14,10 +14,12 @@ All functions follow a consistent interface:
 from .line_plots import (
     plot_line,
     plot_line_mo,
+    plot_line_evals,
 )
 from .box_plots import (
     plot_box,
     plot_box_mo,
+    plot_box_evals,
 )
 
 # Backward-compatible aliases (original function names from DashboardHelpers)
@@ -25,16 +27,22 @@ plot2d_line = plot_line
 plot2d_box = plot_box
 plot2d_line_mo = plot_line_mo
 plot2d_box_mo = plot_box_mo
+plot2d_line_evals = plot_line_evals
+plot2d_box_evals = plot_box_evals
 
 __all__ = [
     # New consistent names
     'plot_line',
     'plot_line_mo',
+    'plot_line_evals',
     'plot_box',
     'plot_box_mo',
+    'plot_box_evals',
     # Backward-compatible aliases
     'plot2d_line',
     'plot2d_box',
     'plot2d_line_mo',
     'plot2d_box_mo',
+    'plot2d_line_evals',
+    'plot2d_box_evals',
 ]
