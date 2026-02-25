@@ -32,10 +32,10 @@ def clear_active_logger():
 class GenerationRecord:
     """Record of a single generation's state."""
     generation: int
-    population: List[List]
     best_solution: List
     best_fitness: float          # Observed (possibly noisy)
     true_fitness: float          # Noise-free
+    population: Optional[List[List]] = None  # Only stored when record_population=True
     noisy_solution: List = None  # Perturbed solution (prior noise) or same as best_solution (posterior)
     evals_so_far: int = None
 
@@ -73,6 +73,9 @@ class ExperimentLogger:
     # Track current generation for evaluation logging
     current_generation: int = 0
 
+    # Whether to store full population snapshots each generation (high RAM cost)
+    record_population: bool = False
+
     # Cache for trajectory data (invalidated on clear())
     _trajectory_cache: Optional[Dict] = field(default=None, init=False, repr=False)
 
@@ -82,7 +85,7 @@ class ExperimentLogger:
         """Log the state at the end of a generation."""
         record = GenerationRecord(
             generation=generation,
-            population=[ind[:] for ind in population],
+            population=[ind[:] for ind in population] if self.record_population else None,
             best_solution=best_solution[:],
             best_fitness=best_fitness,
             true_fitness=true_fitness,

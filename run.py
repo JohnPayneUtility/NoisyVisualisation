@@ -139,10 +139,12 @@ def hydra_algo_data_single(prob_info: Dict[str, Any],
     np.random.seed(seed)
 
     # Run algorithm
+    import resource
     algo_config = OmegaConf.create(algo_config)
     # algo_params = OmegaConf.create(algo_params)
     algo_instance = instantiate(algo_config, **algo_params)
     algo_instance.run()
+    peak_ram_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
 
     logger = algo_instance.logger
 
@@ -201,6 +203,8 @@ def hydra_algo_data_single(prob_info: Dict[str, Any],
         "seed": seed,
         "seed_signature": seed_signature,
 
+        "peak_ram_mb": round(peak_ram_mb, 1),
+
         # Keep track of where payload is (for main process logging)
         "payload_path": str(payload_path),
     }
@@ -219,13 +223,14 @@ def hydra_algo_data_multi(prob_info: Dict[str, Any],
                           algo_params: Dict[str, Any],
                           num_runs: int,
                           base_seed: int = 0,
-                          parallel: bool = False) -> pd.DataFrame:
+                          parallel: bool = False,
+                          override_max_workers: int = None) -> pd.DataFrame:
 
     results_list = []
 
     if parallel:
         import os
-        max_workers = min(num_runs, os.cpu_count() or 1)
+        max_workers = override_max_workers if override_max_workers is not None else min(num_runs, os.cpu_count() or 1)
         print(f"Running {num_runs} runs in PARALLEL with up to {max_workers} workers")
 
         with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
@@ -403,6 +408,7 @@ def main(cfg: DictConfig):
         'gen_limit':                 None,
         'fitness_function':          (fitness_fn, fit_params),
         'progress_print_interval':   getattr(cfg.run, 'progress_print_interval', None),
+        'record_population':         getattr(cfg.run, 'record_population', False),
     }
 
     # Run and log via MLflow
@@ -434,8 +440,12 @@ def main(cfg: DictConfig):
             algo_params,
             num_runs=cfg.run.num_runs,
             base_seed=cfg.run.seed,
-            parallel=cfg.run.parallel   # parallel is now safe
+            parallel=cfg.run.parallel,
+            override_max_workers=getattr(cfg.run, 'override_max_workers', None)
         )
+
+        compute_time = time.perf_counter() - start_time
+        print(f"Computation time: {compute_time:.2f}s")
 
         # ---- Child runs: log results + artifacts ----
         seed_to_runid = {}
@@ -457,11 +467,11 @@ def main(cfg: DictConfig):
 
         mlflow.log_artifact("data/outputs/.hydra/config.yaml")
 
-    # Print summary
-    print(df[['seed', 'final_fit']])
+    process_time = time.perf_counter() - start_time - compute_time
+    print(f"Processing/saving time: {process_time:.2f}s")
 
-    compute_time = time.perf_counter() - start_time
-    print(compute_time)
+    # Print summary
+    print(df[['seed', 'final_fit', 'n_evals', 'peak_ram_mb']])
 
 if __name__ == '__main__':
     main()

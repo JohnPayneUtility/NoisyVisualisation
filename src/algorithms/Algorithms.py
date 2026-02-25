@@ -121,6 +121,7 @@ class OptimisationAlgorithm:
     fitness_function: Optional[Tuple[Callable, dict]] = None
     starting_solution: Optional[List[Any]] = None
     progress_print_interval: Optional[int] = None  # print update every N evals; None = silent
+    record_population: bool = False  # store full population snapshots (high RAM; off by default)
     # true_fitness_function: Optional[Tuple[Callable, dict]] = None  # No longer used - true fitness now logged during evaluation
 
     # Logger for recording experiment data
@@ -129,6 +130,9 @@ class OptimisationAlgorithm:
     def __post_init__(self):
         self.stop_trigger = ''
         self.seed_signature = random.randint(0, 10**6)
+
+        # Propagate population-recording preference to the logger
+        self.logger.record_population = self.record_population
 
         # Set this logger as the active logger for fitness functions to access
         set_active_logger(self.logger)
