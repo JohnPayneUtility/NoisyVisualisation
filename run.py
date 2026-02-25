@@ -394,14 +394,15 @@ def main(cfg: DictConfig):
 
     # Algorithm class and params
     algo_params = {
-        'sol_length':            cfg.problem.dimensions,
-        'opt_weights':           tuple(cfg.problem.weights),
-        'eval_limit':            cfg.run.eval_limit,
-        'attr_function':         getattr(sys.modules['src.algorithms'], cfg.problem.attr_function),
-        'starting_solution':     None,
-        'target_stop':           cfg.problem.opt_global if getattr(cfg.run, 'target_stop', False) else None,
-        'gen_limit':             None,
-        'fitness_function':      (fitness_fn, fit_params),
+        'sol_length':                cfg.problem.dimensions,
+        'opt_weights':               tuple(cfg.problem.weights),
+        'eval_limit':                cfg.run.eval_limit,
+        'attr_function':             getattr(sys.modules['src.algorithms'], cfg.problem.attr_function),
+        'starting_solution':         None,
+        'target_stop':               cfg.problem.opt_global if getattr(cfg.run, 'target_stop', False) else None,
+        'gen_limit':                 None,
+        'fitness_function':          (fitness_fn, fit_params),
+        'progress_print_interval':   getattr(cfg.run, 'progress_print_interval', None),
     }
 
     # Run and log via MLflow

@@ -141,6 +141,7 @@ def add_stn_trajectories(
         count_fits_adopted = entry[10] if len(entry) > 10 else []
         count_fits_discarded = entry[11] if len(entry) > 11 else []
         sol_evals = entry[12] if len(entry) > 12 else []
+        cumulative_evals = list(np.cumsum(sol_evals)) if sol_evals else []
 
         # Create nodes and store node labels in order for this run
         for i, solution in enumerate(unique_solutions):
@@ -208,7 +209,8 @@ def add_stn_trajectories(
             if prev_key in stn_node_mapping and curr_key in stn_node_mapping:
                 src = stn_node_mapping[prev_key]
                 tgt = stn_node_mapping[curr_key]
-                G.add_edge(src, tgt, weight=edge_size, color=edge_color, edge_type='STN')
+                target_evals = cumulative_evals[j + 1] if (j + 1) < len(cumulative_evals) else 0
+                G.add_edge(src, tgt, weight=edge_size, color=edge_color, edge_type='STN', evals=target_evals)
 
     return stn_node_mapping
 
@@ -357,6 +359,7 @@ def add_prior_noise_stn(
         rep_sols, rep_fits, rep_noisy_fits, sol_iterations, transitions, \
             noisy_sol_variants, noisy_variant_fitnesses = entry[:7]
         sol_evals = entry[12] if len(entry) > 12 else []
+        cumulative_evals = list(np.cumsum(sol_evals)) if sol_evals else []
 
         if rep_sols is None:
             continue
@@ -437,6 +440,7 @@ def add_prior_noise_stn(
                     color=edge_color,
                     edge_type="STN_SO",
                     is_noisy=False,
+                    evals=cumulative_evals[i] if i < len(cumulative_evals) else 0,
                 )
             prev_base = node_base
 
@@ -481,6 +485,7 @@ def add_prior_noise_stn_v2(
         rep_sols, rep_fits, rep_noisy_fits, sol_iterations, transitions, \
             noisy_sol_variants, noisy_variant_fitnesses = entry[:7]
         sol_evals = entry[12] if len(entry) > 12 else []
+        cumulative_evals = list(np.cumsum(sol_evals)) if sol_evals else []
 
         if rep_sols is None:
             continue
@@ -575,6 +580,7 @@ def add_prior_noise_stn_v2(
                     prev_base, node_base,
                     weight=0.5, color=edge_color,
                     edge_type="STN_SO", is_noisy=False,
+                    evals=cumulative_evals[i] if i < len(cumulative_evals) else 0,
                 )
             prev_base = node_base
 
@@ -620,6 +626,7 @@ def add_prior_noise_stn_v3(
         rep_sols, rep_fits, rep_noisy_fits, sol_iterations, transitions, \
             noisy_sol_variants, noisy_variant_fitnesses = entry[:7]
         sol_evals = entry[12] if len(entry) > 12 else []
+        cumulative_evals = list(np.cumsum(sol_evals)) if sol_evals else []
 
         if rep_sols is None:
             continue
@@ -717,6 +724,7 @@ def add_prior_noise_stn_v3(
                     prev_base, node_base,
                     weight=0.5, color=edge_color,
                     edge_type="STN_SO", is_noisy=False,
+                    evals=cumulative_evals[i] if i < len(cumulative_evals) else 0,
                 )
             prev_base = node_base
 
@@ -755,6 +763,7 @@ def add_prior_noise_stn_v4(
         rep_sols, rep_fits, rep_noisy_fits, sol_iterations, transitions, \
             noisy_sol_variants, noisy_variant_fitnesses, rep_noisy_sols = entry[:8]
         sol_evals = entry[12] if len(entry) > 12 else []
+        cumulative_evals = list(np.cumsum(sol_evals)) if sol_evals else []
 
         if rep_sols is None:
             continue
@@ -833,6 +842,7 @@ def add_prior_noise_stn_v4(
                     prev_base, node_base,
                     weight=0.5, color=edge_color,
                     edge_type="STN_SO", is_noisy=False,
+                    evals=cumulative_evals[i] if i < len(cumulative_evals) else 0,
                 )
             prev_base = node_base
 
@@ -866,6 +876,7 @@ def add_prior_noise_stn_v5(
         rep_sols, rep_fits, rep_noisy_fits, sol_iterations, transitions, \
             noisy_sol_variants, noisy_variant_fitnesses, rep_noisy_sols = entry[:8]
         sol_evals = entry[12] if len(entry) > 12 else []
+        cumulative_evals = list(np.cumsum(sol_evals)) if sol_evals else []
 
         if rep_sols is None:
             continue
@@ -921,6 +932,7 @@ def add_prior_noise_stn_v5(
                     prev_base, node_base,
                     weight=0.5, color=edge_color,
                     edge_type="STN_SO", is_noisy=False,
+                    evals=cumulative_evals[i] if i < len(cumulative_evals) else 0,
                 )
             prev_base = node_base
 

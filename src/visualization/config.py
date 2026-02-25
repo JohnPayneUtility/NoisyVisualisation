@@ -68,6 +68,7 @@ class STNConfig:
     edge_size: float = 2.0
     show_hamming: bool = False
     dedup_prior_noise: bool = False
+    colour_by_evals: bool = False
 
 
 @dataclass
@@ -269,6 +270,7 @@ def parse_callback_inputs(
             edge_size=stn_edge_size_slider,
             show_hamming='STN-hamming' in run_options,
             dedup_prior_noise='dedup-prior-noise' in run_options,
+            colour_by_evals='colour_by_evals' in run_options,
         ),
         lon=LONConfig(
             filter_negative='LON-filter-neg' in lon_options,

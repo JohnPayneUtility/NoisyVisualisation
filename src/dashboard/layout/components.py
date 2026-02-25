@@ -321,6 +321,7 @@ def create_stn_options_section():
                 {'label': 'Show estimated fitness (adopted)', 'value': 'show_estimated_adopted'},
                 {'label': 'Show estimated fitness (discarded)', 'value': 'show_estimated_discarded'},
                 {'label': 'Show fitness box plots', 'value': 'show_stn_boxplots'},
+                {'label': 'Colour edges by evaluations', 'value': 'colour_by_evals'},
             ],
             value=[],
             labelStyle={'display': 'inline-block', 'margin-right': '10px'}

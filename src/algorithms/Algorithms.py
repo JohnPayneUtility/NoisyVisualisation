@@ -120,6 +120,7 @@ class OptimisationAlgorithm:
     attr_function: Optional[Callable] = None
     fitness_function: Optional[Tuple[Callable, dict]] = None
     starting_solution: Optional[List[Any]] = None
+    progress_print_interval: Optional[int] = None  # print update every N evals; None = silent
     # true_fitness_function: Optional[Tuple[Callable, dict]] = None  # No longer used - true fitness now logged during evaluation
 
     # Logger for recording experiment data
@@ -185,13 +186,24 @@ class OptimisationAlgorithm:
             return True
         return False
 
+    def _print_progress(self):
+        """Print a one-line progress update."""
+        best_true = self.logger.generations[-1].true_fitness if self.logger.generations else None
+        pct = f"  ({100 * self.evals / self.eval_limit:.1f}% of limit)" if self.eval_limit else ""
+        fit_str = f"{best_true:.4g}" if best_true is not None else "n/a"
+        print(f"[Evals: {self.evals:,}]{pct}  Best true fitness: {fit_str}")
+
     def run(self):
         """Run the algorithm using the common loop logic."""
+        next_print = self.progress_print_interval  # None means never print
         while not self.stop_condition():
             self.gens += 1
             self.logger.current_generation = self.gens
             self.perform_generation()
             self.record_state(self.population)
+            if next_print is not None and self.evals >= next_print:
+                self._print_progress()
+                next_print += self.progress_print_interval
 
     def record_state(self, population):
         """Record the current population state using the logger."""

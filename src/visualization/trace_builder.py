@@ -9,6 +9,7 @@ from typing import Dict, List, Tuple, Optional, Any
 import networkx as nx
 import numpy as np
 import plotly.graph_objects as go
+import plotly.express as px
 
 from .config import PlotConfig
 from ..common import hamming_distance
@@ -48,7 +49,7 @@ def create_edge_traces(
     G: nx.MultiDiGraph,
     pos: Dict[str, Tuple[float, float]],
     config: PlotConfig
-) -> Tuple[List[go.Scatter3d], List[float], List[float], List[float], List[str]]:
+) -> Tuple[List[go.Scatter3d], List[float], List[float], List[float], List[str], Optional[Tuple[float, float]]]:
     """
     Create Plotly traces for all edges in the graph.
 
@@ -58,7 +59,8 @@ def create_edge_traces(
         config: PlotConfig object with settings
 
     Returns:
-        Tuple of (edge_traces, edge_label_x, edge_label_y, edge_label_z, edge_labels)
+        Tuple of (edge_traces, edge_label_x, edge_label_y, edge_label_z, edge_labels, eval_range)
+        where eval_range is (eval_min, eval_max) when colour_by_evals is enabled, else None.
     """
     traces = []
     edge_label_x = []
@@ -78,6 +80,22 @@ def create_edge_traces(
     LON_hamming = config.lon.show_hamming
     hide_LON_nodes = config.hide_lon_nodes
     hide_STN_nodes = config.hide_stn_nodes
+    colour_by_evals = config.stn.colour_by_evals
+
+    # Pre-pass: compute global eval min/max across all STN/STN_SO edges
+    eval_range: Optional[Tuple[float, float]] = None
+    if colour_by_evals:
+        stn_evals = [
+            data.get('evals', 0)
+            for _, _, _, data in G.edges(data=True, keys=True)
+            if data.get('edge_type') in ('STN', 'STN_SO')
+        ]
+        if stn_evals:
+            eval_min = float(min(stn_evals))
+            eval_max = float(max(stn_evals))
+            eval_range = (eval_min, eval_max)
+        else:
+            colour_by_evals = False  # nothing to colour
 
     print('Plotting edges...')
 
@@ -108,6 +126,16 @@ def create_edge_traces(
         elif edge_type in ('Noise', 'Noise_SO'):
             edge_opacity = STN_edge_opacity
 
+        # Resolve display color for STN edges when colouring by evaluations
+        if colour_by_evals and edge_type in ('STN', 'STN_SO') and eval_range is not None:
+            edge_evals = float(data.get('evals', 0))
+            eval_min, eval_max = eval_range
+            norm_eval = (edge_evals - eval_min) / (eval_max - eval_min) if eval_max > eval_min else 0.5
+            norm_eval = float(np.clip(norm_eval, 0.0, 1.0))
+            display_color = px.colors.sample_colorscale('Viridis', norm_eval)[0]
+        else:
+            display_color = edge_color
+
         # Get start and end points (2D position + Z fitness)
         x0, y0 = pos[u][:2]
         x1, y1 = pos[v][:2]
@@ -119,6 +147,7 @@ def create_edge_traces(
         # Process curved STN edges
         if option_curve_edges and edge_type in ("STN", "STN_SO") and (u, v) in color_indices_for_pair:
             pair = (u, v)
+            # Use algorithm color for curvature index (preserves multi-algo separation)
             current_edge_color = data.get('color', 'default_color')
 
             color_indices_map = color_indices_for_pair[pair]
@@ -157,7 +186,7 @@ def create_edge_traces(
                     y=list(curve_xy[:, 1]),
                     z=list(z_values),
                     mode='lines',
-                    line=dict(width=STN_edge_size_slider, color=current_edge_color),
+                    line=dict(width=STN_edge_size_slider, color=display_color),
                     opacity=edge_opacity,
                     hoverinfo='none',
                     showlegend=False
@@ -172,7 +201,7 @@ def create_edge_traces(
                 # Fallback to straight line
                 edge_trace = go.Scatter3d(
                     x=[x0, x1], y=[y0, y1], z=[z0, z1], mode='lines',
-                    line=dict(width=STN_edge_size_slider, color=current_edge_color, dash='dot'),
+                    line=dict(width=STN_edge_size_slider, color=display_color, dash='dot'),
                     opacity=edge_opacity * 0.8, hoverinfo='none', showlegend=False
                 )
                 traces.append(edge_trace)
@@ -184,21 +213,20 @@ def create_edge_traces(
             if edge_type == 'LON':
                 norm_w = data.get('norm_weight', 0)
                 line_width = 1 + norm_w * (LON_edge_size_slider - 1)
-                edge_color = data.get('color', 'black')
+                display_color = data.get('color', 'black')
             elif edge_type in ('Noise', 'Noise_SO'):
                 line_width = 3
                 dash_style = 'solid'
-                edge_color = data.get('color', 'grey')
+                display_color = data.get('color', 'grey')
             elif edge_type in ('STN', 'STN_SO'):
                 line_width = STN_edge_size_slider
-                edge_color = data.get('color', 'green')
 
             edge_trace = go.Scatter3d(
                 x=[x0, x1],
                 y=[y0, y1],
                 z=[z0, z1],
                 mode='lines',
-                line=dict(width=max(0.5, line_width), color=edge_color, dash=dash_style),
+                line=dict(width=max(0.5, line_width), color=display_color, dash=dash_style),
                 opacity=edge_opacity,
                 hoverinfo='none',
                 showlegend=False
@@ -220,7 +248,7 @@ def create_edge_traces(
             except Exception as e:
                 print(f"Error calculating Hamming distance for label ({u}, {v}): {e}")
 
-    return traces, edge_label_x, edge_label_y, edge_label_z, edge_labels
+    return traces, edge_label_x, edge_label_y, edge_label_z, edge_labels, eval_range
 
 
 def create_edge_label_trace(
@@ -668,6 +696,41 @@ def create_figure(
     return fig
 
 
+def create_evals_colorbar_trace(eval_min: float, eval_max: float) -> go.Scatter3d:
+    """
+    Create an invisible dummy trace whose sole purpose is to render a Viridis
+    colorbar representing the evaluations scale used when colour_by_evals is on.
+
+    Args:
+        eval_min: Minimum evaluation count across all STN edges
+        eval_max: Maximum evaluation count across all STN edges
+
+    Returns:
+        A go.Scatter3d trace with showscale=True and zero visible geometry.
+    """
+    return go.Scatter3d(
+        x=[None], y=[None], z=[None],
+        mode='markers',
+        marker=dict(
+            color=[eval_min, eval_max],
+            colorscale='Viridis',
+            cmin=eval_min,
+            cmax=eval_max,
+            colorbar=dict(
+                title='Evaluations',
+                thickness=20,
+                len=0.6,
+                x=1.02,
+            ),
+            showscale=True,
+            size=0.001,
+            opacity=0,
+        ),
+        showlegend=False,
+        hoverinfo='none',
+    )
+
+
 def build_all_traces(
     G: nx.MultiDiGraph,
     pos: Dict[str, Tuple[float, float]],
@@ -693,8 +756,12 @@ def build_all_traces(
     traces = []
 
     # Create edge traces
-    edge_traces, edge_label_x, edge_label_y, edge_label_z, edge_labels = create_edge_traces(G, pos, config)
+    edge_traces, edge_label_x, edge_label_y, edge_label_z, edge_labels, eval_range = create_edge_traces(G, pos, config)
     traces.extend(edge_traces)
+
+    # Add evaluation colorbar when colour_by_evals is enabled
+    if eval_range is not None:
+        traces.append(create_evals_colorbar_trace(*eval_range))
 
     # Add edge labels
     edge_label_trace = create_edge_label_trace(edge_label_x, edge_label_y, edge_label_z, edge_labels)
