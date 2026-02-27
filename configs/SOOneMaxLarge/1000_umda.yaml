@@ -10,7 +10,7 @@ run:
   max_gens: 10e6
   eval_limit: 10e6
   target_stop: true
-  use_noise_dependent_eval_limit: true
+  use_noise_dependent_eval_limit: false
   eval_limit_for_noise:
     "0": 38392
     "1": 38392
@@ -24,8 +24,11 @@ run:
     "9": 86078
     "10": 93638
   seed: 1
-  num_runs: 5
+  num_runs: 1
   parallel: true
+  override_max_workers: null
+  progress_print_interval: 10000  # print update every N evals; set to null to disable
+  record_population: false
 
 # ==============================
 # MLflow Configuration
@@ -65,8 +68,8 @@ problem:
   prob_name: onemax
   prob_type: discrete
   opt_goal: maximise
-  dimensions: 1000        # bit-string length
-  opt_global: 1000        # known optimum
+  dimensions: 10000        # bit-string length
+  opt_global: 10000        # known optimum
   capacity: 0            # Not applicable for OneMax, set to 0
   mean_value: 500.0       # Not applicable for OneMax, set to middle value
   mean_weight: 0.5       # Not applicable for OneMax, set to middle value

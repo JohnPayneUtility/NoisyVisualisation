@@ -161,8 +161,6 @@ def hydra_algo_data_single(prob_info: Dict[str, Any],
         "sol_iterations": logger.solution_iterations,
         "sol_iterations_evals": logger.solution_evals,
         "sol_transitions": logger.solution_transitions,
-        "noisy_sol_variants": logger.representative_noisy_sols,
-        "noisy_variant_fitnesses": logger.noisy_variant_fitnesses,
     }
 
     seed_signature = algo_instance.seed_signature
@@ -336,8 +334,6 @@ def enrich_df_with_payloads(df: pd.DataFrame) -> pd.DataFrame:
     df["sol_iterations_evals"] = None
     df["sol_transitions"] = None
     df["rep_noisy_sols"] = None
-    df["noisy_sol_variants"] = None
-    df["noisy_variant_fitnesses"] = None
 
     for idx, row in df.iterrows():
         payload_path = row.get("payload_path")
@@ -363,8 +359,6 @@ def enrich_df_with_payloads(df: pd.DataFrame) -> pd.DataFrame:
         df.at[idx, "sol_iterations_evals"] = payload.get("sol_iterations_evals", [])
         df.at[idx, "sol_transitions"] = payload.get("sol_transitions", [])
         df.at[idx, "rep_noisy_sols"] = payload.get("rep_noisy_sols", [])
-        df.at[idx, "noisy_sol_variants"] = payload.get("noisy_sol_variants", [])
-        df.at[idx, "noisy_variant_fitnesses"] = payload.get("noisy_variant_fitnesses", [])
 
     return df
 

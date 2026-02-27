@@ -29,23 +29,39 @@ def clear_active_logger():
 # ==============================
 
 @dataclass
-class GenerationRecord:
-    """Record of a single generation's state."""
-    generation: int
-    best_solution: List
-    best_fitness: float          # Observed (possibly noisy)
-    true_fitness: float          # Noise-free
-    population: Optional[List[List]] = None  # Only stored when record_population=True
-    noisy_solution: List = None  # Perturbed solution (prior noise) or same as best_solution (posterior)
-    evals_so_far: int = None
+class VisitRecord:
+    """
+    Compact record of a single visit to a solution.
+
+    One record is written each time the best solution changes. For a run where the
+    best solution changes N times, exactly N+1 VisitRecords are stored regardless
+    of how many generations were run.
+    """
+    solution: List
+    true_fitness: float          # Noise-free fitness at adoption
+    noisy_fitness: float         # Observed (noisy) fitness at adoption
+    noisy_solution: Optional[List]  # Perturbed solution (prior noise) or original (posterior)
+    iterations: int              # Consecutive generations this solution was best
+    evals: int                   # Evaluations consumed during this visit
+    start_gen: int
+    end_gen: int
+    whenadopted_median: Optional[float]   # Median of all noisy fits up to adoption gen
+    whenadopted_count: int
+    whendiscarded_median: Optional[float] # Median of all noisy fits up to visit-end gen
+    whendiscarded_count: int
+
 
 @dataclass
 class EvaluationRecord:
-    """Record of a single noisy evaluation."""
-    true_sol: List           # Original solution submitted for evaluation
-    noisy_sol: List          # Noisy/perturbed solution (same as true_sol for posterior noise)
-    true_fitness: float      # Fitness without noise
-    noisy_fitness: float     # Fitness with noise applied
+    """
+    Record of a single noisy evaluation.
+    Kept for backwards compatibility with fitness functions that call log_noisy_eval.
+    The original (true) solution is not stored here.
+    noisy_sol is None for posterior noise (noisy_sol == true_sol).
+    """
+    noisy_sol: Optional[List]
+    true_fitness: float
+    noisy_fitness: float
     generation: int = None
 
 # ==============================
@@ -57,121 +73,214 @@ class ExperimentLogger:
     """
     Centralised logging for algorithm runs.
 
-    Stores generation-level data and evaluation-level data (for prior noise tracking).
-    Provides property accessors for backwards compatibility with existing code.
+    Builds trajectory incrementally: only persists a VisitRecord when the best
+    solution changes, rather than storing a GenerationRecord for every generation.
+    This reduces memory from O(N_generations) to O(N_visits).
+
+    Evaluation data is also stored compactly: only noisy fitness values per unique
+    solution are retained (for median estimates), not full EvaluationRecord objects.
+    A per-generation buffer of full eval info is kept transiently for one generation
+    to allow true_fitness / noisy_sol lookup at visit transitions, then cleared.
     """
 
-    # Generation-level data
-    generations: List[GenerationRecord] = field(default_factory=list)
-
-    # Evaluation-level data
-    # Maps original solution (as tuple) -> list of evaluation records
-    evaluations: Dict[Tuple, List[EvaluationRecord]] = field(
-        default_factory=lambda: defaultdict(list)
-    )
+    # Closed visit records — one per solution change
+    visits: List[VisitRecord] = field(default_factory=list)
 
     # Track current generation for evaluation logging
     current_generation: int = 0
 
-    # Whether to store full population snapshots each generation (high RAM cost)
+    # Whether to store population snapshots when representative solution changes
+    # (not yet implemented; reserved for future use)
     record_population: bool = False
 
-    # Cache for trajectory data (invalidated on clear())
+    # Cache for trajectory data (built once at end of run, invalidated on clear())
     _trajectory_cache: Optional[Dict] = field(default=None, init=False, repr=False)
 
-    def log_generation(self, generation: int, population, best_solution,
-                       best_fitness: float, true_fitness: float,
-                       noisy_solution=None, evals: int = None):
-        """Log the state at the end of a generation."""
-        record = GenerationRecord(
-            generation=generation,
-            population=[ind[:] for ind in population] if self.record_population else None,
-            best_solution=best_solution[:],
-            best_fitness=best_fitness,
-            true_fitness=true_fitness,
-            noisy_solution=list(noisy_solution) if noisy_solution is not None else None,
-            evals_so_far=evals
-        )
-        self.generations.append(record)
-        self.current_generation = generation
+    # --- Evaluation data ---
+    # Current-generation buffer: sol_tuple -> [(noisy_fit, noisy_sol, true_fit)]
+    # Cleared after each log_generation call.
+    _gen_evals: Dict = field(default_factory=dict, init=False, repr=False)
 
-    def log_noisy_eval(self, original, noisy, true_fitness, noisy_fitness, generation: int = None):
+    # Cumulative noisy-fitness history per unique solution: sol_tuple -> [noisy_fit, ...]
+    # Never cleared — used to compute whenadopted / whendiscarded medians.
+    _sol_noisy_fits: Dict = field(
+        default_factory=lambda: defaultdict(list), init=False, repr=False
+    )
+
+    # --- State for stop_condition / progress printing ---
+    _last_true_fitness: Optional[float] = field(default=None, init=False, repr=False)
+    _last_generation: int = field(default=0, init=False, repr=False)
+
+    # --- Rolling visit state ---
+    _cur_sol: Optional[Tuple] = field(default=None, init=False, repr=False)
+    _cur_solution: Optional[List] = field(default=None, init=False, repr=False)
+    _cur_count: int = field(default=0, init=False, repr=False)
+    _cur_start_gen: int = field(default=0, init=False, repr=False)
+    _cur_true_fitness: float = field(default=0.0, init=False, repr=False)
+    _cur_noisy_fitness: float = field(default=0.0, init=False, repr=False)
+    _cur_noisy_sol: Optional[List] = field(default=None, init=False, repr=False)
+    _cur_evals_before: int = field(default=0, init=False, repr=False)
+    # Length of _sol_noisy_fits[cur_sol] at adoption time — defines whenadopted window
+    _whenadopted_n: int = field(default=0, init=False, repr=False)
+    # Length of _sol_noisy_fits[cur_sol] at the END of the most recently completed
+    # generation — used as the whendiscarded boundary when the visit closes, so
+    # that the closing generation's evals of the old solution are excluded.
+    _cur_sol_n_at_gen_end: int = field(default=0, init=False, repr=False)
+    # Evals count from the previous log_generation call — used as end_evals when
+    # a visit is closed (the visit ended at the previous generation, not the current one)
+    _prev_evals: int = field(default=0, init=False, repr=False)
+    # Cumulative evals at the end of the most recently closed visit
+    _last_closed_evals: int = field(default=0, init=False, repr=False)
+    # Total generations logged (returned by __len__)
+    _total_gens: int = field(default=0, init=False, repr=False)
+
+    # ==============================
+    # Core Logging Methods
+    # ==============================
+
+    def log_generation(self, generation: int, population, best_solution,
+                       best_fitness: float, evals: int = None):
+        """
+        Log the state at the end of a generation.
+
+        Detects changes in the best solution inline. A VisitRecord is only persisted
+        when the best solution changes — not on every generation.
+        """
+        self._total_gens += 1
+        self.current_generation = generation
+        evals = evals or 0
+
+        sol_tuple = tuple(best_solution)
+
+        if self._cur_sol is None:
+            # First call — start the first visit
+            true_fitness, noisy_sol = self._get_eval_info(sol_tuple, best_fitness)
+            self._last_true_fitness = true_fitness
+            self._open_visit(
+                sol_tuple, best_solution, best_fitness, true_fitness, noisy_sol,
+                generation, evals
+            )
+        elif sol_tuple != self._cur_sol:
+            # Solution changed — close the current visit using the PREVIOUS generation's
+            # evals and noisy-fits count (the current generation belongs to the new visit)
+            self._close_visit(
+                end_gen=generation - 1,
+                n_at_visit_end=self._cur_sol_n_at_gen_end,
+                end_evals=self._prev_evals,
+            )
+            true_fitness, noisy_sol = self._get_eval_info(sol_tuple, best_fitness)
+            self._last_true_fitness = true_fitness
+            self._open_visit(
+                sol_tuple, best_solution, best_fitness, true_fitness, noisy_sol,
+                generation, evals
+            )
+        else:
+            # Same solution — continue the current visit
+            self._cur_count += 1
+            self._last_true_fitness = self._cur_true_fitness
+
+        # Snapshot end-of-generation state for use when this visit eventually closes
+        self._cur_sol_n_at_gen_end = len(self._sol_noisy_fits[self._cur_sol])
+        self._prev_evals = evals
+        self._last_generation = generation
+
+        # Clear the generation buffer — all needed data has been extracted
+        self._gen_evals.clear()
+
+    def log_noisy_eval(self, original, noisy, true_fitness, noisy_fitness,
+                       generation: int = None):
         """
         Log a noisy evaluation.
 
+        Updates:
+        - _sol_noisy_fits: cumulative noisy-fitness history per solution
+          (retained for the full run; used to compute whenadopted / whendiscarded medians)
+        - _gen_evals: transient per-generation buffer
+          (used to look up true_fitness and noisy_sol at visit transitions; cleared each gen)
+
         Args:
             original: The original solution submitted for evaluation
-            noisy: The noisy/perturbed version that was actually evaluated
-                   (same as original for posterior noise, different for prior noise)
-            true_fitness: The fitness without noise applied
-            noisy_fitness: The fitness with noise applied
-            generation: Optional generation number (uses current_generation if not provided)
+            noisy:    The noisy/perturbed version actually evaluated
+                      (same as original for posterior noise)
+            true_fitness:  Fitness without noise
+            noisy_fitness: Fitness with noise applied
+            generation: Unused; kept for API compatibility
         """
-        if generation is None:
-            generation = self.current_generation
-
         key = tuple(original)
-        record = EvaluationRecord(
-            true_sol=list(original),
-            noisy_sol=list(noisy),
-            true_fitness=true_fitness,
-            noisy_fitness=noisy_fitness,
-            generation=generation
-        )
-        self.evaluations[key].append(record)
+        noisy_sol = None if noisy == original else list(noisy)
+
+        # Cumulative noisy-fitness history (retained)
+        self._sol_noisy_fits[key].append(noisy_fitness)
+
+        # Transient generation buffer (cleared each generation)
+        if key not in self._gen_evals:
+            self._gen_evals[key] = []
+        self._gen_evals[key].append((noisy_fitness, noisy_sol, true_fitness))
 
     # ==============================
-    # Evaluation Accessors
+    # Visit State Helpers
     # ==============================
 
-    def get_noisy_variants(self, solution) -> List[EvaluationRecord]:
-        """Get all noisy evaluation records for a particular solution."""
-        return self.evaluations[tuple(solution)]
-
-    def get_all_evaluated_solutions(self) -> List[Tuple]:
-        """Get all unique original solutions that were evaluated with noise."""
-        return list(self.evaluations.keys())
-
-    def get_all_noisy_evals(self) -> List[EvaluationRecord]:
-        """Get a flat list of all noisy evaluation records."""
-        all_evals = []
-        for records in self.evaluations.values():
-            all_evals.extend(records)
-        return all_evals
-
-    # ==============================
-    # Generation Data Accessors (backwards compatibility)
-    # ==============================
-
-    @property
-    def all_generations(self) -> List[List]:
-        """Get all population snapshots."""
-        return [g.population for g in self.generations]
-
-    @property
-    def best_solutions(self) -> List[List]:
-        """Get best solution from each generation."""
-        return [g.best_solution for g in self.generations]
-
-    @property
-    def best_fitnesses(self) -> List[float]:
-        """Get best fitness (possibly noisy) from each generation."""
-        return [g.best_fitness for g in self.generations]
-
-    @property
-    def true_fitnesses(self) -> List[float]:
-        """Get true (noise-free) fitness from each generation."""
-        return [g.true_fitness for g in self.generations]
-
-    def get_best_per_generation(self) -> List[Tuple[List, float, float]]:
+    def _get_eval_info(self, sol_tuple: Tuple, best_fitness: float
+                       ) -> Tuple[float, Optional[List]]:
         """
-        Get best individual with both fitnesses for each generation.
+        Look up true_fitness and noisy_sol for a solution from the current-gen buffer.
 
-        Returns:
-            List of tuples: (best_solution, noisy_fitness, true_fitness)
-            where best is judged by noisy_fitness (what the algorithm saw).
+        Uses the last record for that solution (corresponding to the fitness value
+        currently held by the individual). If the same solution was evaluated multiple
+        times in one generation, the last evaluation's record is used — this matches
+        the fitness value that DEAP assigns to the individual.
+
+        Falls back to (best_fitness, None) if no eval record exists for this gen.
+        For posterior noise (noisy_sol is None in the record), the original solution
+        is returned as noisy_sol to match prior behaviour.
         """
-        return [(g.best_solution, g.best_fitness, g.true_fitness) for g in self.generations]
+        records = self._gen_evals.get(sol_tuple, [])
+        if not records:
+            return best_fitness, None
+        _, noisy_sol, true_fitness = records[-1]
+        # Posterior noise: noisy_sol is None, return original solution
+        resolved_noisy_sol = list(sol_tuple) if noisy_sol is None else noisy_sol
+        return true_fitness, resolved_noisy_sol
+
+    def _open_visit(self, sol_tuple: Tuple, solution, noisy_fitness: float,
+                    true_fitness: float, noisy_sol: Optional[List],
+                    start_gen: int, evals: int):
+        """Open a new visit for a newly-adopted best solution."""
+        self._cur_sol = sol_tuple
+        self._cur_solution = list(solution)
+        self._cur_count = 1
+        self._cur_start_gen = start_gen
+        self._cur_true_fitness = true_fitness
+        self._cur_noisy_fitness = noisy_fitness
+        self._cur_noisy_sol = noisy_sol
+        self._cur_evals_before = self._last_closed_evals
+        # All noisy fits up to and including the adoption generation are already in
+        # _sol_noisy_fits (log_noisy_eval runs before log_generation each generation)
+        self._whenadopted_n = len(self._sol_noisy_fits[sol_tuple])
+
+    def _close_visit(self, end_gen: int, n_at_visit_end: int, end_evals: int):
+        """Close the current visit and append a VisitRecord to self.visits."""
+        sol_fits = self._sol_noisy_fits[self._cur_sol]
+
+        whenadopted_fits = sol_fits[:self._whenadopted_n]
+        whendiscarded_fits = sol_fits[:n_at_visit_end]
+
+        self.visits.append(VisitRecord(
+            solution=self._cur_solution,
+            true_fitness=self._cur_true_fitness,
+            noisy_fitness=self._cur_noisy_fitness,
+            noisy_solution=self._cur_noisy_sol,
+            iterations=self._cur_count,
+            evals=end_evals - self._cur_evals_before,
+            start_gen=self._cur_start_gen,
+            end_gen=end_gen,
+            whenadopted_median=median(whenadopted_fits) if whenadopted_fits else None,
+            whenadopted_count=len(whenadopted_fits),
+            whendiscarded_median=median(whendiscarded_fits) if whendiscarded_fits else None,
+            whendiscarded_count=len(whendiscarded_fits),
+        ))
+        self._last_closed_evals = end_evals
 
     # ==============================
     # Trajectory Data Extraction (with caching)
@@ -179,124 +288,53 @@ class ExperimentLogger:
 
     def _build_trajectory_cache(self):
         """
-        Build and cache trajectory data. Called once, then cached.
-        Cache is invalidated when clear() is called.
+        Assemble trajectory data from all VisitRecords (closed + current open visit).
 
-        Records every adoption of a solution as a separate representative entry,
-        including revisits. sol1 -> sol2 -> sol1 produces three entries.
-        solution_iterations[i] is the number of consecutive generations for visit i.
+        Called once after the run ends, then cached. Cache is invalidated by clear().
         """
-        if hasattr(self, '_trajectory_cache') and self._trajectory_cache is not None:
+        if self._trajectory_cache is not None:
             return self._trajectory_cache
 
-        representative_solutions = []
-        representative_true_fitnesses = []
-        representative_noisy_fitnesses = []
-        representative_noisy_solutions = []
-        sol_iterations = []
-        sol_evals = []
-        transitions = []
-        visit_start_gens = []
-        visit_end_gens = []
+        # Include all closed visits plus a snapshot of the current open visit (if any)
+        all_visits = list(self.visits)
+        if self._cur_sol is not None:
+            sol_fits = self._sol_noisy_fits[self._cur_sol]
+            whenadopted_fits = sol_fits[:self._whenadopted_n]
+            whendiscarded_fits = sol_fits[:self._cur_sol_n_at_gen_end]
+            all_visits.append(VisitRecord(
+                solution=self._cur_solution,
+                true_fitness=self._cur_true_fitness,
+                noisy_fitness=self._cur_noisy_fitness,
+                noisy_solution=self._cur_noisy_sol,
+                iterations=self._cur_count,
+                evals=self._prev_evals - self._cur_evals_before,
+                start_gen=self._cur_start_gen,
+                end_gen=self._last_generation,
+                whenadopted_median=median(whenadopted_fits) if whenadopted_fits else None,
+                whenadopted_count=len(whenadopted_fits),
+                whendiscarded_median=median(whendiscarded_fits) if whendiscarded_fits else None,
+                whendiscarded_count=len(whendiscarded_fits),
+            ))
 
-        current_sol = None
-        current_count = 0
-        current_visit_start_idx = 0
-        evals_before_visit = 0  # cumulative evals at the end of the previous visit
-
-        for idx, gen in enumerate(self.generations):
-            solution_tuple = tuple(gen.best_solution)
-            if current_sol is None:
-                # First generation — start first visit
-                current_sol = solution_tuple
-                current_count = 1
-                current_visit_start_idx = idx
-                evals_before_visit = 0
-                representative_solutions.append(gen.best_solution)
-                representative_true_fitnesses.append(gen.true_fitness)
-                representative_noisy_fitnesses.append(gen.best_fitness)
-                representative_noisy_solutions.append(gen.noisy_solution)
-            elif solution_tuple == current_sol:
-                # Same solution — continue current visit
-                current_count += 1
-            else:
-                # Solution changed — close current visit, open new one
-                sol_iterations.append(current_count)
-                end_evals = self.generations[idx - 1].evals_so_far or 0
-                sol_evals.append(end_evals - evals_before_visit)
-                evals_before_visit = end_evals
-                visit_start_gens.append(self.generations[current_visit_start_idx].generation)
-                visit_end_gens.append(self.generations[idx - 1].generation)
-                transitions.append((current_sol, solution_tuple))
-                current_sol = solution_tuple
-                current_count = 1
-                current_visit_start_idx = idx
-                representative_solutions.append(gen.best_solution)
-                representative_true_fitnesses.append(gen.true_fitness)
-                representative_noisy_fitnesses.append(gen.best_fitness)
-                representative_noisy_solutions.append(gen.noisy_solution)
-
-        # Close the last visit
-        if current_sol is not None:
-            sol_iterations.append(current_count)
-            end_evals = self.generations[-1].evals_so_far or 0
-            sol_evals.append(end_evals - evals_before_visit)
-            visit_start_gens.append(self.generations[current_visit_start_idx].generation)
-            visit_end_gens.append(self.generations[-1].generation)
-
-        # Build noisy sol variants and estimated fits per visit (filtered to visit window)
-        representative_noisy_sols = []
-        representative_noisy_variant_fitnesses = []
-        representative_estimated_true_fits_whenadopted = []
-        representative_estimated_true_fits_whendiscarded = []
-        representative_count_estimated_fits_whenadopted = []
-        representative_count_estimated_fits_whendiscarded = []
-
-        for i, sol in enumerate(representative_solutions):
-            key = tuple(sol)
-            visit_start = visit_start_gens[i]
-            visit_end = visit_end_gens[i]
-
-            if key in self.evaluations:
-                visit_evals = [r for r in self.evaluations[key]
-                               if visit_start <= r.generation <= visit_end]
-                noisy_sols = [r.noisy_sol for r in visit_evals]
-                noisy_fits = [r.noisy_fitness for r in visit_evals]
-                # whenadopted: evals recorded at the moment of adoption
-                adopted_fits = [r.noisy_fitness for r in visit_evals
-                                if r.generation <= visit_start]
-                # whendiscarded: all evals during the visit
-                discarded_fits = noisy_fits
-            else:
-                noisy_sols = []
-                noisy_fits = []
-                adopted_fits = []
-                discarded_fits = []
-
-            representative_noisy_sols.append(noisy_sols)
-            representative_noisy_variant_fitnesses.append(noisy_fits)
-            representative_estimated_true_fits_whenadopted.append(
-                median(adopted_fits) if adopted_fits else None)
-            representative_estimated_true_fits_whendiscarded.append(
-                median(discarded_fits) if discarded_fits else None)
-            representative_count_estimated_fits_whenadopted.append(len(adopted_fits))
-            representative_count_estimated_fits_whendiscarded.append(len(discarded_fits))
-
-        # Cache all computed data
         self._trajectory_cache = {
-            'representative_solutions': representative_solutions,
-            'representative_true_fitnesses': representative_true_fitnesses,
-            'representative_noisy_fitnesses': representative_noisy_fitnesses,
-            'representative_noisy_solutions': representative_noisy_solutions,
-            'solution_iterations': sol_iterations,
-            'solution_evals': sol_evals,
-            'solution_transitions': transitions,
-            'representative_noisy_sols': representative_noisy_sols,
-            'noisy_variant_fitnesses': representative_noisy_variant_fitnesses,
-            'representative_estimated_true_fits_whenadopted': representative_estimated_true_fits_whenadopted,
-            'representative_estimated_true_fits_whendiscarded': representative_estimated_true_fits_whendiscarded,
-            'count_estimated_fits_whenadopted': representative_count_estimated_fits_whenadopted,
-            'count_estimated_fits_whendiscarded': representative_count_estimated_fits_whendiscarded,
+            'representative_solutions': [v.solution for v in all_visits],
+            'representative_true_fitnesses': [v.true_fitness for v in all_visits],
+            'representative_noisy_fitnesses': [v.noisy_fitness for v in all_visits],
+            'representative_noisy_solutions': [v.noisy_solution for v in all_visits],
+            'solution_iterations': [v.iterations for v in all_visits],
+            'solution_evals': [v.evals for v in all_visits],
+            'solution_transitions': [
+                (tuple(all_visits[i].solution), tuple(all_visits[i + 1].solution))
+                for i in range(len(all_visits) - 1)
+            ],
+            'representative_estimated_true_fits_whenadopted': [
+                v.whenadopted_median for v in all_visits
+            ],
+            'representative_estimated_true_fits_whendiscarded': [
+                v.whendiscarded_median for v in all_visits
+            ],
+            'count_estimated_fits_whenadopted': [v.whenadopted_count for v in all_visits],
+            'count_estimated_fits_whendiscarded': [v.whendiscarded_count for v in all_visits],
         }
         return self._trajectory_cache
 
@@ -307,27 +345,27 @@ class ExperimentLogger:
 
     @property
     def representative_true_fitnesses(self) -> List[float]:
-        """True (noise-free) fitness for each representative solution."""
+        """True (noise-free) fitness for each representative solution at adoption."""
         return self._build_trajectory_cache()['representative_true_fitnesses']
 
     @property
     def representative_noisy_fitnesses(self) -> List[float]:
-        """Noisy (observed) fitness for each representative solution."""
+        """Observed (noisy) fitness for each representative solution at adoption."""
         return self._build_trajectory_cache()['representative_noisy_fitnesses']
 
     @property
-    def representative_noisy_solutions(self) -> List[List]:
-        """Noisy (perturbed) solution at the time each representative solution was adopted."""
+    def representative_noisy_solutions(self) -> List[Optional[List]]:
+        """Noisy (perturbed) solution at the time each representative was adopted."""
         return self._build_trajectory_cache()['representative_noisy_solutions']
 
     @property
     def solution_iterations(self) -> List[int]:
-        """Consecutive generation count for each visit (entry in representative_solutions)."""
+        """Consecutive generation count for each visit."""
         return self._build_trajectory_cache()['solution_iterations']
 
     @property
     def solution_evals(self) -> List[int]:
-        """Number of algorithm fitness evaluations consumed during each visit (entry in representative_solutions)."""
+        """Evaluations consumed during each visit."""
         return self._build_trajectory_cache()['solution_evals']
 
     @property
@@ -336,38 +374,20 @@ class ExperimentLogger:
         return self._build_trajectory_cache()['solution_transitions']
 
     @property
-    def representative_noisy_sols(self) -> List[List[List]]:
-        """
-        Noisy solution variants for each representative solution from evaluation
-        records during that visit.
-
-        For posterior noise: noisy_sol == true_sol (same solution)
-        For prior noise: noisy_sol != true_sol (perturbed solution)
-        """
-        return self._build_trajectory_cache()['representative_noisy_sols']
-
-    @property
-    def noisy_variant_fitnesses(self) -> List[List[float]]:
-        """
-        Noisy fitness values for each variant in representative_noisy_sols.
-        Parallel structure: noisy_variant_fitnesses[i][j] is the noisy fitness
-        for representative_noisy_sols[i][j].
-        """
-        return self._build_trajectory_cache()['noisy_variant_fitnesses']
-
-    @property
     def representative_estimated_true_fits_whenadopted(self) -> List[Optional[float]]:
         """
-        Estimated true fitness for each representative solution, computed as the median
-        of noisy evaluations up to the generation it was adopted as best.
+        Estimated true fitness at adoption: median of all noisy evaluations of the
+        representative solution up to and including the adoption generation.
         """
         return self._build_trajectory_cache()['representative_estimated_true_fits_whenadopted']
 
     @property
     def representative_estimated_true_fits_whendiscarded(self) -> List[Optional[float]]:
         """
-        Estimated true fitness for each representative solution, computed as the median
-        of all noisy evaluations during the visit.
+        Estimated true fitness at discard: median of all noisy evaluations of the
+        representative solution up to and including the visit-end generation.
+        Includes the adoption generation's evaluations plus any evaluations during
+        the visit, but excludes the generation in which the solution was replaced.
         """
         return self._build_trajectory_cache()['representative_estimated_true_fits_whendiscarded']
 
@@ -383,7 +403,7 @@ class ExperimentLogger:
 
     def get_trajectory_data(self):
         """
-        Extract trajectory data for plotting (kept for backwards compatibility).
+        Extract trajectory data for plotting (backwards compatibility).
 
         Returns:
             representative_solutions, representative_true_fitnesses,
@@ -399,11 +419,27 @@ class ExperimentLogger:
 
     def clear(self):
         """Clear all logged data and invalidate cache."""
-        self.generations.clear()
-        self.evaluations.clear()
+        self.visits.clear()
+        self._gen_evals.clear()
+        self._sol_noisy_fits.clear()
+        self._trajectory_cache = None
         self.current_generation = 0
-        self._trajectory_cache = None  # Invalidate cache
+        self._last_true_fitness = None
+        self._last_generation = 0
+        self._cur_sol = None
+        self._cur_solution = None
+        self._cur_count = 0
+        self._cur_start_gen = 0
+        self._cur_true_fitness = 0.0
+        self._cur_noisy_fitness = 0.0
+        self._cur_noisy_sol = None
+        self._cur_evals_before = 0
+        self._whenadopted_n = 0
+        self._cur_sol_n_at_gen_end = 0
+        self._prev_evals = 0
+        self._last_closed_evals = 0
+        self._total_gens = 0
 
     def __len__(self):
-        """Return number of generations logged."""
-        return len(self.generations)
+        """Return total number of generations logged."""
+        return self._total_gens

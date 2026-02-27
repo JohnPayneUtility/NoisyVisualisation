@@ -79,10 +79,10 @@ problem:
   prob_name: onemax
   prob_type: discrete
   opt_goal: maximise
-  dimensions: 10000        # bit-string length
-  opt_global: 10000        # known optimum
+  dimensions: 100000        # bit-string length
+  opt_global: 100000        # known optimum
   capacity: 0            # Not applicable for OneMax, set to 0
-  mean_value: 5000.0       # Not applicable for OneMax, set to middle value
+  mean_value: 50000.0       # Not applicable for OneMax, set to middle value
   mean_weight: 0.5       # Not applicable for OneMax, set to middle value
   
   # Problem loading - OneMax doesn't need a loader, dimensions are fixed

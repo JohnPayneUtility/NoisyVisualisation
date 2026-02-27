@@ -2,6 +2,7 @@
 __pycache__/
 
 # data
+fast_storage/
 data/
 plots/
 outputs/
