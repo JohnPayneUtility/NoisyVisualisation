@@ -1,8 +1,11 @@
 # IMPORTS
+import hashlib
+import pickle
+import struct
 from collections import defaultdict
 from dataclasses import dataclass, field
 from statistics import median
-from typing import Dict, List, Tuple, Optional, Any
+from typing import Any, Dict, List, Optional, Tuple
 
 # ==============================
 # Module-level Logger Access
@@ -23,6 +26,131 @@ def clear_active_logger():
     """Clear the active logger."""
     global _active_logger
     _active_logger = None
+
+# ==============================
+# Fit History Backends
+# ==============================
+
+class _MemFitHistory:
+    """
+    In-memory noisy-fitness history.
+    Default backend when no NVMe path is configured.
+    """
+    def __init__(self):
+        self._data: Dict[tuple, List[float]] = defaultdict(list)
+
+    def batch_append(self, updates: Dict[tuple, List[float]]):
+        """Append floats for multiple solutions at once."""
+        for sol_tuple, fits in updates.items():
+            self._data[sol_tuple].extend(fits)
+
+    def get_fits(self, sol_tuple: tuple, end: int = None) -> List[float]:
+        """Return the noisy-fit history for a solution, optionally sliced to [:end]."""
+        fits = self._data[sol_tuple]
+        return fits[:end] if end is not None else list(fits)
+
+    def get_len(self, sol_tuple: tuple) -> int:
+        """Return the number of noisy fits recorded for a solution."""
+        return len(self._data[sol_tuple])
+
+    def clear(self):
+        self._data.clear()
+
+    def close(self):
+        pass  # nothing to close
+
+
+class LMDBFitHistory:
+    """
+    LMDB-backed noisy-fitness history for NVMe offload.
+
+    Stores one entry per unique solution (keyed by SHA-256 hash of the solution
+    tuple), with the value being a packed array of double-precision floats.
+    All writes for a generation are batched into a single LMDB transaction.
+
+    Performance flags (sync=False, writemap=True) trade crash-durability for
+    speed — acceptable since this is transient working storage that is deleted
+    after each run.
+    """
+    # Virtual address space reservation for LMDB memory map (not physical allocation).
+    # Linux does not commit physical pages until they are actually written.
+    _DEFAULT_MAP_SIZE = 100 * 1024 ** 3  # 100 GB
+
+    def __init__(self, path: str, map_size: int = _DEFAULT_MAP_SIZE):
+        try:
+            import lmdb
+        except ImportError:
+            raise ImportError(
+                "lmdb package is required for NVMe storage. "
+                "Install it with:  pip install lmdb"
+            )
+        import os
+        os.makedirs(path, exist_ok=True)
+        self._env = lmdb.open(
+            str(path),
+            map_size=map_size,
+            sync=False,       # Skip fsync — faster; OK for transient storage
+            writemap=True,    # Write directly through memory map — faster writes
+            max_readers=128,  # Allow parallel read-only access from worker processes
+        )
+
+    @staticmethod
+    def _encode_key(sol_tuple: tuple) -> bytes:
+        """
+        SHA-256 hash of the pickled solution tuple.
+        32-byte key: well within LMDB limits and collision-safe for any realistic
+        number of solutions (P(collision) < 10^-60 at 1M unique solutions).
+        """
+        return hashlib.sha256(pickle.dumps(sol_tuple, protocol=2)).digest()
+
+    @staticmethod
+    def _pack(floats: List[float]) -> bytes:
+        n = len(floats)
+        return struct.pack(f'{n}d', *floats)
+
+    @staticmethod
+    def _unpack(data: bytes) -> List[float]:
+        n = len(data) // 8
+        return list(struct.unpack(f'{n}d', data))
+
+    def batch_append(self, updates: Dict[tuple, List[float]]):
+        """Append floats for multiple solutions in a single LMDB transaction."""
+        with self._env.begin(write=True) as txn:
+            for sol_tuple, new_fits in updates.items():
+                key = self._encode_key(sol_tuple)
+                existing = txn.get(key)
+                if existing:
+                    current = self._unpack(existing)
+                    current.extend(new_fits)
+                else:
+                    current = list(new_fits)
+                txn.put(key, self._pack(current))
+
+    def get_fits(self, sol_tuple: tuple, end: int = None) -> List[float]:
+        """Return the noisy-fit history for a solution, optionally sliced to [:end]."""
+        key = self._encode_key(sol_tuple)
+        with self._env.begin() as txn:
+            data = txn.get(key)
+        if not data:
+            return []
+        fits = self._unpack(data)
+        return fits[:end] if end is not None else fits
+
+    def get_len(self, sol_tuple: tuple) -> int:
+        """Return the number of noisy fits recorded for a solution."""
+        key = self._encode_key(sol_tuple)
+        with self._env.begin() as txn:
+            data = txn.get(key)
+        return len(data) // 8 if data else 0
+
+    def clear(self):
+        """No-op — the LMDB directory is deleted externally after close()."""
+        pass
+
+    def close(self):
+        """Close the LMDB environment. The directory should be deleted afterwards."""
+        self._env.close()
+
 
 # ==============================
 # Data Records
@@ -54,9 +182,7 @@ class VisitRecord:
 @dataclass
 class EvaluationRecord:
     """
-    Record of a single noisy evaluation.
     Kept for backwards compatibility with fitness functions that call log_noisy_eval.
-    The original (true) solution is not stored here.
     noisy_sol is None for posterior noise (noisy_sol == true_sol).
     """
     noisy_sol: Optional[List]
@@ -75,37 +201,45 @@ class ExperimentLogger:
 
     Builds trajectory incrementally: only persists a VisitRecord when the best
     solution changes, rather than storing a GenerationRecord for every generation.
-    This reduces memory from O(N_generations) to O(N_visits).
+    This reduces generation-level memory from O(N_generations) to O(N_visits).
 
-    Evaluation data is also stored compactly: only noisy fitness values per unique
-    solution are retained (for median estimates), not full EvaluationRecord objects.
-    A per-generation buffer of full eval info is kept transiently for one generation
-    to allow true_fitness / noisy_sol lookup at visit transitions, then cleared.
+    Noisy fitness history is stored in a fit-history backend:
+    - _MemFitHistory  (default): in-memory defaultdict — fast, no dependencies
+    - LMDBFitHistory  (opt-in):  LMDB on NVMe — frees RAM for large/long runs
+
+    Set nvme_path to a directory on the NVMe device to enable LMDB offload.
+    Each run should use a unique path (e.g. include seed in the path) so that
+    parallel runs do not share an environment.
+
+    Noisy fits are batched per generation: log_noisy_eval writes to a transient
+    per-generation buffer (_gen_evals), which is flushed to the fit-history backend
+    at the start of each log_generation call (one LMDB transaction per generation,
+    not one per evaluation).
     """
 
     # Closed visit records — one per solution change
     visits: List[VisitRecord] = field(default_factory=list)
 
+    # Path to NVMe directory for LMDB-backed fit history.
+    # None = use in-memory _MemFitHistory.
+    nvme_path: Optional[str] = None
+
     # Track current generation for evaluation logging
     current_generation: int = 0
 
     # Whether to store population snapshots when representative solution changes
-    # (not yet implemented; reserved for future use)
+    # (reserved for future use; not yet implemented)
     record_population: bool = False
 
     # Cache for trajectory data (built once at end of run, invalidated on clear())
     _trajectory_cache: Optional[Dict] = field(default=None, init=False, repr=False)
 
-    # --- Evaluation data ---
-    # Current-generation buffer: sol_tuple -> [(noisy_fit, noisy_sol, true_fit)]
-    # Cleared after each log_generation call.
-    _gen_evals: Dict = field(default_factory=dict, init=False, repr=False)
+    # Fit-history backend (created in __post_init__)
+    _fit_history: Any = field(default=None, init=False, repr=False)
 
-    # Cumulative noisy-fitness history per unique solution: sol_tuple -> [noisy_fit, ...]
-    # Never cleared — used to compute whenadopted / whendiscarded medians.
-    _sol_noisy_fits: Dict = field(
-        default_factory=lambda: defaultdict(list), init=False, repr=False
-    )
+    # Current-generation buffer: sol_tuple -> [(noisy_fit, noisy_sol, true_fit)]
+    # Flushed to _fit_history at the start of each log_generation call, then cleared.
+    _gen_evals: Dict = field(default_factory=dict, init=False, repr=False)
 
     # --- State for stop_condition / progress printing ---
     _last_true_fitness: Optional[float] = field(default=None, init=False, repr=False)
@@ -120,19 +254,26 @@ class ExperimentLogger:
     _cur_noisy_fitness: float = field(default=0.0, init=False, repr=False)
     _cur_noisy_sol: Optional[List] = field(default=None, init=False, repr=False)
     _cur_evals_before: int = field(default=0, init=False, repr=False)
-    # Length of _sol_noisy_fits[cur_sol] at adoption time — defines whenadopted window
+    # Length of fit history for cur_sol at adoption time — defines whenadopted window
     _whenadopted_n: int = field(default=0, init=False, repr=False)
-    # Length of _sol_noisy_fits[cur_sol] at the END of the most recently completed
+    # Length of fit history for cur_sol at the END of the most recently completed
     # generation — used as the whendiscarded boundary when the visit closes, so
     # that the closing generation's evals of the old solution are excluded.
     _cur_sol_n_at_gen_end: int = field(default=0, init=False, repr=False)
     # Evals count from the previous log_generation call — used as end_evals when
-    # a visit is closed (the visit ended at the previous generation, not the current one)
+    # a visit is closed (the visit ended at the previous generation)
     _prev_evals: int = field(default=0, init=False, repr=False)
     # Cumulative evals at the end of the most recently closed visit
     _last_closed_evals: int = field(default=0, init=False, repr=False)
     # Total generations logged (returned by __len__)
     _total_gens: int = field(default=0, init=False, repr=False)
+
+    def __post_init__(self):
+        """Initialise the fit-history backend based on nvme_path."""
+        if self.nvme_path is not None:
+            self._fit_history = LMDBFitHistory(self.nvme_path)
+        else:
+            self._fit_history = _MemFitHistory()
 
     # ==============================
     # Core Logging Methods
@@ -145,12 +286,19 @@ class ExperimentLogger:
 
         Detects changes in the best solution inline. A VisitRecord is only persisted
         when the best solution changes — not on every generation.
+
+        The generation buffer (_gen_evals) is flushed to the fit-history backend
+        first so that get_len() / get_fits() reflect the current generation's data
+        when _open_visit reads _whenadopted_n.
         """
         self._total_gens += 1
         self.current_generation = generation
         evals = evals or 0
 
         sol_tuple = tuple(best_solution)
+
+        # Flush this generation's noisy fits to the backend BEFORE any reads
+        self._flush_gen_evals()
 
         if self._cur_sol is None:
             # First call — start the first visit
@@ -162,7 +310,7 @@ class ExperimentLogger:
             )
         elif sol_tuple != self._cur_sol:
             # Solution changed — close the current visit using the PREVIOUS generation's
-            # evals and noisy-fits count (the current generation belongs to the new visit)
+            # evals and fit-history count (the current generation belongs to the new visit)
             self._close_visit(
                 end_gen=generation - 1,
                 n_at_visit_end=self._cur_sol_n_at_gen_end,
@@ -180,11 +328,11 @@ class ExperimentLogger:
             self._last_true_fitness = self._cur_true_fitness
 
         # Snapshot end-of-generation state for use when this visit eventually closes
-        self._cur_sol_n_at_gen_end = len(self._sol_noisy_fits[self._cur_sol])
+        self._cur_sol_n_at_gen_end = self._fit_history.get_len(self._cur_sol)
         self._prev_evals = evals
         self._last_generation = generation
 
-        # Clear the generation buffer — all needed data has been extracted
+        # Clear the generation buffer — fit data flushed, eval info no longer needed
         self._gen_evals.clear()
 
     def log_noisy_eval(self, original, noisy, true_fitness, noisy_fitness,
@@ -192,11 +340,9 @@ class ExperimentLogger:
         """
         Log a noisy evaluation.
 
-        Updates:
-        - _sol_noisy_fits: cumulative noisy-fitness history per solution
-          (retained for the full run; used to compute whenadopted / whendiscarded medians)
-        - _gen_evals: transient per-generation buffer
-          (used to look up true_fitness and noisy_sol at visit transitions; cleared each gen)
+        Writes only to the transient per-generation buffer (_gen_evals).
+        Noisy fits are flushed to the fit-history backend (in-memory or LMDB)
+        at the start of each log_generation call, batched per generation.
 
         Args:
             original: The original solution submitted for evaluation
@@ -209,17 +355,23 @@ class ExperimentLogger:
         key = tuple(original)
         noisy_sol = None if noisy == original else list(noisy)
 
-        # Cumulative noisy-fitness history (retained)
-        self._sol_noisy_fits[key].append(noisy_fitness)
-
-        # Transient generation buffer (cleared each generation)
         if key not in self._gen_evals:
             self._gen_evals[key] = []
         self._gen_evals[key].append((noisy_fitness, noisy_sol, true_fitness))
 
     # ==============================
-    # Visit State Helpers
+    # Internal Helpers
     # ==============================
+
+    def _flush_gen_evals(self):
+        """Flush noisy fits from the generation buffer to the fit-history backend."""
+        updates = {
+            key: [r[0] for r in records]
+            for key, records in self._gen_evals.items()
+            if records
+        }
+        if updates:
+            self._fit_history.batch_append(updates)
 
     def _get_eval_info(self, sol_tuple: Tuple, best_fitness: float
                        ) -> Tuple[float, Optional[List]]:
@@ -227,19 +379,14 @@ class ExperimentLogger:
         Look up true_fitness and noisy_sol for a solution from the current-gen buffer.
 
         Uses the last record for that solution (corresponding to the fitness value
-        currently held by the individual). If the same solution was evaluated multiple
-        times in one generation, the last evaluation's record is used — this matches
-        the fitness value that DEAP assigns to the individual.
-
-        Falls back to (best_fitness, None) if no eval record exists for this gen.
-        For posterior noise (noisy_sol is None in the record), the original solution
-        is returned as noisy_sol to match prior behaviour.
+        currently held by the DEAP individual after the final evaluate() call).
+        Falls back to (best_fitness, None) if no record exists in this generation.
+        For posterior noise (noisy_sol is None), returns the original solution.
         """
         records = self._gen_evals.get(sol_tuple, [])
         if not records:
             return best_fitness, None
         _, noisy_sol, true_fitness = records[-1]
-        # Posterior noise: noisy_sol is None, return original solution
         resolved_noisy_sol = list(sol_tuple) if noisy_sol is None else noisy_sol
         return true_fitness, resolved_noisy_sol
 
@@ -255,17 +402,16 @@ class ExperimentLogger:
         self._cur_noisy_fitness = noisy_fitness
         self._cur_noisy_sol = noisy_sol
         self._cur_evals_before = self._last_closed_evals
-        # All noisy fits up to and including the adoption generation are already in
-        # _sol_noisy_fits (log_noisy_eval runs before log_generation each generation)
-        self._whenadopted_n = len(self._sol_noisy_fits[sol_tuple])
+        # Fit history has already been flushed for this generation, so get_len
+        # correctly reflects all evals up to and including the adoption generation
+        self._whenadopted_n = self._fit_history.get_len(sol_tuple)
 
     def _close_visit(self, end_gen: int, n_at_visit_end: int, end_evals: int):
         """Close the current visit and append a VisitRecord to self.visits."""
-        sol_fits = self._sol_noisy_fits[self._cur_sol]
-
-        whenadopted_fits = sol_fits[:self._whenadopted_n]
-        whendiscarded_fits = sol_fits[:n_at_visit_end]
-
+        whenadopted_fits = self._fit_history.get_fits(self._cur_sol,
+                                                      end=self._whenadopted_n)
+        whendiscarded_fits = self._fit_history.get_fits(self._cur_sol,
+                                                        end=n_at_visit_end)
         self.visits.append(VisitRecord(
             solution=self._cur_solution,
             true_fitness=self._cur_true_fitness,
@@ -298,9 +444,10 @@ class ExperimentLogger:
         # Include all closed visits plus a snapshot of the current open visit (if any)
         all_visits = list(self.visits)
         if self._cur_sol is not None:
-            sol_fits = self._sol_noisy_fits[self._cur_sol]
-            whenadopted_fits = sol_fits[:self._whenadopted_n]
-            whendiscarded_fits = sol_fits[:self._cur_sol_n_at_gen_end]
+            whenadopted_fits = self._fit_history.get_fits(self._cur_sol,
+                                                          end=self._whenadopted_n)
+            whendiscarded_fits = self._fit_history.get_fits(self._cur_sol,
+                                                            end=self._cur_sol_n_at_gen_end)
             all_visits.append(VisitRecord(
                 solution=self._cur_solution,
                 true_fitness=self._cur_true_fitness,
@@ -386,8 +533,6 @@ class ExperimentLogger:
         """
         Estimated true fitness at discard: median of all noisy evaluations of the
         representative solution up to and including the visit-end generation.
-        Includes the adoption generation's evaluations plus any evaluations during
-        the visit, but excludes the generation in which the solution was replaced.
         """
         return self._build_trajectory_cache()['representative_estimated_true_fits_whendiscarded']
 
@@ -418,10 +563,19 @@ class ExperimentLogger:
     # ==============================
 
     def clear(self):
-        """Clear all logged data and invalidate cache."""
+        """
+        Clear all logged data and invalidate cache.
+
+        Closes the fit-history backend (important for LMDB — releases the file
+        handle so the caller can safely delete the LMDB directory afterwards).
+        Resets to an in-memory backend so the logger is safe to use again if needed.
+        """
+        self._fit_history.clear()
+        self._fit_history.close()
+        self._fit_history = _MemFitHistory()  # safe fallback if logger is reused
+
         self.visits.clear()
         self._gen_evals.clear()
-        self._sol_noisy_fits.clear()
         self._trajectory_cache = None
         self.current_generation = 0
         self._last_true_fitness = None

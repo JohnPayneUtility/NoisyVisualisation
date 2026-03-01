@@ -1,5 +1,6 @@
 
 # IMPORTS
+import shutil
 import sys
 import time
 import random
@@ -133,15 +134,28 @@ def hydra_algo_data_single(prob_info: Dict[str, Any],
                           algo_config: Dict[str, Any],
                           algo_params: Dict[str, Any],
                           seed: int,
-                          payload_dir: str = "data/temp/payloads") -> Tuple[Dict[str, Any], str]:
+                          payload_dir: str = "data/temp/payloads",
+                          nvme_base_path: str = None) -> Tuple[Dict[str, Any], str]:
     # Seeds
     random.seed(seed)
     np.random.seed(seed)
 
+    # Construct a per-seed NVMe LMDB path if a base path is configured.
+    # Each seed gets its own subdirectory so parallel runs don't share an environment.
+    nvme_run_path = None
+    if nvme_base_path is not None:
+        nvme_run_path = Path(nvme_base_path) / f"lmdb_seed{seed}"
+        # Directory creation is handled by LMDBFitHistory.__init__ via os.makedirs,
+        # which follows symlinks correctly. Avoid pathlib.mkdir here — it does not
+        # handle the case where a parent component is a symlink to a directory.
+
+    # Inject nvme_path into a local copy of algo_params
+    algo_params = dict(algo_params)
+    algo_params['nvme_path'] = str(nvme_run_path) if nvme_run_path else None
+
     # Run algorithm
     import resource
     algo_config = OmegaConf.create(algo_config)
-    # algo_params = OmegaConf.create(algo_params)
     algo_instance = instantiate(algo_config, **algo_params)
     algo_instance.run()
     peak_ram_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
@@ -209,9 +223,13 @@ def hydra_algo_data_single(prob_info: Dict[str, Any],
 
     # Cleanup (important for sequential + parallel)
     clear_active_logger()
-    algo_instance.logger.clear()
+    algo_instance.logger.clear()  # closes LMDB env if active (must happen before rmtree)
     if hasattr(algo_instance, "population"):
         del algo_instance.population
+
+    # Delete the per-seed LMDB directory now that all data has been extracted
+    if nvme_run_path is not None and nvme_run_path.exists():
+        shutil.rmtree(nvme_run_path)
 
     return row, str(payload_path)
 
@@ -222,7 +240,8 @@ def hydra_algo_data_multi(prob_info: Dict[str, Any],
                           num_runs: int,
                           base_seed: int = 0,
                           parallel: bool = False,
-                          override_max_workers: int = None) -> pd.DataFrame:
+                          override_max_workers: int = None,
+                          nvme_base_path: str = None) -> pd.DataFrame:
 
     results_list = []
 
@@ -236,7 +255,8 @@ def hydra_algo_data_multi(prob_info: Dict[str, Any],
             for i in range(num_runs):
                 seed = base_seed + i
                 futures.append(
-                    executor.submit(hydra_algo_data_single, prob_info, algo_config, algo_params, seed)
+                    executor.submit(hydra_algo_data_single, prob_info, algo_config, algo_params, seed,
+                                    nvme_base_path=nvme_base_path)
                 )
 
             for future in concurrent.futures.as_completed(futures):
@@ -248,7 +268,8 @@ def hydra_algo_data_multi(prob_info: Dict[str, Any],
         print(f"Running {num_runs} runs SEQUENTIALLY")
         for i in range(num_runs):
             seed = base_seed + i
-            row, payload_path = hydra_algo_data_single(prob_info, algo_config, algo_params, seed)
+            row, payload_path = hydra_algo_data_single(prob_info, algo_config, algo_params, seed,
+                                                        nvme_base_path=nvme_base_path)
             results_list.append(row)
 
     df = pd.DataFrame(results_list)
@@ -435,7 +456,8 @@ def main(cfg: DictConfig):
             num_runs=cfg.run.num_runs,
             base_seed=cfg.run.seed,
             parallel=cfg.run.parallel,
-            override_max_workers=getattr(cfg.run, 'override_max_workers', None)
+            override_max_workers=getattr(cfg.run, 'override_max_workers', None),
+            nvme_base_path=getattr(cfg.run, 'nvme_path', None),
         )
 
         compute_time = time.perf_counter() - start_time

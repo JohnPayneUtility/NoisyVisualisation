@@ -27,6 +27,7 @@ dependencies:
   - pip:
       # - dash-ag-grid
       # - dash-tabulator
+      - lmdb
       - pgmpy
       - paramiko
       - python-dotenv

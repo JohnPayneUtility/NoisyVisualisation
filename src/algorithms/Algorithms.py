@@ -122,14 +122,18 @@ class OptimisationAlgorithm:
     starting_solution: Optional[List[Any]] = None
     progress_print_interval: Optional[int] = None  # print update every N evals; None = silent
     record_population: bool = False  # store full population snapshots (high RAM; off by default)
-    # true_fitness_function: Optional[Tuple[Callable, dict]] = None  # No longer used - true fitness now logged during evaluation
+    nvme_path: Optional[str] = None  # path to NVMe-backed LMDB dir; None = in-memory
 
-    # Logger for recording experiment data
-    logger: ExperimentLogger = field(default_factory=ExperimentLogger)
+    # Logger — created in __post_init__ so nvme_path can be passed through
+    logger: Optional[ExperimentLogger] = None
 
     def __post_init__(self):
         self.stop_trigger = ''
         self.seed_signature = random.randint(0, 10**6)
+
+        # Create logger with the chosen fit-history backend
+        if self.logger is None:
+            self.logger = ExperimentLogger(nvme_path=self.nvme_path)
 
         # Propagate population-recording preference to the logger
         self.logger.record_population = self.record_population

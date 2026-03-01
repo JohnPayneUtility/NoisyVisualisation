@@ -26,6 +26,11 @@ run:
   seed: 1
   num_runs: 50
   parallel: true
+  override_max_workers: null
+  progress_print_interval: 10000  # print update every N evals; set to null to disable
+  record_population: false
+  # nvme_path: ${hydra:runtime.cwd}/fast_storage
+  nvme_path: null
 
 # ==============================
 # MLflow Configuration
