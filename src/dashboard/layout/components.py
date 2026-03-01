@@ -235,9 +235,6 @@ def create_multiobjective_options_section():
                 id='stn-plot-type',
                 options=[
                     {'label': 'Posterior noise STN plot', 'value': 'posterior'},
-                    {'label': 'Prior noise STN plot', 'value': 'prior'},
-                    {'label': 'Prior noise STN V2 plot', 'value': 'prior_v2'},
-                    {'label': 'Prior noise STN V3 plot', 'value': 'prior_v3'},
                     {'label': 'Prior noise STN V4 plot', 'value': 'prior_v4'},
                     {'label': 'Prior noise STN V5 plot', 'value': 'prior_v5'},
                     {'label': 'Multiobjective STN plot', 'value': 'multiobjective'},

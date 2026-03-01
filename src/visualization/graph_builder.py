@@ -134,8 +134,8 @@ def add_stn_trajectories(
             print(f"Skipping run {run_idx} due to None values: {entry}")
             continue
 
-        # Extract noisy variant fitnesses (index 6) and estimated fitness data (indices 8-11)
-        noisy_variant_fitnesses = entry[6] if len(entry) > 6 else []
+        # Extract fitness boxplot stats (index 6) and estimated fitness data (indices 8-11)
+        fitness_boxplot_stats = entry[6] if len(entry) > 6 else []
         estimated_fits_adopted = entry[8] if len(entry) > 8 else []
         estimated_fits_discarded = entry[9] if len(entry) > 9 else []
         count_fits_adopted = entry[10] if len(entry) > 10 else []
@@ -163,7 +163,7 @@ def add_stn_trajectories(
                 est_discarded = estimated_fits_discarded[i] if i < len(estimated_fits_discarded) else None
                 cnt_adopted = count_fits_adopted[i] if i < len(count_fits_adopted) else None
                 cnt_discarded = count_fits_discarded[i] if i < len(count_fits_discarded) else None
-                variant_fits = noisy_variant_fitnesses[i] if i < len(noisy_variant_fitnesses) else []
+                boxplot_stat = fitness_boxplot_stats[i] if i < len(fitness_boxplot_stats) else None
 
                 G.add_node(
                     node_label,
@@ -173,7 +173,7 @@ def add_stn_trajectories(
                     estimated_fitness_discarded=est_discarded,
                     count_estimated_adopted=cnt_adopted,
                     count_estimated_discarded=cnt_discarded,
-                    noisy_variant_fitnesses=variant_fits,
+                    fitness_boxplot_stats=boxplot_stat,
                     iterations=solution_iterations[i],
                     evals=sol_evals[i] if i < len(sol_evals) else 0,
                     type="STN",
@@ -326,409 +326,6 @@ def add_mo_fronts(
     return mo_nodes
 
 
-def add_prior_noise_stn(
-    G: nx.MultiDiGraph,
-    all_run_trajectories: List,
-    edge_color: str,
-    series_idx: int,
-    noisy_node_color: str = 'grey',
-    dedup: bool = False
-) -> None:
-    """
-    Add single-objective STN nodes with prior noise variants to the graph.
-
-    Creates base nodes for each unique solution and separate noisy nodes
-    for each variant in noisy_sol_variants, connected by noise edges.
-    Consecutive base nodes are connected by temporal edges.
-
-    Args:
-        G: NetworkX MultiDiGraph to modify
-        all_run_trajectories: List of runs, each a 7-element list:
-            [rep_sols, rep_fits, rep_noisy_fits, sol_iterations,
-             sol_transitions, noisy_sol_variants, noisy_variant_fitnesses]
-        edge_color: Color for temporal edges (algorithm color)
-        series_idx: Index of the algorithm series
-        noisy_node_color: Color for noise edges
-        dedup: If True, deduplicate noisy variants per solution (keep first occurrence)
-    """
-    for run_idx, entry in enumerate(all_run_trajectories):
-        if len(entry) < 7:
-            print(f"[Prior noise] Skipping entry with {len(entry)} elements, expected 7")
-            continue
-
-        rep_sols, rep_fits, rep_noisy_fits, sol_iterations, transitions, \
-            noisy_sol_variants, noisy_variant_fitnesses = entry[:7]
-        sol_evals = entry[12] if len(entry) > 12 else []
-        cumulative_evals = list(np.cumsum(sol_evals)) if sol_evals else []
-
-        if rep_sols is None:
-            continue
-
-        prev_base = None
-
-        for i, solution in enumerate(rep_sols):
-            true_fitness = rep_fits[i]
-
-            # -------- base node --------
-            node_base = f"STN_S{series_idx}_R{run_idx}_Sol{i}_True"
-            if node_base not in G.nodes:
-                G.add_node(
-                    node_base,
-                    type="STN_SO",
-                    is_noisy=False,
-                    solution=solution,
-                    fitness=true_fitness,
-                    iterations=sol_iterations[i] if i < len(sol_iterations) else 1,
-                    evals=sol_evals[i] if i < len(sol_evals) else 0,
-                    sol_idx=i,
-                    run_idx=run_idx,
-                    series_idx=series_idx,
-                    color=edge_color,
-                )
-
-            # -------- noisy variant nodes --------
-            variants = noisy_sol_variants[i] if i < len(noisy_sol_variants) else []
-            variant_fits = noisy_variant_fitnesses[i] if i < len(noisy_variant_fitnesses) else []
-
-            # Optionally deduplicate variants by solution tuple
-            if dedup and variants:
-                seen = set()
-                deduped_variants = []
-                deduped_fits = []
-                for j, v_sol in enumerate(variants):
-                    v_key = tuple(v_sol)
-                    if v_key not in seen:
-                        seen.add(v_key)
-                        deduped_variants.append(v_sol)
-                        deduped_fits.append(variant_fits[j] if j < len(variant_fits) else 0.0)
-                variants = deduped_variants
-                variant_fits = deduped_fits
-
-            for j, variant_sol in enumerate(variants):
-                variant_fitness = variant_fits[j] if j < len(variant_fits) else 0.0
-                node_noisy = f"STN_S{series_idx}_R{run_idx}_Sol{i}_Var{j}_Noisy"
-                if node_noisy not in G.nodes:
-                    G.add_node(
-                        node_noisy,
-                        type="STN_SO_Noise",
-                        is_noisy=True,
-                        solution=variant_sol,
-                        fitness=variant_fitness,
-                        sol_idx=i,
-                        var_idx=j,
-                        run_idx=run_idx,
-                        series_idx=series_idx,
-                        color=edge_color,
-                    )
-
-                    # noise edge: base -> noisy variant
-                    G.add_edge(
-                        node_base,
-                        node_noisy,
-                        weight=0.5,
-                        color=noisy_node_color,
-                        edge_type="Noise_SO",
-                        is_noisy=True,
-                    )
-
-            # -------- temporal edge across solutions --------
-            if prev_base is not None:
-                G.add_edge(
-                    prev_base,
-                    node_base,
-                    weight=0.5,
-                    color=edge_color,
-                    edge_type="STN_SO",
-                    is_noisy=False,
-                    evals=cumulative_evals[i] if i < len(cumulative_evals) else 0,
-                )
-            prev_base = node_base
-
-
-def add_prior_noise_stn_v2(
-    G: nx.MultiDiGraph,
-    all_run_trajectories: List,
-    edge_color: str,
-    series_idx: int,
-    noisy_node_color: str = 'grey',
-    dedup: bool = False
-) -> None:
-    """
-    Add single-objective STN nodes with two kinds of noisy variant nodes.
-
-    For each unique solution (base node with true fitness) this creates:
-      1) "Solution-noisy" nodes: use noisy_sol_variants (perturbed solutions)
-         but keep the *true* fitness of the base node, so they sit on the
-         same fitness plane.  Positioned by Hamming distance from their
-         perturbed solution.
-      2) "Fitness-noisy" nodes: use the *original* (unperturbed) solution
-         but with the noisy fitness values from unique_rep_noisy_fits, so they
-         differ only in height (z-axis).
-    Both kinds are connected to the base node via noise edges.
-    Consecutive base nodes are connected by temporal edges.
-
-    Args:
-        G: NetworkX MultiDiGraph to modify
-        all_run_trajectories: List of runs, each a 7-element list:
-            [rep_sols, rep_fits, rep_noisy_fits, sol_iterations,
-             sol_transitions, noisy_sol_variants, noisy_variant_fitnesses]
-        edge_color: Color for temporal edges (algorithm color)
-        series_idx: Index of the algorithm series
-        noisy_node_color: Color for noise edges
-        dedup: If True, deduplicate solution-noisy variants per base node
-    """
-    for run_idx, entry in enumerate(all_run_trajectories):
-        if len(entry) < 7:
-            print(f"[Prior noise V2] Skipping entry with {len(entry)} elements, expected 7")
-            continue
-
-        rep_sols, rep_fits, rep_noisy_fits, sol_iterations, transitions, \
-            noisy_sol_variants, noisy_variant_fitnesses = entry[:7]
-        sol_evals = entry[12] if len(entry) > 12 else []
-        cumulative_evals = list(np.cumsum(sol_evals)) if sol_evals else []
-
-        if rep_sols is None:
-            continue
-
-        prev_base = None
-
-        for i, solution in enumerate(rep_sols):
-            true_fitness = rep_fits[i]
-
-            # -------- base node --------
-            node_base = f"STN_S{series_idx}_R{run_idx}_Sol{i}_True"
-            if node_base not in G.nodes:
-                G.add_node(
-                    node_base,
-                    type="STN_SO",
-                    is_noisy=False,
-                    solution=solution,
-                    fitness=true_fitness,
-                    iterations=sol_iterations[i] if i < len(sol_iterations) else 1,
-                    evals=sol_evals[i] if i < len(sol_evals) else 0,
-                    sol_idx=i,
-                    run_idx=run_idx,
-                    series_idx=series_idx,
-                    color=edge_color,
-                )
-
-            # -------- Type 1: solution-noisy nodes --------
-            # Perturbed solutions but with the TRUE fitness of the base node
-            variants = noisy_sol_variants[i] if i < len(noisy_sol_variants) else []
-
-            if dedup and variants:
-                seen = set()
-                deduped_variants = []
-                for v_sol in variants:
-                    v_key = tuple(v_sol)
-                    if v_key not in seen:
-                        seen.add(v_key)
-                        deduped_variants.append(v_sol)
-                variants = deduped_variants
-
-            for j, variant_sol in enumerate(variants):
-                node_noisy = f"STN_S{series_idx}_R{run_idx}_Sol{i}_SolVar{j}_Noisy"
-                if node_noisy not in G.nodes:
-                    G.add_node(
-                        node_noisy,
-                        type="STN_SO_Noise",
-                        is_noisy=True,
-                        solution=variant_sol,
-                        fitness=true_fitness,  # same fitness as base
-                        sol_idx=i,
-                        var_idx=j,
-                        run_idx=run_idx,
-                        series_idx=series_idx,
-                        color=edge_color,
-                    )
-                    G.add_edge(
-                        node_base, node_noisy,
-                        weight=0.5, color=noisy_node_color,
-                        edge_type="Noise_SO", is_noisy=True,
-                    )
-
-            # -------- Type 2: fitness-noisy nodes --------
-            # Same solution as base but with noisy fitness values
-            noisy_fit_list = rep_noisy_fits[i] if i < len(rep_noisy_fits) else []
-            if not isinstance(noisy_fit_list, (list, tuple)):
-                noisy_fit_list = [noisy_fit_list]
-
-            for k, nf in enumerate(noisy_fit_list):
-                node_fit_noisy = f"STN_S{series_idx}_R{run_idx}_Sol{i}_FitVar{k}_Noisy"
-                if node_fit_noisy not in G.nodes:
-                    G.add_node(
-                        node_fit_noisy,
-                        type="STN_SO_Noise",
-                        is_noisy=True,
-                        solution=solution,  # same solution as base
-                        fitness=nf,         # noisy fitness
-                        sol_idx=i,
-                        var_idx=k,
-                        run_idx=run_idx,
-                        series_idx=series_idx,
-                        color=edge_color,
-                    )
-                    G.add_edge(
-                        node_base, node_fit_noisy,
-                        weight=0.5, color=noisy_node_color,
-                        edge_type="Noise_SO", is_noisy=True,
-                    )
-
-            # -------- temporal edge --------
-            if prev_base is not None:
-                G.add_edge(
-                    prev_base, node_base,
-                    weight=0.5, color=edge_color,
-                    edge_type="STN_SO", is_noisy=False,
-                    evals=cumulative_evals[i] if i < len(cumulative_evals) else 0,
-                )
-            prev_base = node_base
-
-
-def add_prior_noise_stn_v3(
-    G: nx.MultiDiGraph,
-    all_run_trajectories: List,
-    edge_color: str,
-    series_idx: int,
-    noisy_node_color: str = 'grey',
-    dedup: bool = False
-) -> None:
-    """
-    Add single-objective STN nodes with two kinds of noisy variant nodes (V3).
-
-    Same as V2 except the fitness-noisy nodes use noisy_variant_fitnesses
-    (multiple values per solution from all evaluations) instead of
-    unique_rep_noisy_fits (single value per solution).
-
-    For each unique solution (base node with true fitness) this creates:
-      1) "Solution-noisy" nodes: use noisy_sol_variants (perturbed solutions)
-         but keep the *true* fitness of the base node.
-      2) "Fitness-noisy" nodes: use the *original* (unperturbed) solution
-         but with noisy_variant_fitnesses (one node per evaluation).
-    Both kinds are connected to the base node via noise edges.
-    Consecutive base nodes are connected by temporal edges.
-
-    Args:
-        G: NetworkX MultiDiGraph to modify
-        all_run_trajectories: List of runs, each a 7-element list:
-            [rep_sols, rep_fits, rep_noisy_fits, sol_iterations,
-             sol_transitions, noisy_sol_variants, noisy_variant_fitnesses]
-        edge_color: Color for temporal edges (algorithm color)
-        series_idx: Index of the algorithm series
-        noisy_node_color: Color for noise edges
-        dedup: If True, deduplicate solution-noisy variants per base node
-    """
-    for run_idx, entry in enumerate(all_run_trajectories):
-        if len(entry) < 7:
-            print(f"[Prior noise V3] Skipping entry with {len(entry)} elements, expected 7")
-            continue
-
-        rep_sols, rep_fits, rep_noisy_fits, sol_iterations, transitions, \
-            noisy_sol_variants, noisy_variant_fitnesses = entry[:7]
-        sol_evals = entry[12] if len(entry) > 12 else []
-        cumulative_evals = list(np.cumsum(sol_evals)) if sol_evals else []
-
-        if rep_sols is None:
-            continue
-
-        prev_base = None
-
-        for i, solution in enumerate(rep_sols):
-            true_fitness = rep_fits[i]
-
-            # -------- base node --------
-            node_base = f"STN_S{series_idx}_R{run_idx}_Sol{i}_True"
-            if node_base not in G.nodes:
-                G.add_node(
-                    node_base,
-                    type="STN_SO",
-                    is_noisy=False,
-                    solution=solution,
-                    fitness=true_fitness,
-                    iterations=sol_iterations[i] if i < len(sol_iterations) else 1,
-                    evals=sol_evals[i] if i < len(sol_evals) else 0,
-                    sol_idx=i,
-                    run_idx=run_idx,
-                    series_idx=series_idx,
-                    color=edge_color,
-                )
-
-            # -------- Type 1: solution-noisy nodes --------
-            # Perturbed solutions but with the TRUE fitness of the base node
-            variants = noisy_sol_variants[i] if i < len(noisy_sol_variants) else []
-
-            if dedup and variants:
-                seen = set()
-                deduped_variants = []
-                for v_sol in variants:
-                    v_key = tuple(v_sol)
-                    if v_key not in seen:
-                        seen.add(v_key)
-                        deduped_variants.append(v_sol)
-                variants = deduped_variants
-
-            for j, variant_sol in enumerate(variants):
-                node_noisy = f"STN_S{series_idx}_R{run_idx}_Sol{i}_SolVar{j}_Noisy"
-                if node_noisy not in G.nodes:
-                    G.add_node(
-                        node_noisy,
-                        type="STN_SO_Noise",
-                        is_noisy=True,
-                        solution=variant_sol,
-                        fitness=true_fitness,  # same fitness as base
-                        sol_idx=i,
-                        var_idx=j,
-                        run_idx=run_idx,
-                        series_idx=series_idx,
-                        color=edge_color,
-                    )
-                    G.add_edge(
-                        node_base, node_noisy,
-                        weight=0.5, color=noisy_node_color,
-                        edge_type="Noise_SO", is_noisy=True,
-                    )
-
-            # -------- Type 2: fitness-noisy nodes --------
-            # Same solution as base but with noisy_variant_fitnesses (multiple per solution)
-            variant_fits = noisy_variant_fitnesses[i] if i < len(noisy_variant_fitnesses) else []
-            if not isinstance(variant_fits, (list, tuple)):
-                variant_fits = [variant_fits]
-
-            if dedup and variant_fits:
-                variant_fits = list(set(variant_fits))
-
-            for k, nf in enumerate(variant_fits):
-                node_fit_noisy = f"STN_S{series_idx}_R{run_idx}_Sol{i}_FitVar{k}_Noisy"
-                if node_fit_noisy not in G.nodes:
-                    G.add_node(
-                        node_fit_noisy,
-                        type="STN_SO_Noise",
-                        is_noisy=True,
-                        solution=solution,  # same solution as base
-                        fitness=nf,         # noisy fitness from variant evaluations
-                        sol_idx=i,
-                        var_idx=k,
-                        run_idx=run_idx,
-                        series_idx=series_idx,
-                        color=edge_color,
-                    )
-                    G.add_edge(
-                        node_base, node_fit_noisy,
-                        weight=0.5, color=noisy_node_color,
-                        edge_type="Noise_SO", is_noisy=True,
-                    )
-
-            # -------- temporal edge --------
-            if prev_base is not None:
-                G.add_edge(
-                    prev_base, node_base,
-                    weight=0.5, color=edge_color,
-                    edge_type="STN_SO", is_noisy=False,
-                    evals=cumulative_evals[i] if i < len(cumulative_evals) else 0,
-                )
-            prev_base = node_base
-
-
 def add_prior_noise_stn_v4(
     G: nx.MultiDiGraph,
     all_run_trajectories: List,
@@ -748,12 +345,9 @@ def add_prior_noise_stn_v4(
          Differs in x/y position (Hamming distance) but same z.
     Both connected to base via noise edges.
     Consecutive base nodes connected by temporal edges.
-    Dedup applies to solution-noisy nodes (from noisy_sol_variants).
-
     Entry format (8 elements):
         [rep_sols, rep_fits, rep_noisy_fits, sol_iterations,
-         sol_transitions, noisy_sol_variants, noisy_variant_fitnesses,
-         rep_noisy_sols]
+         sol_transitions, _, _, rep_noisy_sols]
     """
     for run_idx, entry in enumerate(all_run_trajectories):
         if len(entry) < 8:
@@ -761,7 +355,11 @@ def add_prior_noise_stn_v4(
             continue
 
         rep_sols, rep_fits, rep_noisy_fits, sol_iterations, transitions, \
-            noisy_sol_variants, noisy_variant_fitnesses, rep_noisy_sols = entry[:8]
+            _, fitness_boxplot_stats, rep_noisy_sols = entry[:8]
+        estimated_fits_adopted = entry[8] if len(entry) > 8 else []
+        estimated_fits_discarded = entry[9] if len(entry) > 9 else []
+        count_fits_adopted = entry[10] if len(entry) > 10 else []
+        count_fits_discarded = entry[11] if len(entry) > 11 else []
         sol_evals = entry[12] if len(entry) > 12 else []
         cumulative_evals = list(np.cumsum(sol_evals)) if sol_evals else []
 
@@ -788,6 +386,11 @@ def add_prior_noise_stn_v4(
                     run_idx=run_idx,
                     series_idx=series_idx,
                     color=edge_color,
+                    fitness_boxplot_stats=fitness_boxplot_stats[i] if i < len(fitness_boxplot_stats) else None,
+                    estimated_fitness_adopted=estimated_fits_adopted[i] if i < len(estimated_fits_adopted) else None,
+                    estimated_fitness_discarded=estimated_fits_discarded[i] if i < len(estimated_fits_discarded) else None,
+                    count_estimated_adopted=count_fits_adopted[i] if i < len(count_fits_adopted) else None,
+                    count_estimated_discarded=count_fits_discarded[i] if i < len(count_fits_discarded) else None,
                 )
 
             # -------- Type 1: fitness-noisy node --------
@@ -874,7 +477,11 @@ def add_prior_noise_stn_v5(
             continue
 
         rep_sols, rep_fits, rep_noisy_fits, sol_iterations, transitions, \
-            noisy_sol_variants, noisy_variant_fitnesses, rep_noisy_sols = entry[:8]
+            _, fitness_boxplot_stats, rep_noisy_sols = entry[:8]
+        estimated_fits_adopted = entry[8] if len(entry) > 8 else []
+        estimated_fits_discarded = entry[9] if len(entry) > 9 else []
+        count_fits_adopted = entry[10] if len(entry) > 10 else []
+        count_fits_discarded = entry[11] if len(entry) > 11 else []
         sol_evals = entry[12] if len(entry) > 12 else []
         cumulative_evals = list(np.cumsum(sol_evals)) if sol_evals else []
 
@@ -901,6 +508,11 @@ def add_prior_noise_stn_v5(
                     run_idx=run_idx,
                     series_idx=series_idx,
                     color=edge_color,
+                    fitness_boxplot_stats=fitness_boxplot_stats[i] if i < len(fitness_boxplot_stats) else None,
+                    estimated_fitness_adopted=estimated_fits_adopted[i] if i < len(estimated_fits_adopted) else None,
+                    estimated_fitness_discarded=estimated_fits_discarded[i] if i < len(estimated_fits_discarded) else None,
+                    count_estimated_adopted=count_fits_adopted[i] if i < len(count_fits_adopted) else None,
+                    count_estimated_discarded=count_fits_discarded[i] if i < len(count_fits_discarded) else None,
                 )
 
             # -------- noisy node: noisy solution + noisy fitness --------

@@ -172,6 +172,7 @@ def hydra_algo_data_single(prob_info: Dict[str, Any],
         "rep_estimated_true_fits_whendiscarded": logger.representative_estimated_true_fits_whendiscarded,
         "count_estimated_fits_whenadopted": logger.count_estimated_fits_whenadopted,
         "count_estimated_fits_whendiscarded": logger.count_estimated_fits_whendiscarded,
+        "rep_fitness_boxplot_stats": logger.representative_fitness_boxplot_stats,
         "sol_iterations": logger.solution_iterations,
         "sol_iterations_evals": logger.solution_evals,
         "sol_transitions": logger.solution_transitions,
@@ -355,6 +356,7 @@ def enrich_df_with_payloads(df: pd.DataFrame) -> pd.DataFrame:
     df["sol_iterations_evals"] = None
     df["sol_transitions"] = None
     df["rep_noisy_sols"] = None
+    df["rep_fitness_boxplot_stats"] = None
 
     for idx, row in df.iterrows():
         payload_path = row.get("payload_path")
@@ -380,6 +382,7 @@ def enrich_df_with_payloads(df: pd.DataFrame) -> pd.DataFrame:
         df.at[idx, "sol_iterations_evals"] = payload.get("sol_iterations_evals", [])
         df.at[idx, "sol_transitions"] = payload.get("sol_transitions", [])
         df.at[idx, "rep_noisy_sols"] = payload.get("rep_noisy_sols", [])
+        df.at[idx, "rep_fitness_boxplot_stats"] = payload.get("rep_fitness_boxplot_stats", [])
 
     return df
 

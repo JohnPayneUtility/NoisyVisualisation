@@ -402,7 +402,7 @@ def create_estimated_fitness_traces(
         for node, attr in G.nodes(data=True):
             if node not in pos:
                 continue
-            if attr.get('type') != 'STN':
+            if attr.get('type') not in ('STN', 'STN_SO'):
                 continue
 
             est_fit = attr.get(attr_key)
@@ -467,14 +467,20 @@ def create_boxplot_traces(
         if node in fitness_dict and node in node_noise:
             x, y = pos[node][:2]
             base_z = fitness_dict[node]
-            noise = np.array(node_noise[node])
+            val = node_noise[node]
 
-            # Compute quartiles and extremes
-            min_val = np.min(noise)
-            q1 = np.percentile(noise, 25)
-            med = np.median(noise)
-            q3 = np.percentile(noise, 75)
-            max_val = np.max(noise)
+            # Accept either a pre-computed 5-tuple or a raw list of values
+            if isinstance(val, tuple) and len(val) == 5:
+                min_val, q1, med, q3, max_val = val
+            elif hasattr(val, '__len__') and len(val) >= 2:
+                arr = np.array(val, dtype=float)
+                min_val = float(np.min(arr))
+                q1 = float(np.percentile(arr, 25))
+                med = float(np.median(arr))
+                q3 = float(np.percentile(arr, 75))
+                max_val = float(np.max(arr))
+            else:
+                continue
 
             # Map to z values
             if max_val == min_val:
@@ -783,11 +789,11 @@ def build_all_traces(
         stn_node_noise = {}
         stn_fitness_dict = {}
         for node, attr in G.nodes(data=True):
-            if attr.get('type') != 'STN' or node not in pos:
+            if attr.get('type') not in ('STN', 'STN_SO') or node not in pos:
                 continue
-            variant_fits = attr.get('noisy_variant_fitnesses', [])
-            if len(variant_fits) > 1:
-                stn_node_noise[node] = variant_fits
+            boxplot_stats = attr.get('fitness_boxplot_stats')
+            if boxplot_stats is not None:
+                stn_node_noise[node] = boxplot_stats
                 stn_fitness_dict[node] = attr.get('fitness', 0)
         if stn_node_noise:
             stn_boxplot_traces = create_boxplot_traces(pos, stn_node_noise, stn_fitness_dict, config)

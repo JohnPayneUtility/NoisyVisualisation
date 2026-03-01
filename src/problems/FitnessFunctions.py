@@ -221,7 +221,7 @@ def eval_noisy_kp_v2(individual, items_dict, capacity, noise_intensity=0, penalt
 
     return (noisy_fitness,)
 
-def eval_noisy_kp_prior(individual, items_dict, capacity, noise_intensity=0, penalty=1):
+def eval_noisy_kp_prior_bitflip(individual, items_dict, capacity, noise_intensity=0, penalty=1):
     """
     Calculates fitness for knapsack problem with prior noise.
 
@@ -246,6 +246,51 @@ def eval_noisy_kp_prior(individual, items_dict, capacity, noise_intensity=0, pen
 
     # Create noisy (perturbed) solution and calculate its fitness
     noisy_individual, _ = random_bit_flip(list(individual), n_flips=noise_intensity)
+    noisy_weight = sum(items_dict[i][1] * noisy_individual[i] for i in range(n_items))
+    noisy_value = sum(items_dict[i][0] * noisy_individual[i] for i in range(n_items))
+
+    if noisy_weight > capacity:
+        if penalty == 1:
+            noisy_fitness = capacity - noisy_weight
+        else:
+            noisy_fitness = 0
+    else:
+        noisy_fitness = noisy_value
+
+    # Log the evaluation if logger is active
+    # For prior noise: different solutions, with their respective fitnesses
+    logger = get_active_logger()
+    if logger:
+        logger.log_noisy_eval(individual, noisy_individual, true_fitness, noisy_fitness)
+
+    return (noisy_fitness,)
+
+def eval_noisy_kp_prior_bitwise(individual, items_dict, capacity, noise_intensity=0, penalty=1):
+    """
+    Calculates fitness for knapsack problem with prior noise.
+
+    The individual is perturbed (bits flipped) before evaluation.
+    If a logger is active, the original and noisy solutions are recorded.
+    Note: For prior noise, original and noisy individual differ,
+    true_fitness is for original, noisy_fitness is for perturbed.
+    """
+    n_items = len(individual)
+    p = noise_intensity / n_items
+
+    # Calculate true fitness of original (unperturbed) solution
+    orig_weight = sum(items_dict[i][1] * individual[i] for i in range(n_items))
+    orig_value = sum(items_dict[i][0] * individual[i] for i in range(n_items))
+
+    if orig_weight > capacity:
+        if penalty == 1:
+            true_fitness = capacity - orig_weight
+        else:
+            true_fitness = 0
+    else:
+        true_fitness = orig_value
+
+    # Create noisy (perturbed) solution and calculate its fitness
+    noisy_individual = [1 - b if random.random() < p else b for b in individual]
     noisy_weight = sum(items_dict[i][1] * noisy_individual[i] for i in range(n_items))
     noisy_value = sum(items_dict[i][0] * noisy_individual[i] for i in range(n_items))
 

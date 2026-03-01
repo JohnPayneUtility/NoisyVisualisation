@@ -9,7 +9,7 @@ def main():
     args = p.parse_args()
 
     cfg_dir = pathlib.Path(args.config_dir).resolve()
-    files = sorted(cfg_dir.glob(args.pattern))
+    files = sorted(cfg_dir.rglob(args.pattern))
     if not files:
         raise SystemExit(f"No configs matching {args.pattern} in {cfg_dir}")
 

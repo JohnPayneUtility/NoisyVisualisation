@@ -7,6 +7,22 @@ from dataclasses import dataclass, field
 from statistics import median
 from typing import Any, Dict, List, Optional, Tuple
 
+import numpy as np
+
+
+def _compute_boxplot_stats(fits: List[float]) -> Optional[Tuple[float, float, float, float, float]]:
+    """Return (min, Q1, median, Q3, max) or None if fewer than 2 values."""
+    if len(fits) < 2:
+        return None
+    arr = np.array(fits, dtype=float)
+    return (
+        float(np.min(arr)),
+        float(np.percentile(arr, 25)),
+        float(np.median(arr)),
+        float(np.percentile(arr, 75)),
+        float(np.max(arr)),
+    )
+
 # ==============================
 # Module-level Logger Access
 # ==============================
@@ -482,6 +498,10 @@ class ExperimentLogger:
             ],
             'count_estimated_fits_whenadopted': [v.whenadopted_count for v in all_visits],
             'count_estimated_fits_whendiscarded': [v.whendiscarded_count for v in all_visits],
+            'representative_fitness_boxplot_stats': [
+                _compute_boxplot_stats(self._fit_history.get_fits(tuple(v.solution)))
+                for v in all_visits
+            ],
         }
         return self._trajectory_cache
 
@@ -545,6 +565,11 @@ class ExperimentLogger:
     def count_estimated_fits_whendiscarded(self) -> List[int]:
         """Number of noisy evaluations used to compute each whendiscarded estimate."""
         return self._build_trajectory_cache()['count_estimated_fits_whendiscarded']
+
+    @property
+    def representative_fitness_boxplot_stats(self) -> List[Optional[Tuple[float, float, float, float, float]]]:
+        """5-number summary (min, Q1, median, Q3, max) of all noisy evaluations per visited solution."""
+        return self._build_trajectory_cache()['representative_fitness_boxplot_stats']
 
     def get_trajectory_data(self):
         """
