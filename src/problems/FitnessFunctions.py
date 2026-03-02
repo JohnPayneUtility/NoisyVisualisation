@@ -144,22 +144,46 @@ def eval_noisy_kp_v2_simple(individual, items_dict, capacity, noise_intensity=0,
     return (value,) # Not over capacity return value
 
 def eval_noisy_kp_v1(individual, items_dict, capacity, noise_intensity=0, penalty=1):
-    """ Function calculates fitness for knapsack problem individual """
-    n_items = len(individual)
-    weight = sum(items_dict[i][1] * individual[i] for i in range(n_items)) # Calc solution weight
-    value = sum(items_dict[i][0] * individual[i] for i in range(n_items)) # Calc solution value
-    
-    noise = random.gauss(0, noise_intensity * mean_weight(items_dict))
-    value = value + noise
+    """
+    Calculates fitness for knapsack problem with posterior noise.
 
-    # Check if over capacity and return reduced value
+    Noise is added to the fitness value after evaluation (not to the solution).
+    If a logger is active, the evaluation is recorded.
+    Note: For posterior noise, original and noisy individual are the same,
+    but true_fitness and noisy_fitness differ.
+    """
+    n_items = len(individual)
+    weight = sum(items_dict[i][1] * individual[i] for i in range(n_items))
+    value = sum(items_dict[i][0] * individual[i] for i in range(n_items))
+
+    # Calculate true fitness (no noise)
     if weight > capacity:
         if penalty == 1:
-            value_with_penalty = capacity - weight
-            return (value_with_penalty,)
+            true_fitness = capacity - weight
         else:
-            return (0,)
-    return (value,) # Not over capacity return value
+            true_fitness = 0
+    else:
+        true_fitness = value
+
+    # Calculate noisy fitness
+    noise = random.gauss(0, noise_intensity * mean_weight(items_dict))
+    noisy_value = value + noise
+
+    if weight > capacity:
+        if penalty == 1:
+            noisy_fitness = capacity - weight
+        else:
+            noisy_fitness = 0
+    else:
+        noisy_fitness = noisy_value
+
+    # Log the evaluation if logger is active
+    # For posterior noise: same solution, different fitnesses
+    logger = get_active_logger()
+    if logger:
+        logger.log_noisy_eval(individual, individual, true_fitness, noisy_fitness)
+
+    return (noisy_fitness,)
 
 def eval_noisy_kp_v2_backup(individual, items_dict, capacity, noise_intensity=0, penalty=1):
     """ Function calculates fitness for knapsack problem individual """

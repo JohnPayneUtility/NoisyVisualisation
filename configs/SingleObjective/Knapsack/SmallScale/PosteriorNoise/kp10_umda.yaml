@@ -40,7 +40,7 @@ hydra:
   mode: MULTIRUN
   sweeper:
     params:
-      problem.fitness_params.noise_intensity: 0,1,2,3,4,5,6,7,8,9,10
+      problem.fitness_params.noise_intensity: 1,2,3,4,5
   sweep:
     dir: data/outputs
 
@@ -62,7 +62,7 @@ algo:
 # Problem Configuration
 # ==============================
 problem:
-  PID: f5_l-d_kp_15_375
+  PID: f1_l-d_kp_10_269
   prob_name: knapsack
   prob_type: discrete
   opt_goal: maximise
@@ -76,10 +76,10 @@ problem:
   # Problem loading
   loader:
     _target_: src.problems.ProblemScripts.load_problem_KP
-    filename: f5_l-d_kp_15_375
+    filename: f1_l-d_kp_10_269
   
   # Fitness function
-  fitness_fn: eval_noisy_kp_v2
+  fitness_fn: eval_noisy_kp_v1
   fitness_params:
     items_dict: null  # Will be set after problem loading
     capacity: null    # Will be set after problem loading

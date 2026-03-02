@@ -142,6 +142,8 @@ def add_stn_trajectories(
         count_fits_discarded = entry[11] if len(entry) > 11 else []
         sol_evals = entry[12] if len(entry) > 12 else []
         cumulative_evals = list(np.cumsum(sol_evals)) if sol_evals else []
+        alt_rep_sols = entry[13] if len(entry) > 13 else []
+        alt_rep_fits = entry[14] if len(entry) > 14 else []
 
         # Create nodes and store node labels in order for this run
         for i, solution in enumerate(unique_solutions):
@@ -186,6 +188,29 @@ def add_stn_trajectories(
             else:
                 node_label = stn_node_mapping[key]
                 print(f"DEBUG: Reusing STN node {node_label} for solution {solution_tuple}")
+
+            # Add alt representation node if enabled
+            if config.stn.show_alt_rep and alt_rep_sols and i < len(alt_rep_sols) and i < len(alt_rep_fits):
+                alt_sol = alt_rep_sols[i]
+                alt_fit = alt_rep_fits[i]
+                if alt_sol is not None and alt_fit is not None:
+                    alt_node_label = f"Alt_A{algo_idx}_R{run_idx}_Sol{i}"
+                    if alt_node_label not in G.nodes():
+                        G.add_node(
+                            alt_node_label,
+                            solution=alt_sol,
+                            fitness=alt_fit,
+                            color=edge_color,
+                            type="STN_ALT",
+                            iterations=0,
+                            evals=0,
+                        )
+                        G.add_edge(
+                            alt_node_label, node_label,
+                            weight=edge_size,
+                            color='red',
+                            edge_type='STN_ALT',
+                        )
 
             # Add noisy node for STN data (if desired)
             noisy_node_label = f"Noisy_{node_label}"
@@ -332,7 +357,9 @@ def add_prior_noise_stn_v4(
     edge_color: str,
     series_idx: int,
     noisy_node_color: str = 'grey',
-    dedup: bool = False
+    dedup: bool = False,
+    show_alt_rep: bool = False,
+    stn_node_min: float = 5.0,
 ) -> None:
     """
     Add single-objective STN nodes with two kinds of noisy nodes (V4).
@@ -362,6 +389,8 @@ def add_prior_noise_stn_v4(
         count_fits_discarded = entry[11] if len(entry) > 11 else []
         sol_evals = entry[12] if len(entry) > 12 else []
         cumulative_evals = list(np.cumsum(sol_evals)) if sol_evals else []
+        alt_rep_sols = entry[13] if len(entry) > 13 else []
+        alt_rep_fits = entry[14] if len(entry) > 14 else []
 
         if rep_sols is None:
             continue
@@ -392,6 +421,28 @@ def add_prior_noise_stn_v4(
                     count_estimated_adopted=count_fits_adopted[i] if i < len(count_fits_adopted) else None,
                     count_estimated_discarded=count_fits_discarded[i] if i < len(count_fits_discarded) else None,
                 )
+
+            # -------- alt representation node --------
+            if show_alt_rep and alt_rep_sols and i < len(alt_rep_sols) and i < len(alt_rep_fits):
+                alt_sol = alt_rep_sols[i]
+                alt_fit = alt_rep_fits[i]
+                if alt_sol is not None and alt_fit is not None:
+                    alt_node_label = f"AltRep_S{series_idx}_R{run_idx}_Sol{i}"
+                    if alt_node_label not in G.nodes():
+                        G.add_node(
+                            alt_node_label,
+                            solution=alt_sol,
+                            fitness=alt_fit,
+                            color=edge_color,
+                            type="STN_ALT",
+                            iterations=0,
+                            evals=0,
+                        )
+                        G.add_edge(
+                            alt_node_label, node_base,
+                            weight=0.5, color='red',
+                            edge_type='STN_ALT',
+                        )
 
             # -------- Type 1: fitness-noisy node --------
             # Same solution as base, noisy fitness
@@ -456,7 +507,9 @@ def add_prior_noise_stn_v5(
     edge_color: str,
     series_idx: int,
     noisy_node_color: str = 'grey',
-    dedup: bool = False
+    dedup: bool = False,
+    show_alt_rep: bool = False,
+    stn_node_min: float = 5.0,
 ) -> None:
     """
     Add single-objective STN nodes with one noisy node per base (V5).
@@ -484,6 +537,8 @@ def add_prior_noise_stn_v5(
         count_fits_discarded = entry[11] if len(entry) > 11 else []
         sol_evals = entry[12] if len(entry) > 12 else []
         cumulative_evals = list(np.cumsum(sol_evals)) if sol_evals else []
+        alt_rep_sols = entry[13] if len(entry) > 13 else []
+        alt_rep_fits = entry[14] if len(entry) > 14 else []
 
         if rep_sols is None:
             continue
@@ -514,6 +569,28 @@ def add_prior_noise_stn_v5(
                     count_estimated_adopted=count_fits_adopted[i] if i < len(count_fits_adopted) else None,
                     count_estimated_discarded=count_fits_discarded[i] if i < len(count_fits_discarded) else None,
                 )
+
+            # -------- alt representation node --------
+            if show_alt_rep and alt_rep_sols and i < len(alt_rep_sols) and i < len(alt_rep_fits):
+                alt_sol = alt_rep_sols[i]
+                alt_fit = alt_rep_fits[i]
+                if alt_sol is not None and alt_fit is not None:
+                    alt_node_label = f"AltRep_S{series_idx}_R{run_idx}_Sol{i}"
+                    if alt_node_label not in G.nodes():
+                        G.add_node(
+                            alt_node_label,
+                            solution=alt_sol,
+                            fitness=alt_fit,
+                            color=edge_color,
+                            type="STN_ALT",
+                            iterations=0,
+                            evals=0,
+                        )
+                        G.add_edge(
+                            alt_node_label, node_base,
+                            weight=0.5, color='red',
+                            edge_type='STN_ALT',
+                        )
 
             # -------- noisy node: noisy solution + noisy fitness --------
             noisy_sol = rep_noisy_sols[i] if i < len(rep_noisy_sols) else None

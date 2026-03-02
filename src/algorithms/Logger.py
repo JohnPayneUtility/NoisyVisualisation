@@ -193,6 +193,8 @@ class VisitRecord:
     whenadopted_count: int
     whendiscarded_median: Optional[float] # Median of all noisy fits up to visit-end gen
     whendiscarded_count: int
+    alternative_rep_sol: Optional[List] = None   # Algorithm-specific alternative representative (e.g. prob vector rep for UMDA)
+    alternative_rep_fit: Optional[float] = None  # Fitness of the alternative representative
 
 
 @dataclass
@@ -284,6 +286,10 @@ class ExperimentLogger:
     # Total generations logged (returned by __len__)
     _total_gens: int = field(default=0, init=False, repr=False)
 
+    # Alternative representative solution for the current open visit (e.g. prob vector rep for UMDA)
+    _cur_alternative_rep_sol: Optional[List] = field(default=None, init=False, repr=False)
+    _cur_alternative_rep_fit: Optional[float] = field(default=None, init=False, repr=False)
+
     def __post_init__(self):
         """Initialise the fit-history backend based on nvme_path."""
         if self.nvme_path is not None:
@@ -296,7 +302,8 @@ class ExperimentLogger:
     # ==============================
 
     def log_generation(self, generation: int, population, best_solution,
-                       best_fitness: float, evals: int = None):
+                       best_fitness: float, evals: int = None,
+                       alternative_rep_sol=None, alternative_rep_fit=None):
         """
         Log the state at the end of a generation.
 
@@ -322,7 +329,9 @@ class ExperimentLogger:
             self._last_true_fitness = true_fitness
             self._open_visit(
                 sol_tuple, best_solution, best_fitness, true_fitness, noisy_sol,
-                generation, evals
+                generation, evals,
+                alternative_rep_sol=alternative_rep_sol,
+                alternative_rep_fit=alternative_rep_fit,
             )
         elif sol_tuple != self._cur_sol:
             # Solution changed — close the current visit using the PREVIOUS generation's
@@ -336,7 +345,9 @@ class ExperimentLogger:
             self._last_true_fitness = true_fitness
             self._open_visit(
                 sol_tuple, best_solution, best_fitness, true_fitness, noisy_sol,
-                generation, evals
+                generation, evals,
+                alternative_rep_sol=alternative_rep_sol,
+                alternative_rep_fit=alternative_rep_fit,
             )
         else:
             # Same solution — continue the current visit
@@ -408,7 +419,8 @@ class ExperimentLogger:
 
     def _open_visit(self, sol_tuple: Tuple, solution, noisy_fitness: float,
                     true_fitness: float, noisy_sol: Optional[List],
-                    start_gen: int, evals: int):
+                    start_gen: int, evals: int,
+                    alternative_rep_sol=None, alternative_rep_fit=None):
         """Open a new visit for a newly-adopted best solution."""
         self._cur_sol = sol_tuple
         self._cur_solution = list(solution)
@@ -418,6 +430,8 @@ class ExperimentLogger:
         self._cur_noisy_fitness = noisy_fitness
         self._cur_noisy_sol = noisy_sol
         self._cur_evals_before = self._last_closed_evals
+        self._cur_alternative_rep_sol = alternative_rep_sol
+        self._cur_alternative_rep_fit = alternative_rep_fit
         # Fit history has already been flushed for this generation, so get_len
         # correctly reflects all evals up to and including the adoption generation
         self._whenadopted_n = self._fit_history.get_len(sol_tuple)
@@ -441,6 +455,8 @@ class ExperimentLogger:
             whenadopted_count=len(whenadopted_fits),
             whendiscarded_median=median(whendiscarded_fits) if whendiscarded_fits else None,
             whendiscarded_count=len(whendiscarded_fits),
+            alternative_rep_sol=self._cur_alternative_rep_sol,
+            alternative_rep_fit=self._cur_alternative_rep_fit,
         ))
         self._last_closed_evals = end_evals
 
@@ -477,6 +493,8 @@ class ExperimentLogger:
                 whenadopted_count=len(whenadopted_fits),
                 whendiscarded_median=median(whendiscarded_fits) if whendiscarded_fits else None,
                 whendiscarded_count=len(whendiscarded_fits),
+                alternative_rep_sol=self._cur_alternative_rep_sol,
+                alternative_rep_fit=self._cur_alternative_rep_fit,
             ))
 
         self._trajectory_cache = {
@@ -502,6 +520,8 @@ class ExperimentLogger:
                 _compute_boxplot_stats(self._fit_history.get_fits(tuple(v.solution)))
                 for v in all_visits
             ],
+            'alternative_rep_sols': [v.alternative_rep_sol for v in all_visits],
+            'alternative_rep_fits': [v.alternative_rep_fit for v in all_visits],
         }
         return self._trajectory_cache
 
@@ -571,6 +591,16 @@ class ExperimentLogger:
         """5-number summary (min, Q1, median, Q3, max) of all noisy evaluations per visited solution."""
         return self._build_trajectory_cache()['representative_fitness_boxplot_stats']
 
+    @property
+    def alternative_rep_sols(self) -> List[Optional[List]]:
+        """Algorithm-specific alternative representative solution at each visit (e.g. prob vector rep for UMDA), or None."""
+        return self._build_trajectory_cache()['alternative_rep_sols']
+
+    @property
+    def alternative_rep_fits(self) -> List[Optional[float]]:
+        """Fitness of the alternative representative solution at each visit, or None."""
+        return self._build_trajectory_cache()['alternative_rep_fits']
+
     def get_trajectory_data(self):
         """
         Extract trajectory data for plotting (backwards compatibility).
@@ -618,6 +648,8 @@ class ExperimentLogger:
         self._prev_evals = 0
         self._last_closed_evals = 0
         self._total_gens = 0
+        self._cur_alternative_rep_sol = None
+        self._cur_alternative_rep_fit = None
 
     def __len__(self):
         """Return total number of generations logged."""

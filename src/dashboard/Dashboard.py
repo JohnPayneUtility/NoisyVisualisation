@@ -581,7 +581,9 @@ def process_STN_data(df, mo_plot_type, group_cols=['algo_name', 'noise']):
                 row.get('rep_estimated_fits_whendiscarded', []),
                 row.get('count_estimated_fits_whenadopted', []),
                 row.get('count_estimated_fits_whendiscarded', []),
-                row.get('sol_iterations_evals', []),  # index 12: evals-based iterations
+                row.get('sol_iterations_evals', []),      # index 12: evals-based iterations
+                row.get('alternative_rep_sols', []),      # index 13: alt representation solutions
+                row.get('alternative_rep_fits', []),      # index 14: alt representation fitnesses
             ])
 
         STN_data.append(runs)
@@ -876,7 +878,9 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
 
             add_prior_noise_stn_v4(
                 G, selected_trajectories, edge_color, idx, config.noisy_node_color,
-                dedup=config.stn.dedup_prior_noise
+                dedup=config.stn.dedup_prior_noise,
+                show_alt_rep=config.stn.show_alt_rep,
+                stn_node_min=config.node_size.stn_min,
             )
 
             summary_str = generate_run_summary_string(selected_trajectories)
@@ -912,7 +916,9 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
 
             add_prior_noise_stn_v5(
                 G, selected_trajectories, edge_color, idx, config.noisy_node_color,
-                dedup=config.stn.dedup_prior_noise
+                dedup=config.stn.dedup_prior_noise,
+                show_alt_rep=config.stn.show_alt_rep,
+                stn_node_min=config.node_size.stn_min,
             )
 
             summary_str = generate_run_summary_string(selected_trajectories)

@@ -24,7 +24,7 @@ run:
     "9": 86078
     "10": 93638
   seed: 1
-  num_runs: 10
+  num_runs: 50
   parallel: true
 
 # ==============================
@@ -40,7 +40,7 @@ hydra:
   mode: MULTIRUN
   sweeper:
     params:
-      problem.fitness_params.noise_intensity: 0,1,2,3,4,5,6,7,8,9,10
+      problem.fitness_params.noise_intensity: 0,1,2,3,4,5
   sweep:
     dir: data/outputs
 
@@ -48,15 +48,26 @@ hydra:
 # Algorithm Configuration
 # ==============================
 algo:
-  name: PCEA
-  type: PCEA
+  name: OnePlusOneEA
+  type: MuPlusLamdaEA
   use_dynamic_pop_size: false
-
+  static_indpb: 0.01
+  use_dynamic_mutation: true
+  
+  # Dynamic mutation rate function
+  indpb_fn:
+    _target_: run_helpers.inverse_n_mut_rate
+    n_items: null  # Will be resolved after problem loading
+    noise: null
+  
   # Algorithm initialization parameters
   init_args:
-    _target_: src.algorithms.Algorithms.PCEA
-    pop_size: 461
-
+    _target_: src.algorithms.Algorithms.MuPlusLamdaEA
+    mu: 1
+    lam: 1
+    mutate_function: "probFlipBit"
+    mutate_params:
+      indpb: null  # Will be resolved dynamically
 
 # ==============================
 # Problem Configuration

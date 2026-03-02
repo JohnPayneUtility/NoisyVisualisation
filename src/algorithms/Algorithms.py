@@ -84,6 +84,7 @@ def umda_update_full(len_sol, population, pop_size, select_size, toolbox):
     # Calculate marginal probabilities for binary solutions (assumes binary values are either 0 or 1)
     if gene_type == int:
         probabilities = np.mean(selected_population, axis=0)
+        prob_vector = probabilities.tolist()
 
         new_solutions = []
         for _ in range(pop_size):
@@ -96,7 +97,8 @@ def umda_update_full(len_sol, population, pop_size, select_size, toolbox):
         selected_array = np.array(selected_population)
         means = np.mean(selected_array, axis=0)
         stds = np.std(selected_array, axis=0)
-        
+        prob_vector = means.tolist()
+
         new_solutions = []
         for _ in range(pop_size):
             new_solution = np.random.normal(means, stds, len_sol)
@@ -104,7 +106,7 @@ def umda_update_full(len_sol, population, pop_size, select_size, toolbox):
             new_solutions.append(new_solution)
     else:
         raise ValueError("Unsupported gene type. Expected int or float.")
-    return new_solutions
+    return new_solutions, prob_vector
 
 # ==============================
 # Base Algorithm Class
@@ -213,7 +215,7 @@ class OptimisationAlgorithm:
                 self._print_progress()
                 next_print += self.progress_print_interval
 
-    def record_state(self, population):
+    def record_state(self, population, alternative_rep_sol=None, alternative_rep_fit=None):
         """Record the current population state using the logger."""
         best_individual = tools.selBest(population, 1)[0]
         best_fitness = best_individual.fitness.values[0]  # noisy fitness seen by algorithm
@@ -225,7 +227,9 @@ class OptimisationAlgorithm:
             population=population,
             best_solution=best_individual,
             best_fitness=best_fitness,
-            evals=self.evals
+            evals=self.evals,
+            alternative_rep_sol=alternative_rep_sol,
+            alternative_rep_fit=alternative_rep_fit,
         )
 
 # ==============================
@@ -336,11 +340,11 @@ class PCEA(OptimisationAlgorithm):
 # ==============================
 
 class UMDA(OptimisationAlgorithm):
-    def __init__(self, 
+    def __init__(self,
                  pop_size: int,
                  select_size: Optional[int] = None,
                  **kwargs): # other parameters passed to the base class
-        
+
         # Initialize common components via the base class
         super().__init__(**kwargs)
         self.gens = 0
@@ -354,16 +358,80 @@ class UMDA(OptimisationAlgorithm):
 
         # Create the initial population of size mu
         self.initialise_population(self.pop_size)
+        self._gene_type = type(self.population[0][0])
+
+        # Compute initial prob_vector from the initial population and record its representative
+        if self._gene_type == int:
+            init_prob_vector = np.mean(self.population, axis=0).tolist()
+        else:
+            init_prob_vector = np.mean(np.array(self.population), axis=0).tolist()
+        self._prob_rep, self._prob_rep_fitness = self._compute_prob_rep(init_prob_vector)
+
         self.record_state(self.population)
+
+    def _compute_prob_rep(self, prob_vector):
+        """Derive a representative solution from the probability vector and evaluate its fitness.
+
+        For binary problems: threshold each probability at 0.5 → 0 or 1.
+        For continuous problems: the means are used directly as the representative.
+
+        Returns the TRUE fitness (not noisy). The evaluation is performed to trigger
+        fitness-function logging, but the entry is immediately removed from the
+        logger's generation buffer so it does not pollute estimated-fitness medians
+        or box-plot statistics for that solution.
+        """
+        if self._gene_type == int:
+            prob_rep_sol = [1 if p >= 0.5 else 0 for p in prob_vector]
+        else:
+            prob_rep_sol = list(prob_vector)
+
+        sol_tuple = tuple(prob_rep_sol)
+
+        # Snapshot how many entries exist for this solution before we evaluate,
+        # so we can identify (and remove) exactly the entries added by this call.
+        n_before = len(self.logger._gen_evals.get(sol_tuple, []))
+
+        noisy_fit = self.toolbox.evaluate(creator.Individual(prob_rep_sol))[0]
+
+        # Read the true fitness from newly logged entries, then remove them so
+        # the evaluation does not count toward estimated-fitness medians / box plots.
+        records = self.logger._gen_evals.get(sol_tuple, [])
+        new_records = records[n_before:]
+        if new_records:
+            true_fit = new_records[-1][2]  # (noisy_fitness, noisy_sol, true_fitness)
+            if n_before == 0:
+                del self.logger._gen_evals[sol_tuple]
+            else:
+                self.logger._gen_evals[sol_tuple] = records[:n_before]
+        else:
+            # Fitness function did not log (e.g. noiseless problem); noisy == true
+            true_fit = noisy_fit
+
+        return prob_rep_sol, true_fit
+
+    def record_state(self, population):
+        """Override to pass the probability vector representative as the alternative rep solution."""
+        super().record_state(population,
+                             alternative_rep_sol=self._prob_rep,
+                             alternative_rep_fit=self._prob_rep_fitness)
 
     def perform_generation(self):
         """Perform generation of UMDA Evolutionary Algorithm"""
-        self.population = umda_update_full(self.sol_length, self.population, self.pop_size, self.select_size, self.toolbox)
+        self.population, prob_vector = umda_update_full(
+            self.sol_length, self.population, self.pop_size, self.select_size, self.toolbox
+        )
 
         fitnesses = list(map(self.toolbox.evaluate, self.population))
         for ind, fit in zip(self.population, fitnesses):
             ind.fitness.values = fit
         self.evals += self.pop_size
+
+        # Only compute the prob_rep when the best solution actually changes —
+        # the logger only records it at visit-open time, so there's no point
+        # evaluating it on generations where the representative stays the same
+        new_best_tuple = tuple(tools.selBest(self.population, 1)[0])
+        if new_best_tuple != self.logger._cur_sol:
+            self._prob_rep, self._prob_rep_fitness = self._compute_prob_rep(prob_vector)
 
 class CompactGA(OptimisationAlgorithm):
     def __init__(self, 

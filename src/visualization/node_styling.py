@@ -116,6 +116,9 @@ def apply_node_sizes(
             G.nodes[node]["size"] = node_size
             continue  # skip remaining checks, already set size
 
+        elif data.get('type') == 'STN_ALT':
+            node_size = STN_node_min
+
         elif "STN" in node:
             # For STN/SO nodes: weight comes from the 'iterations' attribute
             iter_val = G.nodes[node].get('iterations', 1)

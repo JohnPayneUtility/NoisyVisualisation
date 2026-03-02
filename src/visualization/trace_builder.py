@@ -121,7 +121,7 @@ def create_edge_traces(
         # Determine opacity based on edge type
         if edge_type == 'LON':
             edge_opacity = LON_edge_opacity
-        elif edge_type in ('STN', 'STN_SO'):
+        elif edge_type in ('STN', 'STN_SO', 'STN_ALT'):
             edge_opacity = STN_edge_opacity
         elif edge_type in ('Noise', 'Noise_SO'):
             edge_opacity = STN_edge_opacity
@@ -220,6 +220,9 @@ def create_edge_traces(
                 display_color = data.get('color', 'grey')
             elif edge_type in ('STN', 'STN_SO'):
                 line_width = STN_edge_size_slider
+            elif edge_type == 'STN_ALT':
+                line_width = STN_edge_size_slider
+                display_color = data.get('color', 'red')
 
             edge_trace = go.Scatter3d(
                 x=[x0, x1],
@@ -235,7 +238,7 @@ def create_edge_traces(
             mid_x, mid_y, mid_z = (x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2
 
         # Add edge labels (Hamming distance) if requested
-        if should_label_edge(u, v, STN_hamming, LON_hamming):
+        if edge_type != 'STN_ALT' and should_label_edge(u, v, STN_hamming, LON_hamming):
             try:
                 sol_u = G.nodes[u].get('solution')
                 sol_v = G.nodes[v].get('solution')
