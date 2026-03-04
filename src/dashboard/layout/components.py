@@ -724,5 +724,11 @@ def create_main_plot_section():
     return [
         dcc.Graph(id='trajectory-plot'),
         html.Div(id="print_STN_series_labels", style=SELECTION_OUTPUT_STYLE),
+        html.H3("Plot Information"),
+        dcc.Checklist(
+            id='show-text-info',
+            options=[{'label': 'Show text info', 'value': 'show'}],
+            value=['show'],
+        ),
         html.Div(id='run-print-info', style=MONOSPACE_STYLE),
     ]

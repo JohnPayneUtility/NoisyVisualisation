@@ -230,6 +230,7 @@ class OptimisationAlgorithm:
             evals=self.evals,
             alternative_rep_sol=alternative_rep_sol,
             alternative_rep_fit=alternative_rep_fit,
+            evaluate_fn=self.toolbox.evaluate,
         )
 
 # ==============================

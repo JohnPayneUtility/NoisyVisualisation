@@ -679,6 +679,17 @@ def process_STN_data(df, mo_plot_type, group_cols=['algo_name', 'noise']):
     return STN_data, STN_series, Noise_data, MO_data, MO_series, MO_data_PPP
 
 @app.callback(
+    Output('run-print-info', 'style'),
+    Input('show-text-info', 'value')
+)
+def toggle_run_print_info(value):
+    from .layout.styles import MONOSPACE_STYLE
+    if value and 'show' in value:
+        return MONOSPACE_STYLE
+    return {**MONOSPACE_STYLE, 'display': 'none'}
+
+
+@app.callback(
     Output('print_STN_series_labels', "children"),
     Input('STN_series_labels', 'data')
 )

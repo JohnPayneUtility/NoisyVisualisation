@@ -24,7 +24,7 @@ run:
     "9": 86078
     "10": 93638
   seed: 1
-  num_runs: 50
+  num_runs: 5
   parallel: true
 
 # ==============================
@@ -40,7 +40,7 @@ hydra:
   mode: MULTIRUN
   sweeper:
     params:
-      problem.fitness_params.noise_intensity: 0,1,2,3,4,5,6,7,8,9,10
+      problem.fitness_params.noise_intensity: 0,1,2,3,4,5
   sweep:
     dir: data/outputs
 

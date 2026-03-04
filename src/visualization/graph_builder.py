@@ -31,9 +31,14 @@ def generate_run_summary_string(selected_trajectories: List) -> str:
             lines.append(f"Skipping malformed entry in run {run_idx}")
             continue
         unique_solutions, unique_fitnesses, noisy_fitnesses, solution_iterations, transitions = entry[:5]
+        rep_noisy_sols = entry[7] if len(entry) > 7 else []
         lines.append(f"Run {run_idx}:")
         for i, solution in enumerate(unique_solutions):
-            lines.append(f"  Solution: {solution} | Fitness: {unique_fitnesses[i]} | Noisy Fitness: {noisy_fitnesses[i]}")
+            noisy_sol = rep_noisy_sols[i] if rep_noisy_sols and i < len(rep_noisy_sols) else None
+            lines.append(
+                f"  Solution: {solution} | Fitness: {unique_fitnesses[i]} | "
+                f"Noisy Fitness: {noisy_fitnesses[i]} | Noisy Solution: {noisy_sol}"
+            )
         lines.append("")  # Blank line between runs
     return "\n".join(lines)
 

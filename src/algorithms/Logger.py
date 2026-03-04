@@ -303,7 +303,8 @@ class ExperimentLogger:
 
     def log_generation(self, generation: int, population, best_solution,
                        best_fitness: float, evals: int = None,
-                       alternative_rep_sol=None, alternative_rep_fit=None):
+                       alternative_rep_sol=None, alternative_rep_fit=None,
+                       evaluate_fn=None):
         """
         Log the state at the end of a generation.
 
@@ -313,6 +314,11 @@ class ExperimentLogger:
         The generation buffer (_gen_evals) is flushed to the fit-history backend
         first so that get_len() / get_fits() reflect the current generation's data
         when _open_visit reads _whenadopted_n.
+
+        evaluate_fn: optional callable used as fallback in _get_eval_info when the
+        solution has no entry in _gen_evals (e.g. fitness function does not call
+        log_noisy_eval). It is called, the true fitness is read from the new record,
+        and the record is immediately removed so it does not affect statistics.
         """
         self._total_gens += 1
         self.current_generation = generation
@@ -325,7 +331,7 @@ class ExperimentLogger:
 
         if self._cur_sol is None:
             # First call — start the first visit
-            true_fitness, noisy_sol = self._get_eval_info(sol_tuple, best_fitness)
+            true_fitness, noisy_sol = self._get_eval_info(sol_tuple, best_fitness, evaluate_fn)
             self._last_true_fitness = true_fitness
             self._open_visit(
                 sol_tuple, best_solution, best_fitness, true_fitness, noisy_sol,
@@ -341,7 +347,7 @@ class ExperimentLogger:
                 n_at_visit_end=self._cur_sol_n_at_gen_end,
                 end_evals=self._prev_evals,
             )
-            true_fitness, noisy_sol = self._get_eval_info(sol_tuple, best_fitness)
+            true_fitness, noisy_sol = self._get_eval_info(sol_tuple, best_fitness, evaluate_fn)
             self._last_true_fitness = true_fitness
             self._open_visit(
                 sol_tuple, best_solution, best_fitness, true_fitness, noisy_sol,
@@ -400,19 +406,46 @@ class ExperimentLogger:
         if updates:
             self._fit_history.batch_append(updates)
 
-    def _get_eval_info(self, sol_tuple: Tuple, best_fitness: float
-                       ) -> Tuple[float, Optional[List]]:
+    def _get_eval_info(self, sol_tuple: Tuple, best_fitness: float,
+                       evaluate_fn=None) -> Tuple[float, Optional[List]]:
         """
         Look up true_fitness and noisy_sol for a solution from the current-gen buffer.
 
         Uses the last record for that solution (corresponding to the fitness value
         currently held by the DEAP individual after the final evaluate() call).
-        Falls back to (best_fitness, None) if no record exists in this generation.
+
+        If no record exists (e.g. fitness function does not call log_noisy_eval),
+        and evaluate_fn is provided, evaluates the solution, reads the true fitness
+        from the new record, then immediately removes it so it does not affect
+        estimated-fitness medians or box-plot statistics.
+
+        For fitness functions that do not log (noiseless), the returned value from
+        evaluate_fn is used directly as true_fitness.
+
+        Falls back to (best_fitness, None) if no evaluate_fn is provided.
         For posterior noise (noisy_sol is None), returns the original solution.
         """
         records = self._gen_evals.get(sol_tuple, [])
         if not records:
-            return best_fitness, None
+            if evaluate_fn is not None:
+                n_before = len(self._gen_evals.get(sol_tuple, []))
+                result = evaluate_fn(list(sol_tuple))
+                records = self._gen_evals.get(sol_tuple, [])
+                new_records = records[n_before:]
+                if new_records:
+                    _, noisy_sol, true_fitness = new_records[-1]
+                    # Remove the temporary record so it does not skew statistics
+                    if n_before == 0:
+                        del self._gen_evals[sol_tuple]
+                    else:
+                        self._gen_evals[sol_tuple] = records[:n_before]
+                    resolved_noisy_sol = list(sol_tuple) if noisy_sol is None else noisy_sol
+                    return true_fitness, resolved_noisy_sol
+                else:
+                    # Fitness function does not log; returned value is true fitness
+                    true_fitness = result[0] if isinstance(result, tuple) else float(result)
+                    return true_fitness, None
+            return 1000001, None
         _, noisy_sol, true_fitness = records[-1]
         resolved_noisy_sol = list(sol_tuple) if noisy_sol is None else noisy_sol
         return true_fitness, resolved_noisy_sol
