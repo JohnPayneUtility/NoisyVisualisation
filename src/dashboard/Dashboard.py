@@ -305,20 +305,22 @@ def display_stored_data(data):
 # 2D line plot
 @app.callback(
     Output('2DLinePlot', 'figure'),
-    Input('plot_2d_data', 'data')
+    Input('plot_2d_data', 'data'),
+    Input('so-fitness-mode', 'value')
 )
-def display_stored_data(data):
+def display_stored_data(data, fitness_mode):
     plot_df = pd.DataFrame(data)
-    plot = plot2d_line(plot_df)
+    plot = plot2d_line(plot_df, fitness_mode=fitness_mode or 'best')
     return plot
 # 2D box plot
 @app.callback(
     Output('2DBoxPlot', 'figure'),
-    Input('plot_2d_data', 'data')
+    Input('plot_2d_data', 'data'),
+    Input('so-fitness-mode', 'value')
 )
-def display_stored_data(data):
+def display_stored_data(data, fitness_mode):
     plot_df = pd.DataFrame(data)
-    plot = plot2d_box(plot_df)
+    plot = plot2d_box(plot_df, fitness_mode=fitness_mode or 'best')
     return plot
 
 # 2D line plot (multi-objective)

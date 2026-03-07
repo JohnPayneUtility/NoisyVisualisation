@@ -30,7 +30,7 @@ def OneMax_fitness(individual, noise_intensity=0):
 
     # Log the evaluation if logger is active
     logger = get_active_logger()
-    if logger:
+    if logger is not None:
         logger.log_noisy_eval(individual, individual, true_fitness, noisy_fitness)
 
     return (noisy_fitness,)
@@ -51,7 +51,7 @@ def OneMax_prior_bitflip_fitness(individual, noise_intensity=0):
 
     # Log the evaluation if logger is active
     logger = get_active_logger()
-    if logger:
+    if logger is not None:
         logger.log_noisy_eval(individual, noisy_individual, true_fitness, noisy_fitness)
 
     return (noisy_fitness,)
@@ -76,7 +76,7 @@ def OneMax_prior_bitwise_fitness(individual, noise_intensity=1):
 
     # Log the evaluation if logger is active
     logger = get_active_logger()
-    if logger:
+    if logger is not None:
         logger.log_noisy_eval(individual, noisy_individual, true_fitness, noisy_fitness)
 
     return (noisy_fitness,)
@@ -180,7 +180,7 @@ def eval_noisy_kp_v1(individual, items_dict, capacity, noise_intensity=0, penalt
     # Log the evaluation if logger is active
     # For posterior noise: same solution, different fitnesses
     logger = get_active_logger()
-    if logger:
+    if logger is not None:
         logger.log_noisy_eval(individual, individual, true_fitness, noisy_fitness)
 
     return (noisy_fitness,)
@@ -240,7 +240,7 @@ def eval_noisy_kp_v2(individual, items_dict, capacity, noise_intensity=0, penalt
     # Log the evaluation if logger is active
     # For posterior noise: same solution, different fitnesses
     logger = get_active_logger()
-    if logger:
+    if logger is not None:
         logger.log_noisy_eval(individual, individual, true_fitness, noisy_fitness)
 
     return (noisy_fitness,)
@@ -284,7 +284,7 @@ def eval_noisy_kp_prior_bitflip(individual, items_dict, capacity, noise_intensit
     # Log the evaluation if logger is active
     # For prior noise: different solutions, with their respective fitnesses
     logger = get_active_logger()
-    if logger:
+    if logger is not None:
         logger.log_noisy_eval(individual, noisy_individual, true_fitness, noisy_fitness)
 
     return (noisy_fitness,)
@@ -329,7 +329,7 @@ def eval_noisy_kp_prior_bitwise(individual, items_dict, capacity, noise_intensit
     # Log the evaluation if logger is active
     # For prior noise: different solutions, with their respective fitnesses
     logger = get_active_logger()
-    if logger:
+    if logger is not None:
         logger.log_noisy_eval(individual, noisy_individual, true_fitness, noisy_fitness)
 
     return (noisy_fitness,)
@@ -345,7 +345,7 @@ def rastrigin_eval(individual, amplitude=10, noise_intensity=0):
     noisy_fitness = true_fitness + random.gauss(0, noise_intensity)
 
     logger = get_active_logger()
-    if logger:
+    if logger is not None:
         logger.log_noisy_eval(individual, individual, true_fitness, noisy_fitness)
 
     return (noisy_fitness,)
@@ -357,7 +357,7 @@ def rastrigin_eval_2d(individual, amplitude=2, noise_intensity=0):
     noisy_fitness = true_fitness + random.gauss(0, noise_intensity)
 
     logger = get_active_logger()
-    if logger:
+    if logger is not None:
         logger.log_noisy_eval(individual, individual, true_fitness, noisy_fitness)
 
     return (noisy_fitness,)
@@ -393,7 +393,7 @@ def birastrigin_eval(individual, d=1, s=None, noise_intensity=0):
     noisy_fitness = true_fitness + random.gauss(0, noise_intensity)
 
     logger = get_active_logger()
-    if logger:
+    if logger is not None:
         logger.log_noisy_eval(individual, individual, true_fitness, noisy_fitness)
 
     return noisy_fitness
@@ -420,7 +420,7 @@ def ackley(x, a=20, b=0.2, c=2*np.pi, noise_intensity=0):
     noisy_fitness = true_fitness + random.gauss(0, noise_intensity)
 
     logger = get_active_logger()
-    if logger:
+    if logger is not None:
         logger.log_noisy_eval(individual, individual, true_fitness, noisy_fitness)
 
     return noisy_fitness

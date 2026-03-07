@@ -11,7 +11,7 @@ import plotly.express as px
 from ..base import DEFAULT_TEMPLATE, create_empty_figure
 
 
-def plot_box(dataframe, value='final'):
+def plot_box(dataframe, fitness_mode='best'):
     """
     Create a box plot comparing algorithm performance across noise levels.
 
@@ -22,22 +22,30 @@ def plot_box(dataframe, value='final'):
         dataframe: DataFrame with columns:
             - algo_name: Algorithm identifier
             - noise: Noise level
-            - final_fit: Final fitness value
-            - max_fit: Maximum fitness value
-        value: Which value to plot (currently only 'final' supported)
+            - max_fit: Best fitness value recorded across the run
+            - final_fit: Final fitness value at end of run
+        fitness_mode: 'best' to plot max_fit, 'final' to plot final_fit
 
     Returns:
         go.Figure: Box plot comparing algorithms
     """
     df = dataframe.copy()
-    df = df[['algo_name', 'noise', 'final_fit', 'max_fit']]
+
+    if fitness_mode == 'final':
+        fit_col = 'final_fit'
+        yaxis_label = 'Final solution found'
+    else:
+        fit_col = 'max_fit'
+        yaxis_label = 'Best solution found'
+
+    df = df[['algo_name', 'noise', fit_col]]
 
     noise_levels = sorted(df['noise'].unique())
 
     fig = px.box(
         df,
         x="noise",
-        y="max_fit",
+        y=fit_col,
         color="algo_name",
         category_orders={"noise": noise_levels},
         points=False
@@ -53,7 +61,7 @@ def plot_box(dataframe, value='final'):
         ),
         yaxis=dict(
             title=dict(
-                text="Best solution found",
+                text=yaxis_label,
                 font=dict(size=24, color="black")
             ),
             tickfont=dict(size=20, color="black")

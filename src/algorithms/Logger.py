@@ -255,9 +255,15 @@ class ExperimentLogger:
     # Fit-history backend (created in __post_init__)
     _fit_history: Any = field(default=None, init=False, repr=False)
 
-    # Current-generation buffer: sol_tuple -> [(noisy_fit, noisy_sol, true_fit)]
+    # Current-generation buffer: sol_tuple -> [(eval_id, noisy_fit, noisy_sol, true_fit)]
     # Flushed to _fit_history at the start of each log_generation call, then cleared.
     _gen_evals: Dict = field(default_factory=dict, init=False, repr=False)
+
+    # Eval ID tracking: monotonically increasing counter assigned in log_noisy_eval
+    _eval_counter: int = field(default=0, init=False, repr=False)
+    _last_eval_id: Optional[int] = field(default=None, init=False, repr=False)
+    # Reverse index: eval_id -> sol_tuple for O(1) lookup; cleared with _gen_evals
+    _eval_id_index: Dict = field(default_factory=dict, init=False, repr=False)
 
     # --- State for stop_condition / progress printing ---
     _last_true_fitness: Optional[float] = field(default=None, init=False, repr=False)
@@ -304,7 +310,7 @@ class ExperimentLogger:
     def log_generation(self, generation: int, population, best_solution,
                        best_fitness: float, evals: int = None,
                        alternative_rep_sol=None, alternative_rep_fit=None,
-                       evaluate_fn=None):
+                       best_eval_id: int = None):
         """
         Log the state at the end of a generation.
 
@@ -315,10 +321,9 @@ class ExperimentLogger:
         first so that get_len() / get_fits() reflect the current generation's data
         when _open_visit reads _whenadopted_n.
 
-        evaluate_fn: optional callable used as fallback in _get_eval_info when the
-        solution has no entry in _gen_evals (e.g. fitness function does not call
-        log_noisy_eval). It is called, the true fitness is read from the new record,
-        and the record is immediately removed so it does not affect statistics.
+        best_eval_id: the eval_id assigned by log_noisy_eval for the best individual's
+        evaluation this generation. Required when the best solution changes; ignored
+        when the solution is unchanged (same visit continues).
         """
         self._total_gens += 1
         self.current_generation = generation
@@ -331,7 +336,7 @@ class ExperimentLogger:
 
         if self._cur_sol is None:
             # First call — start the first visit
-            true_fitness, noisy_sol = self._get_eval_info(sol_tuple, best_fitness, evaluate_fn)
+            true_fitness, noisy_sol = self._get_eval_info(best_eval_id)
             self._last_true_fitness = true_fitness
             self._open_visit(
                 sol_tuple, best_solution, best_fitness, true_fitness, noisy_sol,
@@ -347,7 +352,7 @@ class ExperimentLogger:
                 n_at_visit_end=self._cur_sol_n_at_gen_end,
                 end_evals=self._prev_evals,
             )
-            true_fitness, noisy_sol = self._get_eval_info(sol_tuple, best_fitness, evaluate_fn)
+            true_fitness, noisy_sol = self._get_eval_info(best_eval_id)
             self._last_true_fitness = true_fitness
             self._open_visit(
                 sol_tuple, best_solution, best_fitness, true_fitness, noisy_sol,
@@ -365,8 +370,9 @@ class ExperimentLogger:
         self._prev_evals = evals
         self._last_generation = generation
 
-        # Clear the generation buffer — fit data flushed, eval info no longer needed
+        # Clear the generation buffer and eval_id index — fit data flushed, eval info no longer needed
         self._gen_evals.clear()
+        self._eval_id_index.clear()
 
     def log_noisy_eval(self, original, noisy, true_fitness, noisy_fitness,
                        generation: int = None):
@@ -388,9 +394,14 @@ class ExperimentLogger:
         key = tuple(original)
         noisy_sol = None if noisy == original else list(noisy)
 
+        eval_id = self._eval_counter
+        self._eval_counter += 1
+        self._last_eval_id = eval_id
+        self._eval_id_index[eval_id] = key
+
         if key not in self._gen_evals:
             self._gen_evals[key] = []
-        self._gen_evals[key].append((noisy_fitness, noisy_sol, true_fitness))
+        self._gen_evals[key].append((eval_id, noisy_fitness, noisy_sol, true_fitness))
 
     # ==============================
     # Internal Helpers
@@ -399,56 +410,60 @@ class ExperimentLogger:
     def _flush_gen_evals(self):
         """Flush noisy fits from the generation buffer to the fit-history backend."""
         updates = {
-            key: [r[0] for r in records]
+            key: [r[1] for r in records]
             for key, records in self._gen_evals.items()
             if records
         }
         if updates:
             self._fit_history.batch_append(updates)
 
-    def _get_eval_info(self, sol_tuple: Tuple, best_fitness: float,
-                       evaluate_fn=None) -> Tuple[float, Optional[List]]:
+    def pop_eval(self, eval_id: int) -> Optional[Tuple]:
         """
-        Look up true_fitness and noisy_sol for a solution from the current-gen buffer.
+        Remove and return the record for a specific eval_id from the generation buffer.
 
-        Uses the last record for that solution (corresponding to the fitness value
-        currently held by the DEAP individual after the final evaluate() call).
-
-        If no record exists (e.g. fitness function does not call log_noisy_eval),
-        and evaluate_fn is provided, evaluates the solution, reads the true fitness
-        from the new record, then immediately removes it so it does not affect
+        Used for one-off evaluations (e.g. UMDA prob_rep) that should not pollute
         estimated-fitness medians or box-plot statistics.
 
-        For fitness functions that do not log (noiseless), the returned value from
-        evaluate_fn is used directly as true_fitness.
-
-        Falls back to (best_fitness, None) if no evaluate_fn is provided.
-        For posterior noise (noisy_sol is None), returns the original solution.
+        Returns the record tuple (eval_id, noisy_fit, noisy_sol, true_fit),
+        or None if the eval_id is not found.
         """
+        sol_tuple = self._eval_id_index.pop(eval_id, None)
+        if sol_tuple is None:
+            return None
         records = self._gen_evals.get(sol_tuple, [])
-        if not records:
-            if evaluate_fn is not None:
-                n_before = len(self._gen_evals.get(sol_tuple, []))
-                result = evaluate_fn(list(sol_tuple))
-                records = self._gen_evals.get(sol_tuple, [])
-                new_records = records[n_before:]
-                if new_records:
-                    _, noisy_sol, true_fitness = new_records[-1]
-                    # Remove the temporary record so it does not skew statistics
-                    if n_before == 0:
-                        del self._gen_evals[sol_tuple]
-                    else:
-                        self._gen_evals[sol_tuple] = records[:n_before]
-                    resolved_noisy_sol = list(sol_tuple) if noisy_sol is None else noisy_sol
-                    return true_fitness, resolved_noisy_sol
-                else:
-                    # Fitness function does not log; returned value is true fitness
-                    true_fitness = result[0] if isinstance(result, tuple) else float(result)
-                    return true_fitness, None
-            return 1000001, None
-        _, noisy_sol, true_fitness = records[-1]
-        resolved_noisy_sol = list(sol_tuple) if noisy_sol is None else noisy_sol
-        return true_fitness, resolved_noisy_sol
+        for i, record in enumerate(records):
+            if record[0] == eval_id:
+                records.pop(i)
+                if not records:
+                    del self._gen_evals[sol_tuple]
+                return record
+        return None
+
+    def _get_eval_info(self, best_eval_id: int) -> Tuple[float, Optional[List]]:
+        """
+        Look up true_fitness and noisy_sol for a specific evaluation by eval_id.
+
+        Raises RuntimeError if the eval_id is not found — this indicates the algorithm
+        failed to pass a valid eval_id for a new best solution.
+
+        For posterior noise (noisy_sol is None in the record), returns the original
+        solution as the noisy_sol.
+        """
+        sol_tuple = self._eval_id_index.get(best_eval_id)
+        if sol_tuple is None:
+            raise RuntimeError(
+                f"eval_id {best_eval_id} not found in _eval_id_index. "
+                "Ensure _evaluate_and_track() is used for all evaluations."
+            )
+        records = self._gen_evals.get(sol_tuple, [])
+        for record in records:
+            if record[0] == best_eval_id:
+                _, noisy_fit, noisy_sol, true_fitness = record
+                resolved_noisy_sol = list(sol_tuple) if noisy_sol is None else noisy_sol
+                return true_fitness, resolved_noisy_sol
+        raise RuntimeError(
+            f"eval_id {best_eval_id} found in index but not in _gen_evals[{sol_tuple}]."
+        )
 
     def _open_visit(self, sol_tuple: Tuple, solution, noisy_fitness: float,
                     true_fitness: float, noisy_sol: Optional[List],
@@ -664,6 +679,9 @@ class ExperimentLogger:
 
         self.visits.clear()
         self._gen_evals.clear()
+        self._eval_id_index.clear()
+        self._eval_counter = 0
+        self._last_eval_id = None
         self._trajectory_cache = None
         self.current_generation = 0
         self._last_true_fitness = None

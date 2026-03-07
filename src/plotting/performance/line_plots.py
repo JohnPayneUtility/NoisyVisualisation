@@ -10,7 +10,7 @@ import plotly.graph_objects as go
 from ..base import DEFAULT_TEMPLATE, create_empty_figure
 
 
-def plot_line(dataframe, value='final'):
+def plot_line(dataframe, fitness_mode='best'):
     """
     Create a line plot comparing algorithm performance across noise levels.
 
@@ -20,17 +20,24 @@ def plot_line(dataframe, value='final'):
         dataframe: DataFrame with columns:
             - algo_name: Algorithm identifier
             - noise: Noise level
-            - final_fit: Final fitness value
-        value: Which value to plot (currently only 'final' supported)
+            - max_fit: Best fitness value recorded across the run
+            - final_fit: Final fitness value at end of run
+        fitness_mode: 'best' to plot max_fit, 'final' to plot final_fit
 
     Returns:
         go.Figure: Line plot with error bars
     """
     df = dataframe.copy()
-    df = df[['algo_name', 'noise', 'final_fit']]
 
-    if value == 'final':
-        stats = df.groupby(['algo_name', 'noise'])['final_fit'].agg(['mean', 'std']).reset_index()
+    if fitness_mode == 'final':
+        fit_col = 'final_fit'
+        yaxis_label = 'Final solution found'
+    else:
+        fit_col = 'max_fit'
+        yaxis_label = 'Best solution found'
+
+    df = df[['algo_name', 'noise', fit_col]]
+    stats = df.groupby(['algo_name', 'noise'])[fit_col].agg(['mean', 'std']).reset_index()
 
     fig = go.Figure()
     for algo in stats['algo_name'].unique():
@@ -52,7 +59,7 @@ def plot_line(dataframe, value='final'):
     fig.update_layout(
         title='title',
         xaxis_title=r'$\sigma$ (Standard Deviation of Gaussian Noise $N(0,\sigma)$)',
-        yaxis_title='Best solution found',
+        yaxis_title=yaxis_label,
         legend_title='Algo Name',
         template=DEFAULT_TEMPLATE
     )

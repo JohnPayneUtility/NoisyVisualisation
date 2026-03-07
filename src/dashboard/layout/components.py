@@ -61,6 +61,19 @@ def create_2d_plot_tabs():
     """
     return html.Div([
         html.H3("2D Performance Plotting"),
+        html.Div([
+            html.Label("Fitness value to plot (SO line & box):"),
+            dcc.Dropdown(
+                id='so-fitness-mode',
+                options=[
+                    {'label': 'Best fitness', 'value': 'best'},
+                    {'label': 'Final fitness', 'value': 'final'},
+                ],
+                value='best',
+                clearable=False,
+                style={'width': '260px'},
+            ),
+        ], style={'display': 'flex', 'alignItems': 'center', 'gap': '12px', 'marginBottom': '8px'}),
         dcc.Tabs(id='2DPlotTabSelection', value='p1', children=[
             dcc.Tab(
                 label='Line plot (SO)',
@@ -383,7 +396,8 @@ def create_lon_options_section():
                             {'label': 'KP V2 simple', 'value': 'kpv2s'},
                             {'label': 'KP V1 mean(w)', 'value': 'kpv1mw'},
                             {'label': 'KP V2 mean(w)', 'value': 'kpv2mw'},
-                            {'label': 'KP Prior', 'value': 'kpp'},
+                            {'label': 'KP Prior (Bit Flip)', 'value': 'kppbf'},
+                            {'label': 'KP Prior (Bitwise)', 'value': 'kppbw'},
                         ],
                         value='',
                         placeholder='Noisy Fit Func',

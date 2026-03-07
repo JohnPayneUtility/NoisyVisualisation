@@ -658,7 +658,8 @@ def add_lon_nodes(
     """
     from ..problems.FitnessFunctions import (
         eval_noisy_kp_v1_simple, eval_noisy_kp_v2_simple,
-        eval_noisy_kp_v1, eval_noisy_kp_v2, eval_noisy_kp_prior
+        eval_noisy_kp_v1, eval_noisy_kp_v2,
+        eval_noisy_kp_prior_bitflip, eval_noisy_kp_prior_bitwise
     )
     from ..problems.ProblemScripts import load_problem_KP
 
@@ -689,8 +690,10 @@ def add_lon_nodes(
                 noisy_fitness = eval_noisy_kp_v1(opt, items_dict=items_dict, capacity=capacity, noise_intensity=nlon_config.intensity)[0]
             elif nlon_config.fit_func == 'kpv2mw':
                 noisy_fitness = eval_noisy_kp_v2(opt, items_dict=items_dict, capacity=capacity, noise_intensity=nlon_config.intensity)[0]
-            elif nlon_config.fit_func == 'kpp':
-                noisy_fitness, _ = eval_noisy_kp_prior(opt, items_dict=items_dict, capacity=capacity, noise_intensity=nlon_config.intensity)[0]
+            elif nlon_config.fit_func == 'kppbf':
+                noisy_fitness = eval_noisy_kp_prior_bitflip(opt, items_dict=items_dict, capacity=capacity, noise_intensity=nlon_config.intensity)[0]
+            elif nlon_config.fit_func == 'kppbw':
+                noisy_fitness = eval_noisy_kp_prior_bitwise(opt, items_dict=items_dict, capacity=capacity, noise_intensity=nlon_config.intensity)[0]
             else:
                 print('NO NOISY FITNESS FUNCTION PROVIDED')
                 noisy_fitness = 0

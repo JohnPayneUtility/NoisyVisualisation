@@ -133,6 +133,9 @@ class OptimisationAlgorithm:
         self.stop_trigger = ''
         self.seed_signature = random.randint(0, 10**6)
 
+        # Maps id(ind) -> eval_id for the most recent evaluation of each individual object
+        self._eval_id_for_ind: dict = {}
+
         # Create logger with the chosen fit-history backend
         if self.logger is None:
             self.logger = ExperimentLogger(nvme_path=self.nvme_path)
@@ -161,6 +164,24 @@ class OptimisationAlgorithm:
         self.toolbox.register("population", tools.initRepeat, list, self.toolbox.individual)
         self.toolbox.register("evaluate", lambda ind: self.fitness_function[0](ind, **self.fitness_function[1]))
 
+    def _evaluate_and_track(self, ind):
+        """Evaluate ind and record its eval_id for later lookup by record_state."""
+        # Always pin self.logger as the active logger before calling the fitness
+        # function.  This is a cheap global assignment and guards against the
+        # module-level _active_logger global being stale in multiprocessing
+        # worker processes (ProcessPoolExecutor fork/spawn).
+        set_active_logger(self.logger)
+        counter_before = self.logger._eval_counter
+        fit = self.toolbox.evaluate(ind)
+        if self.logger._eval_counter == counter_before:
+            raise RuntimeError(
+                "The fitness function did not call log_noisy_eval during evaluation. "
+                "All fitness functions must call logger.log_noisy_eval() before returning. "
+                f"Fitness function: {self.fitness_function[0].__name__}"
+            )
+        self._eval_id_for_ind[id(ind)] = self.logger._last_eval_id
+        return fit
+
     def initialise_population(self, pop_size):
         self.population = self.toolbox.population(n=pop_size)
         # If a starting solution is provided, initialize all individuals with it
@@ -169,7 +190,7 @@ class OptimisationAlgorithm:
                 ind[:] = self.starting_solution[:]
         # Evaluate initial population
         for ind in self.population:
-            ind.fitness.values = self.toolbox.evaluate(ind)
+            ind.fitness.values = self._evaluate_and_track(ind)
         self.evals += pop_size
 
     @abstractmethod
@@ -219,9 +240,8 @@ class OptimisationAlgorithm:
         """Record the current population state using the logger."""
         best_individual = tools.selBest(population, 1)[0]
         best_fitness = best_individual.fitness.values[0]  # noisy fitness seen by algorithm
+        best_eval_id = self._eval_id_for_ind.get(id(best_individual))
 
-        # true_fitness and noisy_solution are derived internally by log_generation
-        # from the current-generation eval buffer (_gen_evals)
         self.logger.log_generation(
             generation=self.gens,
             population=population,
@@ -230,7 +250,7 @@ class OptimisationAlgorithm:
             evals=self.evals,
             alternative_rep_sol=alternative_rep_sol,
             alternative_rep_fit=alternative_rep_fit,
-            evaluate_fn=self.toolbox.evaluate,
+            best_eval_id=best_eval_id,
         )
 
 # ==============================
@@ -283,7 +303,7 @@ class MuPlusLamdaEA(OptimisationAlgorithm):
             
             # Evaluate the offspring
             del offspring.fitness.values
-            offspring.fitness.values = self.toolbox.evaluate(offspring)
+            offspring.fitness.values = self._evaluate_and_track(offspring)
             self.evals += 1
 
             self.population.append(offspring)
@@ -327,8 +347,8 @@ class PCEA(OptimisationAlgorithm):
             # del offspring1.fitness.values
             # del offspring2.fitness.values
 
-            offspring1.fitness.values = self.toolbox.evaluate(offspring1)
-            offspring2.fitness.values = self.toolbox.evaluate(offspring2)
+            offspring1.fitness.values = self._evaluate_and_track(offspring1)
+            offspring2.fitness.values = self._evaluate_and_track(offspring2)
             self.evals += 2
 
             # Select the fitter offspring and add to new population
@@ -386,27 +406,13 @@ class UMDA(OptimisationAlgorithm):
         else:
             prob_rep_sol = list(prob_vector)
 
-        sol_tuple = tuple(prob_rep_sol)
-
-        # Snapshot how many entries exist for this solution before we evaluate,
-        # so we can identify (and remove) exactly the entries added by this call.
-        n_before = len(self.logger._gen_evals.get(sol_tuple, []))
-
         noisy_fit = self.toolbox.evaluate(creator.Individual(prob_rep_sol))[0]
 
-        # Read the true fitness from newly logged entries, then remove them so
-        # the evaluation does not count toward estimated-fitness medians / box plots.
-        records = self.logger._gen_evals.get(sol_tuple, [])
-        new_records = records[n_before:]
-        if new_records:
-            true_fit = new_records[-1][2]  # (noisy_fitness, noisy_sol, true_fitness)
-            if n_before == 0:
-                del self.logger._gen_evals[sol_tuple]
-            else:
-                self.logger._gen_evals[sol_tuple] = records[:n_before]
-        else:
-            # Fitness function did not log (e.g. noiseless problem); noisy == true
-            true_fit = noisy_fit
+        # Pop the record immediately so it does not count toward estimated-fitness
+        # medians or box-plot statistics for that solution.
+        eval_id = self.logger._last_eval_id
+        record = self.logger.pop_eval(eval_id)
+        true_fit = record[3]  # (eval_id, noisy_fit, noisy_sol, true_fit)
 
         return prob_rep_sol, true_fit
 
@@ -422,9 +428,8 @@ class UMDA(OptimisationAlgorithm):
             self.sol_length, self.population, self.pop_size, self.select_size, self.toolbox
         )
 
-        fitnesses = list(map(self.toolbox.evaluate, self.population))
-        for ind, fit in zip(self.population, fitnesses):
-            ind.fitness.values = fit
+        for ind in self.population:
+            ind.fitness.values = self._evaluate_and_track(ind)
         self.evals += self.pop_size
 
         # Only compute the prob_rep when the best solution actually changes —
@@ -464,7 +469,7 @@ class CompactGA(OptimisationAlgorithm):
         """
         candidate_list = [1 if random.random() < p else 0 for p in self.p_vector]
         candidate = creator.Individual(candidate_list)
-        candidate.fitness.values = self.toolbox.evaluate(candidate)
+        candidate.fitness.values = self._evaluate_and_track(candidate)
         return candidate
 
     def perform_generation(self):
@@ -481,8 +486,8 @@ class CompactGA(OptimisationAlgorithm):
         x = [1 if random.random() < p else 0 for p in self.p_vector]
         y = [1 if random.random() < p else 0 for p in self.p_vector]
         # Evaluate both individuals.
-        fx = self.toolbox.evaluate(x)
-        fy = self.toolbox.evaluate(y)
+        fx = self._evaluate_and_track(x)
+        fy = self._evaluate_and_track(y)
         self.evals += 2
         # Determine winner and loser.
         if fx[0] > fy[0]:
