@@ -221,7 +221,8 @@ def create_edge_traces(
             elif edge_type in ('STN', 'STN_SO'):
                 line_width = STN_edge_size_slider
             elif edge_type == 'STN_ALT':
-                line_width = STN_edge_size_slider
+                # line_width = STN_edge_size_slider
+                line_width = max(1, STN_edge_size_slider - 2)
                 display_color = data.get('color', 'red')
 
             edge_trace = go.Scatter3d(
@@ -236,6 +237,22 @@ def create_edge_traces(
             )
             traces.append(edge_trace)
             mid_x, mid_y, mid_z = (x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2
+
+            # Add arrowhead cone for STN_ALT edges to show direction
+            if edge_type == 'STN_ALT':
+                dx, dy, dz = x1 - x0, y1 - y0, z1 - z0
+                arrow_trace = go.Cone(
+                    x=[x1], y=[y1], z=[z1],
+                    u=[dx], v=[dy], w=[dz],
+                    colorscale=[[0, display_color], [1, display_color]],
+                    showscale=False,
+                    sizemode='absolute',
+                    sizeref=1.0,
+                    anchor='tip',
+                    opacity=edge_opacity,
+                    hoverinfo='none',
+                )
+                traces.append(arrow_trace)
 
         # Add edge labels (Hamming distance) if requested
         if edge_type != 'STN_ALT' and should_label_edge(u, v, STN_hamming, LON_hamming):

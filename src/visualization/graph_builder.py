@@ -211,7 +211,7 @@ def add_stn_trajectories(
                             evals=0,
                         )
                         G.add_edge(
-                            alt_node_label, node_label,
+                            node_label, alt_node_label,
                             weight=edge_size,
                             color='red',
                             edge_type='STN_ALT',
@@ -444,7 +444,7 @@ def add_prior_noise_stn_v4(
                             evals=0,
                         )
                         G.add_edge(
-                            alt_node_label, node_base,
+                            node_base, alt_node_label,
                             weight=0.5, color='red',
                             edge_type='STN_ALT',
                         )
@@ -592,7 +592,7 @@ def add_prior_noise_stn_v5(
                             evals=0,
                         )
                         G.add_edge(
-                            alt_node_label, node_base,
+                            node_base, alt_node_label,
                             weight=0.5, color='red',
                             edge_type='STN_ALT',
                         )
