@@ -425,7 +425,7 @@ def render_content_2DPlot_tab(tab):
     State("LON_table", "data")
 )
 def update_filtered_view(selected_rows, LON_table_data):
-    if len(selected_rows) == 0:
+    if not selected_rows:
         blank_df = pd.DataFrame(columns=df_LONs.columns)
         return blank_df.to_dict('records')
 
@@ -468,8 +468,10 @@ def update_filtered_view(selected_rows, LON_table_data):
     for row in rows:
         los = row.get("local_optima", [])
         fvs = row.get("fitness_values", [])
-        feas_list = row.get("optima_feasibility", [0]*len(los)) or [0]*len(los)
-        neigh_list = row.get("neighbour_feasibility", [0.0]*len(los)) or [0.0]*len(los)
+        feas_raw = row.get("optima_feasibility")
+        feas_list = feas_raw if isinstance(feas_raw, list) else [0] * len(los)
+        neigh_raw = row.get("neighbour_feasibility")
+        neigh_list = neigh_raw if isinstance(neigh_raw, list) else [0.0] * len(los)
 
         combined["local_optima"].extend(los)
         combined["fitness_values"].extend(fvs)

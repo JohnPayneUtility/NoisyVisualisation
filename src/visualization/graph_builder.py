@@ -677,6 +677,7 @@ def add_lon_nodes(
 
         # NOISE BOX PLOTS FOR LON
         node_noise[node_label] = []
+        import os; print(f"DEBUG load_problem_KP: problem_id={repr(problem_id)}, CWD={os.getcwd()}, exists={os.path.exists('instances_01_KP/low-dimensional/'+str(problem_id))}")
         n_items, capacity, optimal, values, weights, items_dict, problem_info = load_problem_KP(problem_id)
 
         nlon_config = config.noisy_lon
