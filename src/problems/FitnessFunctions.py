@@ -396,7 +396,7 @@ def birastrigin_eval(individual, d=1, s=None, noise_intensity=0):
     if logger is not None:
         logger.log_noisy_eval(individual, individual, true_fitness, noisy_fitness)
 
-    return noisy_fitness
+    return (noisy_fitness,)
 
 def ackley(x, a=20, b=0.2, c=2*np.pi, noise_intensity=0):
     """
