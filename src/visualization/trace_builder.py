@@ -81,6 +81,7 @@ def create_edge_traces(
     hide_LON_nodes = config.hide_lon_nodes
     hide_STN_nodes = config.hide_stn_nodes
     colour_by_evals = config.stn.colour_by_evals
+    STN_node_min = config.node_size.stn_min
 
     # Pre-pass: compute global eval min/max across all STN/STN_SO edges
     eval_range: Optional[Tuple[float, float]] = None
@@ -98,6 +99,8 @@ def create_edge_traces(
             colour_by_evals = False  # nothing to colour
 
     print('Plotting edges...')
+
+    cone_x, cone_y, cone_z, cone_u, cone_v, cone_w = [], [], [], [], [], []
 
     for u, v, key, data in G.edges(data=True, keys=True):
         # Skip edges if nodes don't have positions
@@ -238,21 +241,14 @@ def create_edge_traces(
             traces.append(edge_trace)
             mid_x, mid_y, mid_z = (x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2
 
-            # Add arrowhead cone for STN_ALT edges to show direction
+            # Collect arrowhead data for STN_ALT edges (batched into one trace later)
             if edge_type == 'STN_ALT':
                 dx, dy, dz = x1 - x0, y1 - y0, z1 - z0
-                arrow_trace = go.Cone(
-                    x=[x1], y=[y1], z=[z1],
-                    u=[dx], v=[dy], w=[dz],
-                    colorscale=[[0, display_color], [1, display_color]],
-                    showscale=False,
-                    sizemode='absolute',
-                    sizeref=1.0,
-                    anchor='tip',
-                    opacity=edge_opacity,
-                    hoverinfo='none',
-                )
-                traces.append(arrow_trace)
+                # mag = np.sqrt(dx**2 + dy**2 + dz**2)
+                # if mag > 0:
+                #     dx, dy, dz = dx / mag, dy / mag, dz / mag
+                cone_x.append(x1); cone_y.append(y1); cone_z.append(z1)
+                cone_u.append(dx); cone_v.append(dy); cone_w.append(dz)
 
         # Add edge labels (Hamming distance) if requested
         if edge_type != 'STN_ALT' and should_label_edge(u, v, STN_hamming, LON_hamming):
@@ -267,6 +263,19 @@ def create_edge_traces(
                     edge_labels.append(f"H={hd}")
             except Exception as e:
                 print(f"Error calculating Hamming distance for label ({u}, {v}): {e}")
+
+    if cone_x:
+        traces.append(go.Cone(
+            x=cone_x, y=cone_y, z=cone_z,
+            u=cone_u, v=cone_v, w=cone_w,
+            colorscale=[[0, 'red'], [1, 'red']],
+            showscale=False,
+            sizemode='absolute',
+            sizeref=STN_node_min,
+            anchor='tip',
+            opacity=STN_edge_opacity,
+            hoverinfo='none',
+        ))
 
     return traces, edge_label_x, edge_label_y, edge_label_z, edge_labels, eval_range
 

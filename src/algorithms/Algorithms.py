@@ -119,6 +119,7 @@ class OptimisationAlgorithm:
     gen_limit: Optional[int] = int(10e6)
     eval_limit: Optional[int] = None
     target_stop: Optional[float] = None
+    no_improve_limit: Optional[int] = None  # stop after this many evals with no improvement
     attr_function: Optional[Callable] = None
     fitness_function: Optional[Tuple[Callable, dict]] = None
     starting_solution: Optional[List[Any]] = None
@@ -132,6 +133,8 @@ class OptimisationAlgorithm:
     def __post_init__(self):
         self.stop_trigger = ''
         self.seed_signature = random.randint(0, 10**6)
+        self._best_fitness_seen: Optional[float] = None
+        self._evals_at_last_improvement: int = 0
 
         # Maps id(ind) -> eval_id for the most recent evaluation of each individual object
         self._eval_id_for_ind: dict = {}
@@ -215,6 +218,19 @@ class OptimisationAlgorithm:
         if self.gen_limit is not None and self.gens >= self.gen_limit:
             self.stop_trigger = 'gen_limit'
             return True
+        if self.no_improve_limit is not None and self.logger._last_true_fitness is not None:
+            current = self.logger._last_true_fitness
+            if self._best_fitness_seen is None:
+                self._best_fitness_seen = current
+                self._evals_at_last_improvement = self.evals
+            else:
+                improved = (current > self._best_fitness_seen) if self.opt_weights[0] > 0 else (current < self._best_fitness_seen)
+                if improved:
+                    self._best_fitness_seen = current
+                    self._evals_at_last_improvement = self.evals
+                elif (self.evals - self._evals_at_last_improvement) >= self.no_improve_limit:
+                    self.stop_trigger = 'no_improvement'
+                    return True
         return False
 
     def _print_progress(self):

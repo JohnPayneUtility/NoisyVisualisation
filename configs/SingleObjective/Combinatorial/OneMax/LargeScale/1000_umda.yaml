@@ -7,8 +7,8 @@ experiment_name: "SOOneMaxPostNoise"
 # Run Configuration
 # ==============================
 run:
-  max_gens: 10e6
-  eval_limit: 10e6
+  max_gens: 1e6
+  eval_limit: 1e6
   target_stop: true
   use_noise_dependent_eval_limit: false
   eval_limit_for_noise:
@@ -20,11 +20,11 @@ run:
     "5": 56851
     "6": 64079
     "7": 70736
-    "8": 790344
+    "8": 79344
     "9": 86078
     "10": 93638
   seed: 1
-  num_runs: 1
+  num_runs: 10
   parallel: true
   override_max_workers: null
   progress_print_interval: 10000  # print update every N evals; set to null to disable
@@ -43,7 +43,7 @@ hydra:
   mode: MULTIRUN
   sweeper:
     params:
-      problem.fitness_params.noise_intensity: 0
+      problem.fitness_params.noise_intensity: 0,1,2,3
   sweep:
     dir: data/outputs
 
@@ -68,8 +68,8 @@ problem:
   prob_name: onemax
   prob_type: discrete
   opt_goal: maximise
-  dimensions: 10000        # bit-string length
-  opt_global: 10000        # known optimum
+  dimensions: 1000        # bit-string length
+  opt_global: 1000        # known optimum
   capacity: 0            # Not applicable for OneMax, set to 0
   mean_value: 500.0       # Not applicable for OneMax, set to middle value
   mean_weight: 0.5       # Not applicable for OneMax, set to middle value

@@ -429,6 +429,7 @@ def main(cfg: DictConfig):
         'attr_function':             getattr(sys.modules['src.algorithms'], cfg.problem.attr_function),
         'starting_solution':         None,
         'target_stop':               cfg.problem.opt_global if getattr(cfg.run, 'target_stop', False) else None,
+        'no_improve_limit':          getattr(cfg.run, 'no_improve_limit', None),
         'gen_limit':                 None,
         'fitness_function':          (fitness_fn, fit_params),
         'progress_print_interval':   getattr(cfg.run, 'progress_print_interval', None),

@@ -72,6 +72,10 @@ def create_layout(display2_df, display2_hidden_cols):
     # Axis range options
     children.extend(create_axis_options_section())
 
+    # Annotation options heading
+    children.append(html.Label("Annotation options:", style={'fontWeight': 'bold'}))
+    children.append(html.Hr())
+
     # Main plot and info display
     children.extend(create_main_plot_section())
 
