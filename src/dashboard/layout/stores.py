@@ -19,6 +19,7 @@ DATA_PROBLEM_SPECIFIC = "data-problem-specific"
 OPTIMUM_STORE = "optimum"
 PID_STORE = "PID"
 OPT_GOAL_STORE = "opt_goal"
+FIT_FUNC_STORE = "fit_func_store"
 
 # Plotting data stores
 PLOT_2D_DATA = "plot_2d_data"
@@ -50,6 +51,7 @@ def create_selection_stores():
         dcc.Store(id=OPTIMUM_STORE, data=[]),
         dcc.Store(id=PID_STORE, data=[]),
         dcc.Store(id=OPT_GOAL_STORE, data=[]),
+        dcc.Store(id=FIT_FUNC_STORE, data=None),
     ]
 
 

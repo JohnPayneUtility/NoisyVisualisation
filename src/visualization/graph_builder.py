@@ -425,6 +425,8 @@ def add_prior_noise_stn_v4(
                     estimated_fitness_discarded=estimated_fits_discarded[i] if i < len(estimated_fits_discarded) else None,
                     count_estimated_adopted=count_fits_adopted[i] if i < len(count_fits_adopted) else None,
                     count_estimated_discarded=count_fits_discarded[i] if i < len(count_fits_discarded) else None,
+                    start_node=i == 0,
+                    end_node=i == len(rep_sols) - 1,
                 )
 
             # -------- alt representation node --------
@@ -573,6 +575,8 @@ def add_prior_noise_stn_v5(
                     estimated_fitness_discarded=estimated_fits_discarded[i] if i < len(estimated_fits_discarded) else None,
                     count_estimated_adopted=count_fits_adopted[i] if i < len(count_fits_adopted) else None,
                     count_estimated_discarded=count_fits_discarded[i] if i < len(count_fits_discarded) else None,
+                    start_node=i == 0,
+                    end_node=i == len(rep_sols) - 1,
                 )
 
             # -------- alt representation node --------

@@ -18,6 +18,7 @@ from .components import (
     create_plot_options_section,
     create_opacity_options_section,
     create_axis_options_section,
+    create_annotation_options_section,
     create_main_plot_section,
 )
 
@@ -72,9 +73,8 @@ def create_layout(display2_df, display2_hidden_cols):
     # Axis range options
     children.extend(create_axis_options_section())
 
-    # Annotation options heading
-    children.append(html.Label("Annotation options:", style={'fontWeight': 'bold'}))
-    children.append(html.Hr())
+    # Annotation options
+    children.extend(create_annotation_options_section())
 
     # Main plot and info display
     children.extend(create_main_plot_section())

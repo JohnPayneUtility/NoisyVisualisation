@@ -343,7 +343,7 @@ def create_stn_options_section():
                 {'label': 'Generations as representative sol', 'value': 'generations'},
                 {'label': 'Evaluations as representative sol', 'value': 'evaluations'},
             ],
-            value='generations',
+            value='evaluations',
             placeholder='Node size',
             style=DROPDOWN_STYLE_WITH_MARGIN
         ),
@@ -724,6 +724,51 @@ def create_axis_options_section():
                 value=None,
             ),
         ], style=FLEX_ROW_STYLE),
+        html.Hr(),
+    ]
+
+
+def create_annotation_options_section():
+    """
+    Create the annotation options section with toggles for plot annotations.
+
+    Returns:
+        list: List of annotation options components.
+    """
+    return [
+        html.Label("Annotation options:", style={'fontWeight': 'bold'}),
+        dcc.Checklist(
+            id='annotation-options',
+            options=[
+                {'label': ' Start nodes', 'value': 'annotate-start-nodes'},
+                {'label': ' Optimum', 'value': 'annotate-optimum'},
+                {'label': ' End nodes', 'value': 'annotate-end-nodes'},
+                {'label': ' Mistakes', 'value': 'annotate-mistakes'},
+                {'label': ' Info panel', 'value': 'annotate-info-panel'},
+            ],
+            value=['annotate-start-nodes', 'annotate-optimum', 'annotate-end-nodes', 'annotate-mistakes', 'annotate-info-panel'],
+            inline=True,
+        ),
+        html.Div([
+            html.Label("Info x pos (%):"),
+            dcc.Input(
+                id='info-panel-x',
+                type='number',
+                value=90,
+                min=0,
+                max=100,
+                style={'width': '60px', 'marginLeft': '5px', 'marginRight': '20px'},
+            ),
+            html.Label("Info y pos (%):"),
+            dcc.Input(
+                id='info-panel-y',
+                type='number',
+                value=75,
+                min=0,
+                max=100,
+                style={'width': '60px', 'marginLeft': '5px'},
+            ),
+        ], style={'marginTop': '6px'}),
         html.Hr(),
     ]
 

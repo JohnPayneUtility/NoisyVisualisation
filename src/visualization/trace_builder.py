@@ -690,7 +690,8 @@ def create_figure(
     xaxis_settings: Dict,
     yaxis_settings: Dict,
     zaxis_settings: Dict,
-    output_path: str = 'plots/3dplot.html'
+    output_path: str = 'plots/3dplot.html',
+    scene_annotations: List[Dict] = None,
 ) -> go.Figure:
     """
     Assemble all traces into a final Plotly figure.
@@ -711,16 +712,19 @@ def create_figure(
     camera_eye = config.camera.get_camera_eye()
 
     fig = go.Figure(data=traces)
+    scene_dict = dict(
+        camera=dict(eye=camera_eye),
+        xaxis=xaxis_settings,
+        yaxis=yaxis_settings,
+        zaxis=zaxis_settings
+    )
+    if scene_annotations:
+        scene_dict['annotations'] = scene_annotations
     fig.update_layout(
         showlegend=False,
         width=1200,
         height=1200,
-        scene=dict(
-            camera=dict(eye=camera_eye),
-            xaxis=xaxis_settings,
-            yaxis=yaxis_settings,
-            zaxis=zaxis_settings
-        ),
+        scene=scene_dict,
         margin=dict(l=0, r=0, t=0, b=0),
         template="plotly_white"
     )

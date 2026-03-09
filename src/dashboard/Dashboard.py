@@ -231,17 +231,19 @@ def update_table2(data):
 @app.callback(
     [Output("optimum", "data"),
     Output("PID", "data"),
-    Output("opt_goal", 'data')],
+    Output("opt_goal", 'data'),
+    Output("fit_func_store", 'data')],
     Input("data-problem-specific", "data")
 )
 def update_table2(data):
     if data is None:
-        return None
+        return None, None, None, None
     df = pd.DataFrame(data)
     optimum = df["opt_global"].iloc[0]
     PID = df["PID"].iloc[0]
     opt_goal = df["problem_goal"].iloc[0]
-    return optimum, PID, opt_goal
+    fit_func = df["fit_func"].iloc[0]
+    return optimum, PID, opt_goal, fit_func
 
 # ------------------------------
 # Callback: Display Selected Rows from Table 2
@@ -777,7 +779,11 @@ def clean_axis_values(custom_x_min, custom_x_max, custom_y_min, custom_y_max, cu
      Input('stn-plot-type', 'value'),
      Input('STN_MO_data', 'data'),
      Input('STN_MO_series_labels', 'data'),
-     Input('stn-node-size-metric', 'value')]
+     Input('stn-node-size-metric', 'value'),
+     Input('annotation-options', 'value'),
+     Input('fit_func_store', 'data'),
+     Input('info-panel-x', 'value'),
+     Input('info-panel-y', 'value')]
 )
 def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limit,
                 LO_fit_percent, LON_options, LON_node_colour_mode, LON_edge_colour_feas,
@@ -787,7 +793,8 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                 opacity_noise_bar, LON_node_opacity, LON_edge_opacity, STN_node_opacity, STN_edge_opacity,
                 STN_node_min, STN_node_max, LON_node_min, LON_node_max,
                 LON_edge_size_slider, STN_edge_size_slider, noisy_fitnesses_list,
-                stn_plot_type, STN_MO_data, STN_MO_series_labels, stn_node_size_metric):
+                stn_plot_type, STN_MO_data, STN_MO_series_labels, stn_node_size_metric,
+                annotation_options, fit_func, info_panel_x, info_panel_y):
     """
     Main visualization callback - orchestrates the visualization pipeline.
 
@@ -1040,7 +1047,134 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
         # STEP 9: Configure axes and create figure
         # ==========
         xaxis_settings, yaxis_settings, zaxis_settings = create_axis_settings(G, pos, config, node_noise)
-        fig = create_figure(traces, config, xaxis_settings, yaxis_settings, zaxis_settings)
+
+        # Build scene annotations from enabled annotation options
+        scene_annotations = []
+        if 'annotate-start-nodes' in (annotation_options or []):
+            seen_positions = set()
+            for node, attr in G.nodes(data=True):
+                if attr.get('start_node') and node in pos:
+                    x, y = pos[node][:2]
+                    z = attr.get('fitness', 0)
+                    pos_key = (round(x, 6), round(y, 6), round(z, 6))
+                    if pos_key not in seen_positions:
+                        seen_positions.add(pos_key)
+                        scene_annotations.append(dict(
+                            x=x, y=y, z=z,
+                            text='Start node',
+                            showarrow=True,
+                            arrowhead=2,
+                            arrowsize=1,
+                            arrowwidth=1.5,
+                            arrowcolor='black',
+                            ax=40, ay=-40,
+                            font=dict(size=11, color='black'),
+                        ))
+
+        if 'annotate-end-nodes' in (annotation_options or []):
+            seen_positions = set()
+            for node, attr in G.nodes(data=True):
+                if attr.get('end_node') and node in pos:
+                    if config.optimum is not None and attr.get('fitness') == config.optimum:
+                        continue
+                    x, y = pos[node][:2]
+                    z = attr.get('fitness', 0)
+                    pos_key = (round(x, 6), round(y, 6), round(z, 6))
+                    if pos_key not in seen_positions:
+                        seen_positions.add(pos_key)
+                        scene_annotations.append(dict(
+                            x=x, y=y, z=z,
+                            text='End node',
+                            showarrow=True,
+                            arrowhead=2,
+                            arrowsize=1,
+                            arrowwidth=1.5,
+                            arrowcolor='black',
+                            ax=40, ay=-40,
+                            font=dict(size=11, color='black'),
+                        ))
+
+        if 'annotate-mistakes' in (annotation_options or []):
+            seen_positions = set()
+            maximizing = (config.opt_goal or 'max')[:3].lower() == 'max'
+            for u, v, edge_attr in G.edges(data=True):
+                if not edge_attr.get('edge_type', '').startswith('STN'):
+                    continue
+                if v not in pos or 'Noisy' in v:
+                    continue
+                fit_u = G.nodes[u].get('fitness')
+                fit_v = G.nodes[v].get('fitness')
+                if fit_u is None or fit_v is None:
+                    continue
+                is_decline = fit_v < fit_u if maximizing else fit_v > fit_u
+                if is_decline:
+                    x, y = pos[v][:2]
+                    z = fit_v
+                    pos_key = (round(x, 6), round(y, 6), round(z, 6))
+                    if pos_key not in seen_positions:
+                        seen_positions.add(pos_key)
+                        scene_annotations.append(dict(
+                            x=x, y=y, z=z,
+                            text='Mistake',
+                            showarrow=True,
+                            arrowhead=2,
+                            arrowsize=1,
+                            arrowwidth=1.5,
+                            arrowcolor='red',
+                            ax=40, ay=-40,
+                            font=dict(size=11, color='red'),
+                        ))
+
+        if 'annotate-optimum' in (annotation_options or []) and config.optimum is not None:
+            for node, attr in G.nodes(data=True):
+                if attr.get('fitness') == config.optimum and 'Noisy' not in node and node in pos:
+                    x, y = pos[node][:2]
+                    z = attr.get('fitness', 0)
+                    scene_annotations.append(dict(
+                        x=x, y=y, z=z,
+                        text='Global optimum',
+                        showarrow=True,
+                        arrowhead=2,
+                        arrowsize=1,
+                        arrowwidth=1.5,
+                        arrowcolor='green',
+                        ax=40, ay=-40,
+                        font=dict(size=11, color='green'),
+                    ))
+                    break  # Only one global optimum
+
+        fig = create_figure(traces, config, xaxis_settings, yaxis_settings, zaxis_settings,
+                            scene_annotations=scene_annotations or None)
+
+        # Add 2D info panel annotation in top-right corner
+        if 'annotate-info-panel' in (annotation_options or []):
+            lines = []
+            if PID:
+                lines.append(f'<b>PID:</b> {PID}')
+            if fit_func:
+                lines.append(f'<b>Fitness:</b> {fit_func}')
+                lines.append('<i>Node size = evals at node</i>')
+            if STN_labels:
+                lines.append('')  # blank line separator
+                for idx, label in enumerate(STN_labels):
+                    algo_name = label[0] if len(label) > 0 else '?'
+                    noise = label[1] if len(label) > 1 else '?'
+                    color = config.algo_colors[idx % len(config.algo_colors)]
+                    lines.append(f'<span style="color:{color}"><b>{algo_name}</b> noise={noise}</span>')
+            if lines:
+                fig.add_annotation(
+                    xref='paper', yref='paper',
+                    x=(info_panel_x if info_panel_x is not None else 90) / 100,
+                    y=(info_panel_y if info_panel_y is not None else 75) / 100,
+                    xanchor='right', yanchor='top',
+                    text='<br>'.join(lines),
+                    showarrow=False,
+                    align='right',
+                    bgcolor='rgba(255,255,255,0.8)',
+                    bordercolor='grey',
+                    borderwidth=1,
+                    font=dict(size=11),
+                )
     else:
         # Fallback for other plot types
         fig = go.Figure()
