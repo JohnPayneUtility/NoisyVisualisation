@@ -195,27 +195,46 @@ def add_stn_trajectories(
                 print(f"DEBUG: Reusing STN node {node_label} for solution {solution_tuple}")
 
             # Add alt representation node if enabled
-            if config.stn.show_alt_rep and alt_rep_sols and i < len(alt_rep_sols) and i < len(alt_rep_fits):
+            if alt_rep_sols and i < len(alt_rep_sols) and i < len(alt_rep_fits):
                 alt_sol = alt_rep_sols[i]
                 alt_fit = alt_rep_fits[i]
                 if alt_sol is not None and alt_fit is not None:
-                    alt_node_label = f"Alt_A{algo_idx}_R{run_idx}_Sol{i}"
-                    if alt_node_label not in G.nodes():
-                        G.add_node(
-                            alt_node_label,
-                            solution=alt_sol,
-                            fitness=alt_fit,
-                            color=edge_color,
-                            type="STN_ALT",
-                            iterations=0,
-                            evals=0,
-                        )
-                        G.add_edge(
-                            node_label, alt_node_label,
-                            weight=edge_size,
-                            color='red',
-                            edge_type='STN_ALT',
-                        )
+                    if config.stn.show_alt_rep:
+                        alt_node_label = f"Alt_A{algo_idx}_R{run_idx}_Sol{i}"
+                        if alt_node_label not in G.nodes():
+                            G.add_node(
+                                alt_node_label,
+                                solution=alt_sol,
+                                fitness=alt_fit,
+                                color=edge_color,
+                                type="STN_ALT",
+                                iterations=0,
+                                evals=0,
+                            )
+                            G.add_edge(
+                                node_label, alt_node_label,
+                                weight=edge_size,
+                                color='red',
+                                edge_type='STN_ALT',
+                            )
+                    if config.stn.show_alt_rep_no_fit:
+                        alt_no_fit_label = f"AltNoFit_A{algo_idx}_R{run_idx}_Sol{i}"
+                        if alt_no_fit_label not in G.nodes():
+                            G.add_node(
+                                alt_no_fit_label,
+                                solution=alt_sol,
+                                fitness=current_fitness,
+                                color=edge_color,
+                                type="STN_ALT",
+                                iterations=0,
+                                evals=0,
+                            )
+                            G.add_edge(
+                                node_label, alt_no_fit_label,
+                                weight=edge_size,
+                                color='red',
+                                edge_type='STN_ALT',
+                            )
 
             # Add noisy node for STN data (if desired)
             noisy_node_label = f"Noisy_{node_label}"
@@ -364,6 +383,7 @@ def add_prior_noise_stn_v4(
     noisy_node_color: str = 'grey',
     dedup: bool = False,
     show_alt_rep: bool = False,
+    show_alt_rep_no_fit: bool = False,
     stn_node_min: float = 5.0,
 ) -> None:
     """
@@ -430,26 +450,44 @@ def add_prior_noise_stn_v4(
                 )
 
             # -------- alt representation node --------
-            if show_alt_rep and alt_rep_sols and i < len(alt_rep_sols) and i < len(alt_rep_fits):
+            if alt_rep_sols and i < len(alt_rep_sols) and i < len(alt_rep_fits):
                 alt_sol = alt_rep_sols[i]
                 alt_fit = alt_rep_fits[i]
                 if alt_sol is not None and alt_fit is not None:
-                    alt_node_label = f"AltRep_S{series_idx}_R{run_idx}_Sol{i}"
-                    if alt_node_label not in G.nodes():
-                        G.add_node(
-                            alt_node_label,
-                            solution=alt_sol,
-                            fitness=alt_fit,
-                            color=edge_color,
-                            type="STN_ALT",
-                            iterations=0,
-                            evals=0,
-                        )
-                        G.add_edge(
-                            node_base, alt_node_label,
-                            weight=0.5, color='red',
-                            edge_type='STN_ALT',
-                        )
+                    if show_alt_rep:
+                        alt_node_label = f"AltRep_S{series_idx}_R{run_idx}_Sol{i}"
+                        if alt_node_label not in G.nodes():
+                            G.add_node(
+                                alt_node_label,
+                                solution=alt_sol,
+                                fitness=alt_fit,
+                                color=edge_color,
+                                type="STN_ALT",
+                                iterations=0,
+                                evals=0,
+                            )
+                            G.add_edge(
+                                node_base, alt_node_label,
+                                weight=0.5, color='red',
+                                edge_type='STN_ALT',
+                            )
+                    if show_alt_rep_no_fit:
+                        alt_no_fit_label = f"AltRepNoFit_S{series_idx}_R{run_idx}_Sol{i}"
+                        if alt_no_fit_label not in G.nodes():
+                            G.add_node(
+                                alt_no_fit_label,
+                                solution=alt_sol,
+                                fitness=true_fitness,
+                                color=edge_color,
+                                type="STN_ALT",
+                                iterations=0,
+                                evals=0,
+                            )
+                            G.add_edge(
+                                node_base, alt_no_fit_label,
+                                weight=0.5, color='red',
+                                edge_type='STN_ALT',
+                            )
 
             # -------- Type 1: fitness-noisy node --------
             # Same solution as base, noisy fitness
@@ -516,6 +554,7 @@ def add_prior_noise_stn_v5(
     noisy_node_color: str = 'grey',
     dedup: bool = False,
     show_alt_rep: bool = False,
+    show_alt_rep_no_fit: bool = False,
     stn_node_min: float = 5.0,
 ) -> None:
     """
@@ -580,26 +619,44 @@ def add_prior_noise_stn_v5(
                 )
 
             # -------- alt representation node --------
-            if show_alt_rep and alt_rep_sols and i < len(alt_rep_sols) and i < len(alt_rep_fits):
+            if alt_rep_sols and i < len(alt_rep_sols) and i < len(alt_rep_fits):
                 alt_sol = alt_rep_sols[i]
                 alt_fit = alt_rep_fits[i]
                 if alt_sol is not None and alt_fit is not None:
-                    alt_node_label = f"AltRep_S{series_idx}_R{run_idx}_Sol{i}"
-                    if alt_node_label not in G.nodes():
-                        G.add_node(
-                            alt_node_label,
-                            solution=alt_sol,
-                            fitness=alt_fit,
-                            color=edge_color,
-                            type="STN_ALT",
-                            iterations=0,
-                            evals=0,
-                        )
-                        G.add_edge(
-                            node_base, alt_node_label,
-                            weight=0.5, color='red',
-                            edge_type='STN_ALT',
-                        )
+                    if show_alt_rep:
+                        alt_node_label = f"AltRep_S{series_idx}_R{run_idx}_Sol{i}"
+                        if alt_node_label not in G.nodes():
+                            G.add_node(
+                                alt_node_label,
+                                solution=alt_sol,
+                                fitness=alt_fit,
+                                color=edge_color,
+                                type="STN_ALT",
+                                iterations=0,
+                                evals=0,
+                            )
+                            G.add_edge(
+                                node_base, alt_node_label,
+                                weight=0.5, color='red',
+                                edge_type='STN_ALT',
+                            )
+                    if show_alt_rep_no_fit:
+                        alt_no_fit_label = f"AltRepNoFit_S{series_idx}_R{run_idx}_Sol{i}"
+                        if alt_no_fit_label not in G.nodes():
+                            G.add_node(
+                                alt_no_fit_label,
+                                solution=alt_sol,
+                                fitness=true_fitness,
+                                color=edge_color,
+                                type="STN_ALT",
+                                iterations=0,
+                                evals=0,
+                            )
+                            G.add_edge(
+                                node_base, alt_no_fit_label,
+                                weight=0.5, color='red',
+                                edge_type='STN_ALT',
+                            )
 
             # -------- noisy node: noisy solution + noisy fitness --------
             noisy_sol = rep_noisy_sols[i] if i < len(rep_noisy_sols) else None

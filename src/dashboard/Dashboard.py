@@ -902,6 +902,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                 G, selected_trajectories, edge_color, idx, config.noisy_node_color,
                 dedup=config.stn.dedup_prior_noise,
                 show_alt_rep=config.stn.show_alt_rep,
+                show_alt_rep_no_fit=config.stn.show_alt_rep_no_fit,
                 stn_node_min=config.node_size.stn_min,
             )
 
@@ -940,6 +941,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                 G, selected_trajectories, edge_color, idx, config.noisy_node_color,
                 dedup=config.stn.dedup_prior_noise,
                 show_alt_rep=config.stn.show_alt_rep,
+                show_alt_rep_no_fit=config.stn.show_alt_rep_no_fit,
                 stn_node_min=config.node_size.stn_min,
             )
 
@@ -1100,7 +1102,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
             for u, v, edge_attr in G.edges(data=True):
                 if not edge_attr.get('edge_type', '').startswith('STN'):
                     continue
-                if v not in pos or 'Noisy' in v:
+                if v not in pos or 'Noisy' in v or G.nodes[v].get('type') == 'STN_ALT':
                     continue
                 fit_u = G.nodes[u].get('fitness')
                 fit_v = G.nodes[v].get('fitness')

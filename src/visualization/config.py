@@ -70,6 +70,7 @@ class STNConfig:
     dedup_prior_noise: bool = False
     colour_by_evals: bool = False
     show_alt_rep: bool = False
+    show_alt_rep_no_fit: bool = False
 
 
 @dataclass
@@ -273,6 +274,7 @@ def parse_callback_inputs(
             dedup_prior_noise='dedup-prior-noise' in run_options,
             colour_by_evals='colour_by_evals' in run_options,
             show_alt_rep='show_alt_rep' in run_options,
+            show_alt_rep_no_fit='show_alt_rep_no_fit' in run_options,
         ),
         lon=LONConfig(
             filter_negative='LON-filter-neg' in lon_options,

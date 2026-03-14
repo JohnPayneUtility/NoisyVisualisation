@@ -331,6 +331,21 @@ class MuPlusLamdaEA(OptimisationAlgorithm):
         else:
             self.population = tools.selBest(self.population, self.mu)
 
+class MuPlusLamdaEA_forgetful(MuPlusLamdaEA):
+    def __init__(self, forget_every_n_gen: Optional[int] = None, **kwargs):
+        self.forget_every_n_gen = forget_every_n_gen
+        super().__init__(**kwargs)
+        if forget_every_n_gen is not None:
+            self.name = f'{self.name}-F{forget_every_n_gen}'
+
+    def perform_generation(self):
+        if self.forget_every_n_gen is not None and self.gens % self.forget_every_n_gen == 0:
+            for ind in self.population:
+                del ind.fitness.values
+                ind.fitness.values = self._evaluate_and_track(ind)
+                self.evals += 1
+        super().perform_generation()
+
 class PCEA(OptimisationAlgorithm):
     def __init__(self, 
                  pop_size: int,
