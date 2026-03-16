@@ -1117,7 +1117,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                         seen_positions.add(pos_key)
                         scene_annotations.append(dict(
                             x=x, y=y, z=z,
-                            text='Mistake',
+                            text='Misjudgement',
                             showarrow=True,
                             arrowhead=2,
                             arrowsize=1,

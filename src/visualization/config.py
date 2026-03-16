@@ -80,6 +80,7 @@ class LONConfig:
     show_hamming: bool = False
     fit_percent: float = 100.0
     node_colour_mode: str = 'fitness'  # 'fitness' | 'feasible' | 'neigh'
+    node_diamond: bool = False
     edge_colour_feas: bool = False
     edge_size: float = 2.0
 
@@ -281,6 +282,7 @@ def parse_callback_inputs(
             show_hamming='LON-hamming' in lon_options,
             fit_percent=lo_fit_percent,
             node_colour_mode=lon_node_colour_mode,
+            node_diamond='LON-node-diamond' in lon_options,
             edge_colour_feas='edge_feas' in lon_edge_colour_feas,
             edge_size=lon_edge_size_slider,
         ),

@@ -369,6 +369,7 @@ def create_node_traces(
         marker=dict(
             size=LON_node_sizes,
             color=LON_node_colors,
+            symbol='diamond' if config.lon.node_diamond else 'circle',
             opacity=config.opacity.lon_node
         ),
         text=LON_node_hover,
@@ -770,6 +771,44 @@ def create_evals_colorbar_trace(eval_min: float, eval_max: float) -> go.Scatter3
     )
 
 
+def create_lon_colorbar_trace(cmin: float, cmax: float, title: str, x_pos: float = 1.02) -> go.Scatter3d:
+    """
+    Create an invisible dummy trace whose sole purpose is to render a Viridis
+    colorbar for LON node colouring (fitness or neighbourhood feasibility).
+
+    Args:
+        cmin: Minimum value of the colour scale
+        cmax: Maximum value of the colour scale
+        title: Label shown on the colorbar
+        x_pos: Horizontal position of the colorbar (default 1.02; shift right if
+               the evals colorbar is also present)
+
+    Returns:
+        A go.Scatter3d trace with showscale=True and zero visible geometry.
+    """
+    return go.Scatter3d(
+        x=[None], y=[None], z=[None],
+        mode='markers',
+        marker=dict(
+            color=[cmin, cmax],
+            colorscale='Viridis',
+            cmin=cmin,
+            cmax=cmax,
+            colorbar=dict(
+                title=title,
+                thickness=20,
+                len=0.6,
+                x=x_pos,
+            ),
+            showscale=True,
+            size=0.001,
+            opacity=0,
+        ),
+        showlegend=False,
+        hoverinfo='none',
+    )
+
+
 def build_all_traces(
     G: nx.MultiDiGraph,
     pos: Dict[str, Tuple[float, float]],
@@ -811,6 +850,20 @@ def build_all_traces(
     LON_node_trace, node_trace = create_node_traces(G, pos, config)
     traces.append(LON_node_trace)
     traces.append(node_trace)
+
+    # Add LON colorbar when a continuous colour scale is in use
+    lon_mode = config.lon.node_colour_mode
+    if lon_mode in ('fitness', 'neigh'):
+        local_optimum_nodes = [n for n in G.nodes() if "Local Optimum" in n]
+        if local_optimum_nodes:
+            if lon_mode == 'fitness':
+                all_fit = [G.nodes[n]['fitness'] for n in local_optimum_nodes]
+                cmin, cmax, title = min(all_fit), max(all_fit), 'Fitness'
+            else:
+                cmin, cmax, title = 0.0, 1.0, 'Neighbourhood<br>Feasibility'
+            # Shift right if an evals colorbar is also present to avoid overlap
+            x_pos = 1.17 if eval_range is not None else 1.02
+            traces.append(create_lon_colorbar_trace(cmin, cmax, title, x_pos))
 
     # Add boxplot traces if needed
     if config.plot_type == 'NLon_box' and node_noise and fitness_dict:

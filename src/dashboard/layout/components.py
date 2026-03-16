@@ -379,6 +379,7 @@ def create_lon_options_section():
                     options=[
                         {'label': 'Filter negative', 'value': 'LON-filter-neg'},
                         {'label': 'Hamming distance labels', 'value': 'LON-hamming'},
+                        {'label': 'Represent nodes as diamonds', 'value': 'LON-node-diamond'},
                     ],
                     value=[],
                     labelStyle={'display': 'inline-block', 'margin-right': '10px'}
@@ -744,7 +745,7 @@ def create_annotation_options_section():
                 {'label': ' Start nodes', 'value': 'annotate-start-nodes'},
                 {'label': ' Optimum', 'value': 'annotate-optimum'},
                 {'label': ' End nodes', 'value': 'annotate-end-nodes'},
-                {'label': ' Mistakes', 'value': 'annotate-mistakes'},
+                {'label': ' Misjudgements', 'value': 'annotate-mistakes'},
                 {'label': ' Info panel', 'value': 'annotate-info-panel'},
             ],
             value=['annotate-start-nodes', 'annotate-optimum', 'annotate-end-nodes', 'annotate-mistakes', 'annotate-info-panel'],
