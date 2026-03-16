@@ -332,19 +332,59 @@ class MuPlusLamdaEA(OptimisationAlgorithm):
             self.population = tools.selBest(self.population, self.mu)
 
 class MuPlusLamdaEA_forgetful(MuPlusLamdaEA):
-    def __init__(self, forget_every_n_gen: Optional[int] = None, **kwargs):
+    def __init__(self,
+                 forget_every_n_gen: Optional[int] = None,
+                 forget_stuck_n_gen: Optional[int] = None,
+                 **kwargs):
         self.forget_every_n_gen = forget_every_n_gen
+        self.forget_stuck_n_gen = forget_stuck_n_gen
         super().__init__(**kwargs)
+
+        # Stuck-tracking state (generation-based)
+        self._best_fitness_for_stuck: Optional[float] = None
+        self._gen_of_last_improvement: int = 0
+
+        name_parts = []
         if forget_every_n_gen is not None:
-            self.name = f'{self.name}-F{forget_every_n_gen}'
+            name_parts.append(f'F{forget_every_n_gen}')
+        if forget_stuck_n_gen is not None:
+            name_parts.append(f'FS{forget_stuck_n_gen}')
+        if name_parts:
+            self.name = f'{self.name}-{"-".join(name_parts)}'
+
+    def _forget_population(self):
+        for ind in self.population:
+            del ind.fitness.values
+            ind.fitness.values = self._evaluate_and_track(ind)
+            self.evals += 1
+
+    def _should_forget(self) -> bool:
+        if self.forget_every_n_gen is not None and self.gens % self.forget_every_n_gen == 0:
+            return True
+        if self.forget_stuck_n_gen is not None:
+            if (self.gens - self._gen_of_last_improvement) >= self.forget_stuck_n_gen:
+                self._gen_of_last_improvement = self.gens  # reset counter after triggering
+                return True
+        return False
+
+    def _update_stuck_tracking(self):
+        current_best = tools.selBest(self.population, 1)[0].fitness.values[0]
+        if self._best_fitness_for_stuck is None:
+            self._best_fitness_for_stuck = current_best
+            self._gen_of_last_improvement = self.gens
+        else:
+            improved = (current_best > self._best_fitness_for_stuck) if self.opt_weights[0] > 0 \
+                       else (current_best < self._best_fitness_for_stuck)
+            if improved:
+                self._best_fitness_for_stuck = current_best
+                self._gen_of_last_improvement = self.gens
 
     def perform_generation(self):
-        if self.forget_every_n_gen is not None and self.gens % self.forget_every_n_gen == 0:
-            for ind in self.population:
-                del ind.fitness.values
-                ind.fitness.values = self._evaluate_and_track(ind)
-                self.evals += 1
+        if self._should_forget():
+            self._forget_population()
         super().perform_generation()
+        if self.forget_stuck_n_gen is not None:
+            self._update_stuck_tracking()
 
 class PCEA(OptimisationAlgorithm):
     def __init__(self, 

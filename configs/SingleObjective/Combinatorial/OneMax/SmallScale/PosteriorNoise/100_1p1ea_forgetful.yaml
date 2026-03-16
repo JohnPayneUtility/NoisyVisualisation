@@ -69,11 +69,12 @@ algo:
   init_args:
     _target_: src.algorithms.Algorithms.MuPlusLamdaEA_forgetful
     mu: 1
-    lam: 1
+    lam: 100
     mutate_function: "probFlipBit"
     mutate_params:
       indpb: null  # Will be resolved dynamically
-    forget_every_n_gen: 1000
+    forget_every_n_gen: null
+    forget_stuck_n_gen: 100
 
 # ==============================
 # Problem Configuration
