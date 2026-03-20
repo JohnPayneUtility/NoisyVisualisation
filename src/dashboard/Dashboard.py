@@ -367,6 +367,347 @@ def display_box_evals_so(data):
     plot = plot2d_box_evals(plot_df)
     return plot
 
+# ---------- Performance summary table ----------
+@app.callback(
+    Output('performance-summary-table', 'children'),
+    Input('plot_2d_data', 'data'),
+    Input('so-fitness-mode', 'value'),
+    Input('table1-selected-store', 'data'),
+)
+def update_performance_summary_table(data, fitness_mode, selected_rows):
+    # Blank when no problem is selected
+    if not selected_rows:
+        return html.P(
+            "Select a problem from the table above to see the performance summary.",
+            style={'color': '#888', 'fontStyle': 'italic', 'padding': '8px 0'}
+        )
+    if not data:
+        return html.P("No data available.", style={'color': '#888', 'fontStyle': 'italic'})
+
+    plot_df = pd.DataFrame(data)
+    fit_col = 'final_fit' if fitness_mode == 'final' else 'max_fit'
+    label = 'Final Fitness' if fitness_mode == 'final' else 'Best Fitness'
+
+    required_cols = {'algo_name', 'noise', fit_col}
+    if not required_cols.issubset(plot_df.columns):
+        return html.P("Required columns not available for summary.", style={'color': '#888'})
+
+    df_sub = plot_df[['algo_name', 'noise', fit_col]].copy()
+    stats = df_sub.groupby(['noise', 'algo_name'])[fit_col].agg(['median', 'std']).reset_index()
+
+    algos = sorted(stats['algo_name'].unique())
+    noise_levels = sorted(stats['noise'].unique())
+
+    rows = []
+    highlight_cells = []  # (row_index, col_id) for best algorithm per noise level
+
+    for i, noise in enumerate(noise_levels):
+        row = {'Noise Level': noise}
+        noise_stats = stats[stats['noise'] == noise]
+        best_median = None
+        best_algos = []
+        for algo in algos:
+            algo_row = noise_stats[noise_stats['algo_name'] == algo]
+            if algo_row.empty:
+                row[algo] = '-'
+            else:
+                med = algo_row['median'].values[0]
+                std = algo_row['std'].values[0]
+                std_str = f'{std:.3f}' if pd.notna(std) else 'N/A'
+                row[algo] = f'{med:.3f} ± {std_str}'
+                if best_median is None or med > best_median:
+                    best_median = med
+                    best_algos = [algo]
+                elif med == best_median:
+                    best_algos.append(algo)
+        rows.append(row)
+        for algo in best_algos:
+            highlight_cells.append((i, algo))
+
+    columns = [{'name': 'Noise Level', 'id': 'Noise Level'}] + [{'name': a, 'id': a} for a in algos]
+
+    style_data_conditional = [
+        {
+            'if': {'row_index': row_idx, 'column_id': col_id},
+            'backgroundColor': '#d4edda',
+            'fontWeight': 'bold',
+        }
+        for row_idx, col_id in highlight_cells
+    ]
+
+    table = dash_table.DataTable(
+        data=rows,
+        columns=columns,
+        style_data_conditional=style_data_conditional,
+        style_header={'fontWeight': 'bold', 'backgroundColor': '#f0f0f0', 'textAlign': 'center'},
+        style_cell={'textAlign': 'center', 'padding': '6px 12px', 'fontFamily': 'monospace'},
+        style_table={'marginBottom': '8px'},
+    )
+
+    return html.Div([
+        html.H5(f"Performance Summary: Median {label} ± Std Dev by Noise Level",
+                style={'marginTop': '16px', 'marginBottom': '4px'}),
+        html.P("Green highlight indicates the highest median fitness for that noise level.",
+               style={'color': '#555', 'fontSize': '12px', 'marginBottom': '8px'}),
+        table,
+        html.Hr(),
+    ])
+
+
+# ---------- Mann-Whitney U-test pairwise table ----------
+@app.callback(
+    Output('mann-whitney-table', 'children'),
+    Input('plot_2d_data', 'data'),
+    Input('so-fitness-mode', 'value'),
+    Input('table1-selected-store', 'data'),
+)
+def update_mann_whitney_table(data, fitness_mode, selected_rows):
+    from scipy.stats import mannwhitneyu
+
+    if not selected_rows:
+        return html.P(
+            "Select a problem from the table above to see the Mann-Whitney U-test results.",
+            style={'color': '#888', 'fontStyle': 'italic', 'padding': '8px 0'}
+        )
+    if not data:
+        return html.P("No data available.", style={'color': '#888', 'fontStyle': 'italic'})
+
+    plot_df = pd.DataFrame(data)
+    fit_col = 'final_fit' if fitness_mode == 'final' else 'max_fit'
+    label = 'Final Fitness' if fitness_mode == 'final' else 'Best Fitness'
+
+    required_cols = {'algo_name', 'noise', fit_col}
+    if not required_cols.issubset(plot_df.columns):
+        return html.P("Required columns not available for Mann-Whitney tests.", style={'color': '#888'})
+
+    algos = sorted(plot_df['algo_name'].unique())
+    noise_levels = sorted(plot_df['noise'].unique())
+
+    def build_tab_content(noise):
+        noise_df = plot_df[plot_df['noise'] == noise]
+        rows = []
+        style_data_conditional = []
+
+        for row_idx, algo_row in enumerate(algos):
+            row = {'Algorithm': algo_row}
+            samples_row = noise_df[noise_df['algo_name'] == algo_row][fit_col].dropna().values
+            for algo_col in algos:
+                if algo_row == algo_col:
+                    row[algo_col] = '-'
+                else:
+                    samples_col = noise_df[noise_df['algo_name'] == algo_col][fit_col].dropna().values
+                    if len(samples_row) < 2 or len(samples_col) < 2:
+                        row[algo_col] = 'N/A'
+                    else:
+                        _, p = mannwhitneyu(samples_row, samples_col, alternative='two-sided')
+                        row[algo_col] = f'{p:.4f}'
+                        if p < 0.05:
+                            style_data_conditional.append({
+                                'if': {'row_index': row_idx, 'column_id': algo_col},
+                                'backgroundColor': '#d4edda',
+                                'fontWeight': 'bold',
+                            })
+            rows.append(row)
+
+        columns = [{'name': 'Algorithm', 'id': 'Algorithm'}] + [{'name': a, 'id': a} for a in algos]
+
+        return dash_table.DataTable(
+            data=rows,
+            columns=columns,
+            style_data_conditional=style_data_conditional,
+            style_header={'fontWeight': 'bold', 'backgroundColor': '#f0f0f0', 'textAlign': 'center'},
+            style_cell={'textAlign': 'center', 'padding': '6px 12px', 'fontFamily': 'monospace'},
+            style_table={'marginBottom': '8px'},
+        )
+
+    tabs = dcc.Tabs(
+        children=[
+            dcc.Tab(
+                label=f'Noise = {noise}',
+                children=[build_tab_content(noise)],
+                style=tab_style,
+                selected_style=tab_selected_style,
+            )
+            for noise in noise_levels
+        ]
+    )
+
+    return html.Div([
+        html.H5(f"Mann-Whitney U-Test: Pairwise p-values ({label}, two-sided)",
+                style={'marginTop': '16px', 'marginBottom': '4px'}),
+        html.P("Green highlight indicates p < 0.05 (statistically significant difference). Each tab shows one noise level.",
+               style={'color': '#555', 'fontSize': '12px', 'marginBottom': '8px'}),
+        tabs,
+        html.Hr(),
+    ])
+
+
+# ---------- Evaluations summary table ----------
+@app.callback(
+    Output('evals-summary-table', 'children'),
+    Input('plot_2d_data', 'data'),
+    Input('table1-selected-store', 'data'),
+)
+def update_evals_summary_table(data, selected_rows):
+    if not selected_rows:
+        return html.P(
+            "Select a problem from the table above to see the evaluations summary.",
+            style={'color': '#888', 'fontStyle': 'italic', 'padding': '8px 0'}
+        )
+    if not data:
+        return html.P("No data available.", style={'color': '#888', 'fontStyle': 'italic'})
+
+    plot_df = pd.DataFrame(data)
+
+    if not {'algo_name', 'noise', 'n_evals'}.issubset(plot_df.columns):
+        return html.P("Required columns not available for evaluations summary.", style={'color': '#888'})
+
+    df_sub = plot_df[['algo_name', 'noise', 'n_evals']].copy()
+    stats = df_sub.groupby(['noise', 'algo_name'])['n_evals'].agg(['median', 'std']).reset_index()
+
+    algos = sorted(stats['algo_name'].unique())
+    noise_levels = sorted(stats['noise'].unique())
+
+    rows = []
+    highlight_cells = []
+
+    for i, noise in enumerate(noise_levels):
+        row = {'Noise Level': noise}
+        noise_stats = stats[stats['noise'] == noise]
+        best_median = None
+        best_algos = []
+        for algo in algos:
+            algo_row = noise_stats[noise_stats['algo_name'] == algo]
+            if algo_row.empty:
+                row[algo] = '-'
+            else:
+                med = algo_row['median'].values[0]
+                std = algo_row['std'].values[0]
+                std_str = f'{std:.3f}' if pd.notna(std) else 'N/A'
+                row[algo] = f'{med:.1f} ± {std_str}'
+                if best_median is None or med < best_median:
+                    best_median = med
+                    best_algos = [algo]
+                elif med == best_median:
+                    best_algos.append(algo)
+        rows.append(row)
+        for algo in best_algos:
+            highlight_cells.append((i, algo))
+
+    columns = [{'name': 'Noise Level', 'id': 'Noise Level'}] + [{'name': a, 'id': a} for a in algos]
+
+    style_data_conditional = [
+        {
+            'if': {'row_index': row_idx, 'column_id': col_id},
+            'backgroundColor': '#d4edda',
+            'fontWeight': 'bold',
+        }
+        for row_idx, col_id in highlight_cells
+    ]
+
+    table = dash_table.DataTable(
+        data=rows,
+        columns=columns,
+        style_data_conditional=style_data_conditional,
+        style_header={'fontWeight': 'bold', 'backgroundColor': '#f0f0f0', 'textAlign': 'center'},
+        style_cell={'textAlign': 'center', 'padding': '6px 12px', 'fontFamily': 'monospace'},
+        style_table={'marginBottom': '8px'},
+    )
+
+    return html.Div([
+        html.H5("Evaluations Summary: Median Runtime (n_evals) ± Std Dev by Noise Level",
+                style={'marginTop': '16px', 'marginBottom': '4px'}),
+        html.P("Green highlight indicates the lowest median evaluations for that noise level.",
+               style={'color': '#555', 'fontSize': '12px', 'marginBottom': '8px'}),
+        table,
+        html.Hr(),
+    ])
+
+
+# ---------- Evaluations Mann-Whitney U-test pairwise table ----------
+@app.callback(
+    Output('evals-mann-whitney-table', 'children'),
+    Input('plot_2d_data', 'data'),
+    Input('table1-selected-store', 'data'),
+)
+def update_evals_mann_whitney_table(data, selected_rows):
+    from scipy.stats import mannwhitneyu
+
+    if not selected_rows:
+        return html.P(
+            "Select a problem from the table above to see the evaluations Mann-Whitney U-test results.",
+            style={'color': '#888', 'fontStyle': 'italic', 'padding': '8px 0'}
+        )
+    if not data:
+        return html.P("No data available.", style={'color': '#888', 'fontStyle': 'italic'})
+
+    plot_df = pd.DataFrame(data)
+
+    if not {'algo_name', 'noise', 'n_evals'}.issubset(plot_df.columns):
+        return html.P("Required columns not available for evaluations Mann-Whitney tests.", style={'color': '#888'})
+
+    algos = sorted(plot_df['algo_name'].unique())
+    noise_levels = sorted(plot_df['noise'].unique())
+
+    def build_tab_content(noise):
+        noise_df = plot_df[plot_df['noise'] == noise]
+        rows = []
+        style_data_conditional = []
+
+        for row_idx, algo_row in enumerate(algos):
+            row = {'Algorithm': algo_row}
+            samples_row = noise_df[noise_df['algo_name'] == algo_row]['n_evals'].dropna().values
+            for algo_col in algos:
+                if algo_row == algo_col:
+                    row[algo_col] = '-'
+                else:
+                    samples_col = noise_df[noise_df['algo_name'] == algo_col]['n_evals'].dropna().values
+                    if len(samples_row) < 2 or len(samples_col) < 2:
+                        row[algo_col] = 'N/A'
+                    else:
+                        _, p = mannwhitneyu(samples_row, samples_col, alternative='two-sided')
+                        row[algo_col] = f'{p:.4f}'
+                        if p < 0.05:
+                            style_data_conditional.append({
+                                'if': {'row_index': row_idx, 'column_id': algo_col},
+                                'backgroundColor': '#d4edda',
+                                'fontWeight': 'bold',
+                            })
+            rows.append(row)
+
+        columns = [{'name': 'Algorithm', 'id': 'Algorithm'}] + [{'name': a, 'id': a} for a in algos]
+
+        return dash_table.DataTable(
+            data=rows,
+            columns=columns,
+            style_data_conditional=style_data_conditional,
+            style_header={'fontWeight': 'bold', 'backgroundColor': '#f0f0f0', 'textAlign': 'center'},
+            style_cell={'textAlign': 'center', 'padding': '6px 12px', 'fontFamily': 'monospace'},
+            style_table={'marginBottom': '8px'},
+        )
+
+    tabs = dcc.Tabs(
+        children=[
+            dcc.Tab(
+                label=f'Noise = {noise}',
+                children=[build_tab_content(noise)],
+                style=tab_style,
+                selected_style=tab_selected_style,
+            )
+            for noise in noise_levels
+        ]
+    )
+
+    return html.Div([
+        html.H5("Mann-Whitney U-Test: Pairwise p-values (Runtime n_evals, two-sided)",
+                style={'marginTop': '16px', 'marginBottom': '4px'}),
+        html.P("Green highlight indicates p < 0.05 (statistically significant difference). Each tab shows one noise level.",
+               style={'color': '#555', 'fontSize': '12px', 'marginBottom': '8px'}),
+        tabs,
+        html.Hr(),
+    ])
+
+
 # ---------- Render 2D plot content in tabbed view ----------
 @app.callback(
     Output('2DPlotTabContent', 'children'),

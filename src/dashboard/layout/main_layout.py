@@ -10,6 +10,10 @@ from .stores import create_all_stores
 from .components import (
     create_problem_selection_tabs,
     create_2d_plot_tabs,
+    create_performance_summary_table,
+    create_mann_whitney_table,
+    create_evals_summary_table,
+    create_evals_mann_whitney_table,
     create_algorithm_table,
     create_pareto_front_section,
     create_multiobjective_options_section,
@@ -48,6 +52,18 @@ def create_layout(display2_df, display2_hidden_cols):
 
     # 2D performance plot tabs
     children.append(create_2d_plot_tabs())
+
+    # Performance summary table (median ± std per noise level per algorithm)
+    children.append(create_performance_summary_table())
+
+    # Mann-Whitney U-test pairwise table (per noise level tab)
+    children.append(create_mann_whitney_table())
+
+    # Evaluations summary table (median ± std of n_evals per noise level per algorithm)
+    children.append(create_evals_summary_table())
+
+    # Evaluations Mann-Whitney U-test pairwise table (per noise level tab)
+    children.append(create_evals_mann_whitney_table())
 
     # Algorithm selection table (Table 2)
     children.extend(create_algorithm_table(display2_df, display2_hidden_cols))

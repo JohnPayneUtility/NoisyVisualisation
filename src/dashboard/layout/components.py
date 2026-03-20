@@ -122,6 +122,56 @@ def create_2d_plot_tabs():
     ], style=SECTION_STYLE)
 
 
+def create_performance_summary_table():
+    """
+    Create a placeholder div for the performance summary table.
+
+    The table is populated by a callback based on the selected problem and
+    the current 2D plot data (same data as the Line plot SO).
+
+    Returns:
+        html.Div: Container for the performance summary table.
+    """
+    return html.Div(id='performance-summary-table', style={'padding': '0 10px'})
+
+
+def create_mann_whitney_table():
+    """
+    Create a placeholder div for the Mann-Whitney U-test table.
+
+    The table is populated by a callback. It shows per-noise-level tabs with
+    pairwise two-sided Mann-Whitney U p-values for each algorithm pair.
+
+    Returns:
+        html.Div: Container for the Mann-Whitney U-test table.
+    """
+    return html.Div(id='mann-whitney-table', style={'padding': '0 10px'})
+
+
+def create_evals_summary_table():
+    """
+    Create a placeholder div for the evaluations performance summary table.
+
+    Mirrors the fitness summary table but uses runtime (n_evals) as the metric.
+
+    Returns:
+        html.Div: Container for the evaluations summary table.
+    """
+    return html.Div(id='evals-summary-table', style={'padding': '0 10px'})
+
+
+def create_evals_mann_whitney_table():
+    """
+    Create a placeholder div for the evaluations Mann-Whitney U-test table.
+
+    Mirrors the fitness Mann-Whitney table but uses runtime (n_evals) as the metric.
+
+    Returns:
+        html.Div: Container for the evaluations Mann-Whitney U-test table.
+    """
+    return html.Div(id='evals-mann-whitney-table', style={'padding': '0 10px'})
+
+
 def create_algorithm_table(display2_df, display2_hidden_cols):
     """
     Create Table 2 for algorithm selection.

@@ -1,6 +1,7 @@
 # IMPORTS
 import random
 import numpy as np
+from statistics import median
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -386,6 +387,48 @@ class MuPlusLamdaEA_forgetful(MuPlusLamdaEA):
         if self.forget_stuck_n_gen is not None:
             self._update_stuck_tracking()
 
+class MuPlusLamdaEA_estimated(MuPlusLamdaEA):
+    """(mu+lambda)EA that replaces noisy fitness with the median of all accumulated
+    noisy evaluations for a solution whenever at least min_samples observations exist."""
+
+    def __init__(self, min_samples: int = 1, **kwargs):
+        self.min_samples = min_samples
+        super().__init__(**kwargs)
+        self.name = f'{self.name}-Est{min_samples}'
+
+    def _get_estimated_fitness(self, ind) -> Optional[float]:
+        """Return median of all noisy evaluations seen so far, or None if too few."""
+        sol_tuple = tuple(ind)
+        historical = self.logger._fit_history.get_fits(sol_tuple)
+        current_gen = [r[1] for r in self.logger._gen_evals.get(sol_tuple, [])]
+        all_fits = historical + current_gen
+        if len(all_fits) >= self.min_samples:
+            return median(all_fits)
+        return None
+
+    def perform_generation(self):
+        for _ in range(self.lam):
+            parent = random.choice(self.population)
+            offspring = self.toolbox.clone(parent)
+            offspring, = self.toolbox.mutate(offspring)
+
+            del offspring.fitness.values
+            offspring.fitness.values = self._evaluate_and_track(offspring)
+            self.evals += 1
+
+            estimated = self._get_estimated_fitness(offspring)
+            if estimated is not None:
+                offspring.fitness.values = (estimated,)
+
+            self.population.append(offspring)
+
+        if self.mu == 1 and self.lam == 1:
+            parent, offspring = self.population[0], self.population[1]
+            self.population = [offspring if offspring.fitness >= parent.fitness else parent]
+        else:
+            self.population = tools.selBest(self.population, self.mu)
+
+
 class PCEA(OptimisationAlgorithm):
     def __init__(self, 
                  pop_size: int,
@@ -509,6 +552,44 @@ class UMDA(OptimisationAlgorithm):
         new_best_tuple = tuple(tools.selBest(self.population, 1)[0])
         if new_best_tuple != self.logger._cur_sol:
             self._prob_rep, self._prob_rep_fitness = self._compute_prob_rep(prob_vector)
+
+class UMDA_estimated(UMDA):
+    """UMDA that replaces noisy fitness with the median of all accumulated noisy
+    evaluations for a solution whenever at least min_samples observations exist."""
+
+    def __init__(self, min_samples: int = 1, **kwargs):
+        self.min_samples = min_samples
+        super().__init__(**kwargs)
+        self.name = f'{self.name}-Est{min_samples}'
+
+    def _get_estimated_fitness(self, ind) -> Optional[float]:
+        """Return median of all noisy evaluations seen so far, or None if too few."""
+        sol_tuple = tuple(ind)
+        historical = self.logger._fit_history.get_fits(sol_tuple)
+        current_gen = [r[1] for r in self.logger._gen_evals.get(sol_tuple, [])]
+        all_fits = historical + current_gen
+        if len(all_fits) >= self.min_samples:
+            return median(all_fits)
+        return None
+
+    def perform_generation(self):
+        self.population, prob_vector = umda_update_full(
+            self.sol_length, self.population, self.pop_size, self.select_size, self.toolbox
+        )
+
+        for ind in self.population:
+            ind.fitness.values = self._evaluate_and_track(ind)
+        self.evals += self.pop_size
+
+        for ind in self.population:
+            estimated = self._get_estimated_fitness(ind)
+            if estimated is not None:
+                ind.fitness.values = (estimated,)
+
+        new_best_tuple = tuple(tools.selBest(self.population, 1)[0])
+        if new_best_tuple != self.logger._cur_sol:
+            self._prob_rep, self._prob_rep_fitness = self._compute_prob_rep(prob_vector)
+
 
 class CompactGA(OptimisationAlgorithm):
     def __init__(self, 
