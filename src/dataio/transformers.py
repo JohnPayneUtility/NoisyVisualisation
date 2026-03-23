@@ -78,6 +78,11 @@ def create_display2_df(df: pd.DataFrame) -> pd.DataFrame:
         Deduplicated DataFrame with algorithm configuration columns,
         excluding run-specific data like seeds, trajectory data, etc.
     """
+    # Count runs per unique configuration before dropping columns
+    available_keys = [k for k in DISPLAY2_DEDUP_KEYS if k in df.columns]
+    if available_keys:
+        run_counts = df.groupby(available_keys).size().reset_index(name='no_runs')
+
     display2_df = df.copy()
     display2_df.drop(
         DISPLAY2_DROP_COLUMNS,
@@ -87,9 +92,9 @@ def create_display2_df(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     # Deduplicate by algorithm configuration keys
-    available_keys = [k for k in DISPLAY2_DEDUP_KEYS if k in display2_df.columns]
     if available_keys:
         display2_df = display2_df.drop_duplicates(subset=available_keys)
+        display2_df = display2_df.merge(run_counts, on=available_keys, how='left')
 
     return display2_df
 

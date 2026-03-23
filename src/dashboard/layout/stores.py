@@ -15,6 +15,7 @@ from dash import dcc
 TABLE1_SELECTED_STORE = "table1-selected-store"
 TABLE1_TAB2_SELECTED_STORE = "table1tab2-selected-store"
 TABLE2_SELECTED_STORE = "table2-selected-store"
+LON_TABLE_SELECTED_PID_STORE = "lon-table-selected-pid-store"
 DATA_PROBLEM_SPECIFIC = "data-problem-specific"
 OPTIMUM_STORE = "optimum"
 PID_STORE = "PID"
@@ -48,6 +49,7 @@ def create_selection_stores():
         dcc.Store(id=TABLE1_TAB2_SELECTED_STORE, data=[]),
         dcc.Store(id=DATA_PROBLEM_SPECIFIC, data=[]),
         dcc.Store(id=TABLE2_SELECTED_STORE, data=[]),
+        dcc.Store(id=LON_TABLE_SELECTED_PID_STORE, data=None),
         dcc.Store(id=OPTIMUM_STORE, data=[]),
         dcc.Store(id=PID_STORE, data=[]),
         dcc.Store(id=OPT_GOAL_STORE, data=[]),

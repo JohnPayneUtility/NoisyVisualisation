@@ -18,6 +18,7 @@ from ..problems.FitnessFunctions import *
 from ..problems.ProblemScripts import load_problem_KP
 from .DimensionalityReduction import *
 from .layout import create_layout, TAB_STYLE, TAB_SELECTED_STYLE
+from .layout.stores import LON_TABLE_SELECTED_PID_STORE
 
 # Visualization module imports
 from ..visualization import (
@@ -233,17 +234,25 @@ def update_table2(data):
     Output("PID", "data"),
     Output("opt_goal", 'data'),
     Output("fit_func_store", 'data')],
-    Input("data-problem-specific", "data")
+    Input("data-problem-specific", "data"),
+    [State("table1-selected-store", "data"),
+     State(LON_TABLE_SELECTED_PID_STORE, "data")]
 )
-def update_table2(data):
-    if data is None:
-        return None, None, None, None
-    df = pd.DataFrame(data)
-    optimum = df["opt_global"].iloc[0]
-    PID = df["PID"].iloc[0]
-    opt_goal = df["problem_goal"].iloc[0]
-    fit_func = df["fit_func"].iloc[0]
-    return optimum, PID, opt_goal, fit_func
+def update_table2(data, table1_selection, lon_table_pid):
+    # Primary: use problem table selection if available
+    if data is not None and table1_selection:
+        df = pd.DataFrame(data)
+        optimum = df["opt_global"].iloc[0]
+        PID = df["PID"].iloc[0]
+        opt_goal = df["problem_goal"].iloc[0]
+        fit_func = df["fit_func"].iloc[0]
+        return optimum, PID, opt_goal, fit_func
+
+    # Fallback: no problem selected in table 1, use PID from selected LON row
+    if lon_table_pid is not None:
+        return None, lon_table_pid, None, None
+
+    return None, None, None, None
 
 # ------------------------------
 # Callback: Display Selected Rows from Table 2
@@ -264,7 +273,7 @@ def update_table2_selected(selected_rows, table2_data):
 # 2D Plot
 # ------------------------------
 # ---------- Generate data for 2D performance plot by filtering main data with table 2 selection ----------
-filter_columns = [col for col in display2_df.columns]
+filter_columns = [col for col in display2_df.columns if col in df_no_lists.columns]
 @app.callback(
     Output('plot_2d_data', 'data'),
     Input('table2', 'derived_virtual_data')
@@ -760,6 +769,18 @@ def render_content_2DPlot_tab(tab):
 # ------------------------------
 # LON Plots
 # ------------------------------
+
+# Store PID from selected LON row so it is accessible from the initial layout
+@app.callback(
+    Output(LON_TABLE_SELECTED_PID_STORE, 'data'),
+    Input("LON_table", "selected_rows"),
+    State("LON_table", "data"),
+    prevent_initial_call=True
+)
+def update_lon_table_selected_pid(selected_rows, lon_table_data):
+    if selected_rows and lon_table_data:
+        return lon_table_data[selected_rows[0]].get("PID")
+    return None
 
 # Filter LON dataframe by selected problem using table 1 selection
 @app.callback(
