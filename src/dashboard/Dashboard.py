@@ -80,6 +80,33 @@ tab_selected_style = TAB_SELECTED_STYLE
 
 app.layout = create_layout(display2_df, display2_hidden_cols)
 
+# ---------- Fit function -> x-axis label mapping ----------
+FIT_FUNC_XAXIS_LABELS = {
+    'OneMax_fitness': 'sigma (s.d. of gaussian Noise N(0, sigma))',
+    'OneMax_prior_bitflip_fitness': 'p (probability of single bit flip (p/n))',
+    'OneMax_prior_mult_bitflip_fitness': 'n (number of bit flips)',
+    'OneMax_prior_pq_bitwise_fitness': 'q (bitwise flip probability q/n), probability of applying noise 1/n',
+    'OneMax_prior_1q_bitwise_fitness': 'q (bitwise flip probability q/n)',
+    'eval_noisy_kp_v1': 'd, where d x mean(W) is s.d. of noise',
+    'eval_noisy_kp_v2': 'd, where d x mean(W) is s.d. of noise',
+    'eval_noisy_kp_prior_bitflip': 'p (probability of single bit flip (p/n))',
+    'eval_noisy_kp_prior_mult_bitflip': 'n (number of bit flips)',
+    'eval_noisy_kp_pq_prior_bitwise': 'q (bitwise flip probability q/n), probability of applying noise 1/n',
+    'eval_noisy_kp_1q_prior_bitwise': 'q (bitwise flip probability q/n)',
+    'rastrigin_eval': 'sigma (s.d. of gaussian Noise N(0, sigma))',
+    'birastrigin_eval': 'sigma (s.d. of gaussian Noise N(0, sigma))',
+}
+
+def _get_so_xaxis_label(selected_rows):
+    """Return the x-axis label for the selected problem row, or None if nothing is selected."""
+    if not selected_rows:
+        return None
+    idx = selected_rows[0]
+    if idx >= len(display1_df):
+        return None
+    fit_func = display1_df.iloc[idx]['fit_func']
+    return FIT_FUNC_XAXIS_LABELS.get(fit_func, fit_func)
+
 # ------------------------------
 # Callback: Render Problem Tab Content
 # ------------------------------
@@ -317,21 +344,29 @@ def display_stored_data(data):
 @app.callback(
     Output('2DLinePlot', 'figure'),
     Input('plot_2d_data', 'data'),
-    Input('so-fitness-mode', 'value')
+    Input('so-fitness-mode', 'value'),
+    Input('table1-selected-store', 'data'),
 )
-def display_stored_data(data, fitness_mode):
+def display_stored_data(data, fitness_mode, selected_rows):
+    xaxis_label = _get_so_xaxis_label(selected_rows)
+    if xaxis_label is None:
+        return go.Figure()
     plot_df = pd.DataFrame(data)
-    plot = plot2d_line(plot_df, fitness_mode=fitness_mode or 'best')
+    plot = plot2d_line(plot_df, fitness_mode=fitness_mode or 'best', xaxis_title=xaxis_label)
     return plot
 # 2D box plot
 @app.callback(
     Output('2DBoxPlot', 'figure'),
     Input('plot_2d_data', 'data'),
-    Input('so-fitness-mode', 'value')
+    Input('so-fitness-mode', 'value'),
+    Input('table1-selected-store', 'data'),
 )
-def display_stored_data(data, fitness_mode):
+def display_stored_data(data, fitness_mode, selected_rows):
+    xaxis_label = _get_so_xaxis_label(selected_rows)
+    if xaxis_label is None:
+        return go.Figure()
     plot_df = pd.DataFrame(data)
-    plot = plot2d_box(plot_df, fitness_mode=fitness_mode or 'best')
+    plot = plot2d_box(plot_df, fitness_mode=fitness_mode or 'best', xaxis_title=xaxis_label)
     return plot
 
 # 2D line plot (multi-objective)
@@ -359,23 +394,31 @@ def display_stored_data_mo_box(data):
     Output('2DLinePlotEvalsSO', 'figure'),
     Input('plot_2d_data', 'data'),
     Input('line-evals-show-std', 'value'),
-    Input('so-fitness-mode', 'value')
+    Input('so-fitness-mode', 'value'),
+    Input('table1-selected-store', 'data'),
 )
-def display_line_evals_so(data, std_checkbox, fitness_mode):
+def display_line_evals_so(data, std_checkbox, fitness_mode, selected_rows):
+    xaxis_label = _get_so_xaxis_label(selected_rows)
+    if xaxis_label is None:
+        return go.Figure()
     plot_df = pd.DataFrame(data)
     show_std = bool(std_checkbox and 'show' in std_checkbox)
-    plot = plot2d_line_evals(plot_df, fitness_mode=fitness_mode or 'final', show_std=show_std)
+    plot = plot2d_line_evals(plot_df, fitness_mode=fitness_mode or 'final', show_std=show_std, xaxis_title=xaxis_label)
     return plot
 
 # 2D box plot (evals, single-objective)
 @app.callback(
     Output('2DBoxPlotEvalsSO', 'figure'),
     Input('plot_2d_data', 'data'),
-    Input('so-fitness-mode', 'value')
+    Input('so-fitness-mode', 'value'),
+    Input('table1-selected-store', 'data'),
 )
-def display_box_evals_so(data, fitness_mode):
+def display_box_evals_so(data, fitness_mode, selected_rows):
+    xaxis_label = _get_so_xaxis_label(selected_rows)
+    if xaxis_label is None:
+        return go.Figure()
     plot_df = pd.DataFrame(data)
-    plot = plot2d_box_evals(plot_df, fitness_mode=fitness_mode or 'final')
+    plot = plot2d_box_evals(plot_df, fitness_mode=fitness_mode or 'final', xaxis_title=xaxis_label)
     return plot
 
 # ---------- Performance summary table ----------
@@ -1303,6 +1346,13 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
         node_size_metric=stn_node_size_metric or 'generations',
     )
 
+    # Apply viridis color palette for series if enabled
+    if config.stn.use_viridis:
+        n_series = len(STN_labels or STN_MO_series_labels or [])
+        if n_series > 0:
+            positions = [i / max(n_series - 1, 1) for i in range(n_series)]
+            config.algo_colors = [px.colors.sample_colorscale('Viridis', p)[0] for p in positions]
+
     # ==========
     # STEP 2: Initialize graph and node mappings
     # ==========
@@ -1535,7 +1585,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                             arrowsize=1,
                             arrowwidth=1.5,
                             arrowcolor='black',
-                            ax=40, ay=-40,
+                            ax=80, ay=0,
                             font=dict(size=11, color='black'),
                         ))
 
@@ -1558,7 +1608,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                             arrowsize=1,
                             arrowwidth=1.5,
                             arrowcolor='black',
-                            ax=40, ay=-40,
+                            ax=80, ay=0,
                             font=dict(size=11, color='black'),
                         ))
 
@@ -1605,9 +1655,9 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                         arrowhead=2,
                         arrowsize=1,
                         arrowwidth=1.5,
-                        arrowcolor='green',
+                        arrowcolor='black',
                         ax=40, ay=-40,
-                        font=dict(size=11, color='green'),
+                        font=dict(size=11, color='black'),
                     ))
                     break  # Only one global optimum
 

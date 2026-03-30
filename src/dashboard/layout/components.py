@@ -385,8 +385,9 @@ def create_stn_options_section():
                 {'label': 'Show alt representation with fitness', 'value': 'show_alt_rep'},
                 {'label': 'Show alt representation', 'value': 'show_alt_rep_no_fit'},
                 {'label': 'Show noisy nodes as squares', 'value': 'noisy-nodes-square'},
+                {'label': 'Use viridis for series', 'value': 'use-viridis'},
             ],
-            value=['noisy-nodes-square'],
+            value=['noisy-nodes-square', 'use-viridis'],
             labelStyle={'display': 'inline-block', 'margin-right': '10px'}
         ),
         dcc.Dropdown(

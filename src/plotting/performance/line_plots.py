@@ -10,7 +10,7 @@ import plotly.graph_objects as go
 from ..base import DEFAULT_TEMPLATE, create_empty_figure
 
 
-def plot_line(dataframe, fitness_mode='best'):
+def plot_line(dataframe, fitness_mode='best', xaxis_title=None):
     """
     Create a line plot comparing algorithm performance across noise levels.
 
@@ -58,7 +58,7 @@ def plot_line(dataframe, fitness_mode='best'):
 
     fig.update_layout(
         title='title',
-        xaxis_title=r'$\sigma$ (Standard Deviation of Gaussian Noise $N(0,\sigma)$)',
+        xaxis_title=xaxis_title or r'$\sigma$ (Standard Deviation of Gaussian Noise $N(0,\sigma)$)',
         yaxis_title=yaxis_label,
         legend_title='Algo Name',
         template=DEFAULT_TEMPLATE
@@ -67,7 +67,7 @@ def plot_line(dataframe, fitness_mode='best'):
     return fig
 
 
-def plot_line_evals(dataframe, fitness_mode='final', show_std=True):
+def plot_line_evals(dataframe, fitness_mode='final', show_std=True, xaxis_title=None):
     """
     Create a line plot comparing algorithm runtime (evaluations) across noise levels.
 
@@ -118,7 +118,7 @@ def plot_line_evals(dataframe, fitness_mode='final', show_std=True):
 
     fig.update_layout(
         title='title',
-        xaxis_title=r'$\sigma$ (Standard Deviation of Gaussian Noise $N(0,\sigma)$)',
+        xaxis_title=xaxis_title or r'$\sigma$ (Standard Deviation of Gaussian Noise $N(0,\sigma)$)',
         yaxis_title=yaxis_label,
         legend_title='Algo Name',
         template=DEFAULT_TEMPLATE

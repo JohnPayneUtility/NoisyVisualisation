@@ -11,7 +11,7 @@ import plotly.express as px
 from ..base import DEFAULT_TEMPLATE, create_empty_figure
 
 
-def plot_box(dataframe, fitness_mode='best'):
+def plot_box(dataframe, fitness_mode='best', xaxis_title=None):
     """
     Create a box plot comparing algorithm performance across noise levels.
 
@@ -54,7 +54,7 @@ def plot_box(dataframe, fitness_mode='best'):
     fig.update_layout(
         xaxis=dict(
             title=dict(
-                text="d, where d x mean(W) is s.d. of noise",
+                text=xaxis_title or "d, where d x mean(W) is s.d. of noise",
                 font=dict(size=24, color="black")
             ),
             tickfont=dict(size=20, color="black")
@@ -77,7 +77,7 @@ def plot_box(dataframe, fitness_mode='best'):
     return fig
 
 
-def plot_box_evals(dataframe, fitness_mode='final'):
+def plot_box_evals(dataframe, fitness_mode='final', xaxis_title=None):
     """
     Create a box plot comparing algorithm runtime (evaluations) across noise levels.
 
@@ -119,7 +119,7 @@ def plot_box_evals(dataframe, fitness_mode='final'):
     fig.update_layout(
         xaxis=dict(
             title=dict(
-                text="d, where d x mean(W) is s.d. of noise",
+                text=xaxis_title or "d, where d x mean(W) is s.d. of noise",
                 font=dict(size=24, color="black")
             ),
             tickfont=dict(size=20, color="black")
