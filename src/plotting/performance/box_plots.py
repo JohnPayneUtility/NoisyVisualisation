@@ -77,30 +77,40 @@ def plot_box(dataframe, fitness_mode='best'):
     return fig
 
 
-def plot_box_evals(dataframe):
+def plot_box_evals(dataframe, fitness_mode='final'):
     """
     Create a box plot comparing algorithm runtime (evaluations) across noise levels.
 
-    Shows the distribution of n_evals for each algorithm at each noise level.
+    Shows the distribution of evaluations for each algorithm at each noise level.
 
     Args:
         dataframe: DataFrame with columns:
             - algo_name: Algorithm identifier
             - noise: Noise level
             - n_evals: Total fitness evaluations used by the algorithm
+            - evals_to_best: Evaluations consumed until best fitness was found (optional)
+        fitness_mode: 'best' to plot evals_to_best, 'final' to plot n_evals
 
     Returns:
         go.Figure: Box plot comparing algorithms
     """
     df = dataframe.copy()
-    df = df[['algo_name', 'noise', 'n_evals']]
+
+    if fitness_mode == 'best' and 'evals_to_best' in df.columns:
+        eval_col = 'evals_to_best'
+        yaxis_label = 'Evaluations to best found fitness'
+    else:
+        eval_col = 'n_evals'
+        yaxis_label = 'Evaluations to final fitness'
+
+    df = df[['algo_name', 'noise', eval_col]].dropna(subset=[eval_col])
 
     noise_levels = sorted(df['noise'].unique())
 
     fig = px.box(
         df,
         x="noise",
-        y="n_evals",
+        y=eval_col,
         color="algo_name",
         category_orders={"noise": noise_levels},
         points=False
@@ -116,7 +126,7 @@ def plot_box_evals(dataframe):
         ),
         yaxis=dict(
             title=dict(
-                text="Runtime (evaluations)",
+                text=yaxis_label,
                 font=dict(size=24, color="black")
             ),
             tickfont=dict(size=20, color="black")

@@ -171,7 +171,7 @@ def calculate_positions_so(
 
     pos = {}
 
-    if layout_type == 'lmds':
+    if layout_type in ('lmds', 'r_lmds'):
         print(f'\033[33mUsing Landmark MDS with {K} solutions\033[0m')
         # Use Landmark MDS for efficient embedding
         positions_2d = landmark_mds(dist_fn, solutions_list, n_landmarks=None, random_state=42)

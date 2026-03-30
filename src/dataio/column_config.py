@@ -56,6 +56,7 @@ LIST_COLUMNS = [
     'count_estimated_fits_whenadopted',
     'count_estimated_fits_whendiscarded',
     'sol_iterations',
+    'sol_iterations_evals',
     'sol_transitions',
     'alternative_rep_sols',
     'alternative_rep_fits',

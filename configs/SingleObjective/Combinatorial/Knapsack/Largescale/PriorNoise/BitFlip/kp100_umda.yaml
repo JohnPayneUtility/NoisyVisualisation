@@ -10,8 +10,8 @@ run:
   max_gens: 1e6
   eval_limit: 1e6
   target_stop: true
-  no_improve_limit: 1e6
-  use_noise_dependent_eval_limit: true
+  no_improve_limit: 100000 # stop after this many evals without improvement
+  use_noise_dependent_eval_limit: false
   eval_limit_for_noise:
     "0": 38392
     "1": 38392
@@ -28,9 +28,9 @@ run:
   num_runs: 30
   parallel: true
   override_max_workers: null
-  progress_print_interval: 10000  # print update every N evals, set to null to disable
+  progress_print_interval: 10000  # print update every N evals; set to null to disable
   record_population: false
-  # nvme_path: ${hydra:runtime.cwd}/fast_storage
+  nvme_path: ${hydra:runtime.cwd}/fast_storage
 
 # ==============================
 # MLflow Configuration
@@ -45,7 +45,7 @@ hydra:
   mode: MULTIRUN
   sweeper:
     params:
-      problem.fitness_params.noise_intensity: 0,1,2,3,4,5,6,7,8,9,10
+      problem.fitness_params.noise_intensity: 0,1,2,3
   sweep:
     dir: data/outputs
 
@@ -67,7 +67,7 @@ algo:
 # Problem Configuration
 # ==============================
 problem:
-  PID: f1_l-d_kp_10_269
+  PID: knapPI_1_100_1000_1
   prob_name: knapsack
   prob_type: discrete
   opt_goal: maximise
@@ -81,7 +81,7 @@ problem:
   # Problem loading
   loader:
     _target_: src.problems.ProblemScripts.load_problem_KP
-    filename: f1_l-d_kp_10_269
+    filename: knapPI_1_100_1000_1
   
   # Fitness function
   fitness_fn: eval_noisy_kp_prior_bitflip

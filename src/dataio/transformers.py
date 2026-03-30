@@ -6,6 +6,7 @@ and return a new transformed DataFrame. Each function has a single
 responsibility and doesn't modify the input.
 """
 
+import numpy as np
 import pandas as pd
 from typing import List
 
@@ -18,6 +19,28 @@ from .column_config import (
 )
 
 
+def _compute_evals_to_best(row) -> object:
+    """
+    Compute cumulative evaluations at the visit where the best fitness was first achieved.
+
+    Uses rep_fits (true fitness per visit) and sol_iterations_evals (evals consumed
+    per visit). The best visit is the one with the highest fitness for maximisation
+    problems and the lowest for minimisation problems.
+
+    Returns None if required data is missing or mismatched in length.
+    """
+    rep_fits = row['rep_fits']
+    sol_iters_evals = row['sol_iterations_evals']
+    problem_goal = row.get('problem_goal', 'maximise')
+
+    if not rep_fits or not sol_iters_evals or len(rep_fits) != len(sol_iters_evals):
+        return None
+
+    goal = str(problem_goal)[:3].lower() if problem_goal else 'max'
+    best_idx = int(np.argmin(rep_fits)) if goal == 'min' else int(np.argmax(rep_fits))
+    return int(sum(sol_iters_evals[:best_idx + 1]))
+
+
 def create_df_no_lists(df: pd.DataFrame) -> pd.DataFrame:
     """
     Create a copy of the algorithm DataFrame with list columns removed.
@@ -25,14 +48,22 @@ def create_df_no_lists(df: pd.DataFrame) -> pd.DataFrame:
     Used for 2D performance plots where list/trajectory data is not needed,
     only summary statistics like final_fit, max_fit, etc.
 
+    Computes the scalar evals_to_best column before dropping list columns.
+
     Args:
         df: Raw algorithm results DataFrame
 
     Returns:
         DataFrame with list columns removed (unique_sols, unique_fits,
         noisy_fits, sol_iterations, sol_transitions, pareto_* columns, etc.)
+        plus a new scalar column evals_to_best.
     """
     df_no_lists = df.copy()
+
+    # Compute evals_to_best before list columns are dropped
+    if 'rep_fits' in df_no_lists.columns and 'sol_iterations_evals' in df_no_lists.columns:
+        df_no_lists['evals_to_best'] = df_no_lists.apply(_compute_evals_to_best, axis=1)
+
     df_no_lists.drop(
         LIST_COLUMNS,
         axis=1,

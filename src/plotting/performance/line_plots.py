@@ -67,26 +67,36 @@ def plot_line(dataframe, fitness_mode='best'):
     return fig
 
 
-def plot_line_evals(dataframe, show_std=True):
+def plot_line_evals(dataframe, fitness_mode='final', show_std=True):
     """
     Create a line plot comparing algorithm runtime (evaluations) across noise levels.
 
-    Shows mean n_evals, optionally with standard deviation error bars, for each algorithm.
+    Shows mean evaluations, optionally with standard deviation error bars, for each algorithm.
 
     Args:
         dataframe: DataFrame with columns:
             - algo_name: Algorithm identifier
             - noise: Noise level
             - n_evals: Total fitness evaluations used by the algorithm
+            - evals_to_best: Evaluations consumed until best fitness was found (optional)
+        fitness_mode: 'best' to plot evals_to_best, 'final' to plot n_evals
         show_std: Whether to show symmetric std error bars (default True)
 
     Returns:
         go.Figure: Line plot with optional error bars
     """
     df = dataframe.copy()
-    df = df[['algo_name', 'noise', 'n_evals']]
 
-    stats = df.groupby(['algo_name', 'noise'])['n_evals'].agg(['mean', 'std']).reset_index()
+    if fitness_mode == 'best' and 'evals_to_best' in df.columns:
+        eval_col = 'evals_to_best'
+        yaxis_label = 'Evaluations to best found fitness'
+    else:
+        eval_col = 'n_evals'
+        yaxis_label = 'Evaluations to final fitness'
+
+    df = df[['algo_name', 'noise', eval_col]].dropna(subset=[eval_col])
+
+    stats = df.groupby(['algo_name', 'noise'])[eval_col].agg(['mean', 'std']).reset_index()
 
     fig = go.Figure()
     for algo in stats['algo_name'].unique():
@@ -109,7 +119,7 @@ def plot_line_evals(dataframe, show_std=True):
     fig.update_layout(
         title='title',
         xaxis_title=r'$\sigma$ (Standard Deviation of Gaussian Noise $N(0,\sigma)$)',
-        yaxis_title='Runtime (evaluations)',
+        yaxis_title=yaxis_label,
         legend_title='Algo Name',
         template=DEFAULT_TEMPLATE
     )

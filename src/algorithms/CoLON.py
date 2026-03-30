@@ -12,7 +12,7 @@ def BinaryCoLON(pert_attempts, len_sol, weights,
                 violation_function=None,   # (func, kwargs) returning scalar v(x); <=0 means feasible
                 starting_solution=None,
                 true_fitness_function=None,
-                include_start_nodes: bool = True,
+                include_start_nodes: bool = False,
                 target_stop=None):
     """
     Build a constrained LON (CoLON) using Deb's constraint-handling preorder.

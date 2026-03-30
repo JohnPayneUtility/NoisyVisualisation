@@ -1,6 +1,7 @@
-# Config for UMDA on Rastrigin problem
+# Nested config for OnePlusOneEA on Knapsack experiment
+# This shows how we could use nested structure with dependency resolution
 
-experiment_name: "Rastrigin"
+experiment_name: "SOknapsackPostNoise"
 
 # ==============================
 # Run Configuration
@@ -44,47 +45,51 @@ hydra:
   mode: MULTIRUN
   sweeper:
     params:
-      problem.fitness_params.noise_intensity: 0,1,2,3,4,5
+      problem.fitness_params.noise_intensity: 0,1,2,3,4,5,6,7,8,9,10
   sweep:
     dir: data/outputs
 
 # ==============================
-# Algorithm Configuration (UMDA)
+# Algorithm Configuration
 # ==============================
 algo:
   name: UMDA
   type: UMDA
   use_dynamic_pop_size: false
-  pop_size: 100
-  select_size: 50
 
   # Algorithm initialization parameters
   init_args:
     _target_: src.algorithms.Algorithms.UMDA
-    pop_size: 100
-    select_size: 50
+    pop_size: 921
+    select_size: 460
 
 # ==============================
 # Problem Configuration
 # ==============================
 problem:
-  prob_name: rastrigin
-  prob_type: continuous
-  opt_goal: minimise
-  dimensions: 5
-  opt_global: null
-  capacity: 0
-  mean_value: 0
-  mean_weight: 0
-
-  # Problem loading - Rastrigin doesn't need a loader
-  loader: null
-
+  PID: f1_l-d_kp_10_269
+  prob_name: knapsack
+  prob_type: discrete
+  opt_goal: maximise
+  dimensions: null  # Will be set after loading
+  opt_global: null  # Will be set after loading
+  capacity: null    # Will be set after loading
+  mean_value: null  # Will be set after loading
+  mean_weight: null # Will be set after loading
+  items_dict: null  # Will be set after loading
+  
+  # Problem loading
+  loader:
+    _target_: src.problems.ProblemScripts.load_problem_KP
+    filename: f1_l-d_kp_10_269
+  
   # Fitness function
-  fitness_fn: birastrigin_eval
+  fitness_fn: eval_noisy_kp_v2
   fitness_params:
+    items_dict: null  # Will be set after problem loading
+    capacity: null    # Will be set after problem loading
     noise_intensity: 0
-
+  
   # Attributes and weights
-  attr_function: Rastrigin_attribute
-  weights: [-1.0]
+  attr_function: binary_attribute
+  weights: [1.0] 

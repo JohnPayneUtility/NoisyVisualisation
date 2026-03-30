@@ -11,6 +11,13 @@ def mean_weight(items_dict):
     mean_weight = total_weight / len(items_dict)
     return mean_weight
 
+def bitflip_prior_noise(individual, probability):
+    """Flip a single randomly chosen bit with the given probability."""
+    if random.random() < probability:
+        idx = random.randrange(len(individual))
+        individual[idx] = 1 - individual[idx]
+    return individual
+
 # ==============================
 # Combinatorial Fitness Functions
 # ==============================
@@ -44,9 +51,11 @@ def OneMax_prior_bitflip_fitness(individual, noise_intensity=0):
     """
     # Calculate true fitness (no noise)
     true_fitness = sum(individual)
+    n_items = len(individual)
 
     # Prior noise: perturb individual via random bit flips, then evaluate
-    noisy_individual, _ = random_bit_flip(list(individual), n_flips=noise_intensity)
+    # noisy_individual, _ = random_bit_flip(list(individual), n_flips=noise_intensity)
+    noisy_individual = bitflip_prior_noise(list(individual), noise_intensity / n_items)
     noisy_fitness = sum(noisy_individual)
 
     # Log the evaluation if logger is active
@@ -56,7 +65,30 @@ def OneMax_prior_bitflip_fitness(individual, noise_intensity=0):
 
     return (noisy_fitness,)
 
-def OneMax_prior_bitwise_fitness(individual, noise_intensity=1):
+def OneMax_prior_mult_bitflip_fitness(individual, noise_intensity=0):
+    """
+    Calculates fitness for OneMax problem with prior noise.
+
+    The individual is perturbed via random bit flips before evaluation.
+    If a logger is active, the original and noisy solutions are recorded.
+    """
+    # Calculate true fitness (no noise)
+    true_fitness = sum(individual)
+    # n_items = len(individual)
+
+    # Prior noise: perturb individual via random bit flips, then evaluate
+    noisy_individual, _ = random_bit_flip(list(individual), n_flips=noise_intensity)
+    # noisy_individual = bitflip_prior_noise(list(individual), noise_intensity / n_items)
+    noisy_fitness = sum(noisy_individual)
+
+    # Log the evaluation if logger is active
+    logger = get_active_logger()
+    if logger is not None:
+        logger.log_noisy_eval(individual, noisy_individual, true_fitness, noisy_fitness)
+
+    return (noisy_fitness,)
+
+def OneMax_prior_pq_bitwise_fitness(individual, noise_probability=1, noise_intensity=1):
     """
     Calculates fitness for OneMax problem with prior bitwise noise.
 
@@ -64,14 +96,43 @@ def OneMax_prior_bitwise_fitness(individual, noise_intensity=1):
     noise_intensity * 1/n before evaluation.
     If a logger is active, the original and noisy solutions are recorded.
     """
-    n = len(individual)
-    p = noise_intensity / n
+    n_items = len(individual)
+    p = noise_probability / n_items  # probability noise is applied
+    q = noise_intensity / n_items    # per-bit flip probability
 
     # Calculate true fitness (no noise)
     true_fitness = sum(individual)
 
     # Prior noise: flip each bit independently with probability p
-    noisy_individual = [1 - b if random.random() < p else b for b in individual]
+    if random.random() < p:
+        noisy_individual = [1 - b if random.random() < q else b for b in individual]
+    else:
+        noisy_individual = list(individual)
+    noisy_fitness = sum(noisy_individual)
+
+    # Log the evaluation if logger is active
+    logger = get_active_logger()
+    if logger is not None:
+        logger.log_noisy_eval(individual, noisy_individual, true_fitness, noisy_fitness)
+
+    return (noisy_fitness,)
+
+def OneMax_prior_1q_bitwise_fitness(individual, noise_intensity=1):
+    """
+    Calculates fitness for OneMax problem with prior bitwise noise.
+
+    Each bit in the individual is independently flipped with probability
+    noise_intensity * 1/n before evaluation.
+    If a logger is active, the original and noisy solutions are recorded.
+    """
+    n_items = len(individual)
+    q = noise_intensity / n_items    # per-bit flip probability
+
+    # Calculate true fitness (no noise)
+    true_fitness = sum(individual)
+
+    # Prior noise: flip each bit independently with probability p
+    noisy_individual = [1 - b if random.random() < q else b for b in individual]
     noisy_fitness = sum(noisy_individual)
 
     # Log the evaluation if logger is active
@@ -185,24 +246,6 @@ def eval_noisy_kp_v1(individual, items_dict, capacity, noise_intensity=0, penalt
 
     return (noisy_fitness,)
 
-def eval_noisy_kp_v2_backup(individual, items_dict, capacity, noise_intensity=0, penalty=1):
-    """ Function calculates fitness for knapsack problem individual """
-    n_items = len(individual)
-    weight = sum(items_dict[i][1] * individual[i] for i in range(n_items)) # Calc solution weight
-    value = sum(items_dict[i][0] * individual[i] for i in range(n_items)) # Calc solution value
-    
-    noise = random.gauss(0, noise_intensity * mean_weight(items_dict))
-    value = value + noise
-
-    # Check if over capacity and return reduced value
-    if (weight + noise) > capacity:
-        if penalty == 1:
-            value_with_penalty = capacity - weight
-            return (value_with_penalty,)
-        else:
-            return (0,)
-    return (value,) # Not over capacity return value
-
 def eval_noisy_kp_v2(individual, items_dict, capacity, noise_intensity=0, penalty=1):
     """
     Calculates fitness for knapsack problem with posterior noise.
@@ -269,7 +312,7 @@ def eval_noisy_kp_prior_bitflip(individual, items_dict, capacity, noise_intensit
         true_fitness = orig_value
 
     # Create noisy (perturbed) solution and calculate its fitness
-    noisy_individual, _ = random_bit_flip(list(individual), n_flips=noise_intensity)
+    noisy_individual = bitflip_prior_noise(list(individual), noise_intensity / n_items)
     noisy_weight = sum(items_dict[i][1] * noisy_individual[i] for i in range(n_items))
     noisy_value = sum(items_dict[i][0] * noisy_individual[i] for i in range(n_items))
 
@@ -289,7 +332,7 @@ def eval_noisy_kp_prior_bitflip(individual, items_dict, capacity, noise_intensit
 
     return (noisy_fitness,)
 
-def eval_noisy_kp_prior_bitwise(individual, items_dict, capacity, noise_intensity=0, penalty=1):
+def eval_noisy_kp_prior_mult_bitflip(individual, items_dict, capacity, noise_intensity=0, penalty=1):
     """
     Calculates fitness for knapsack problem with prior noise.
 
@@ -299,7 +342,6 @@ def eval_noisy_kp_prior_bitwise(individual, items_dict, capacity, noise_intensit
     true_fitness is for original, noisy_fitness is for perturbed.
     """
     n_items = len(individual)
-    p = noise_intensity / n_items
 
     # Calculate true fitness of original (unperturbed) solution
     orig_weight = sum(items_dict[i][1] * individual[i] for i in range(n_items))
@@ -314,7 +356,108 @@ def eval_noisy_kp_prior_bitwise(individual, items_dict, capacity, noise_intensit
         true_fitness = orig_value
 
     # Create noisy (perturbed) solution and calculate its fitness
-    noisy_individual = [1 - b if random.random() < p else b for b in individual]
+    noisy_individual, _ = random_bit_flip(list(individual), n_flips=noise_intensity)
+    # noisy_individual = bitflip_prior_noise(list(individual), noise_intensity / n_items)
+    noisy_weight = sum(items_dict[i][1] * noisy_individual[i] for i in range(n_items))
+    noisy_value = sum(items_dict[i][0] * noisy_individual[i] for i in range(n_items))
+
+    if noisy_weight > capacity:
+        if penalty == 1:
+            noisy_fitness = capacity - noisy_weight
+        else:
+            noisy_fitness = 0
+    else:
+        noisy_fitness = noisy_value
+
+    # Log the evaluation if logger is active
+    # For prior noise: different solutions, with their respective fitnesses
+    logger = get_active_logger()
+    if logger is not None:
+        logger.log_noisy_eval(individual, noisy_individual, true_fitness, noisy_fitness)
+
+    return (noisy_fitness,)
+
+def eval_noisy_kp_pq_prior_bitwise(individual, items_dict, capacity, noise_intensity=0, noise_probability=1, penalty=1):
+    """
+    Calculates fitness for knapsack problem with prior noise.
+
+    The individual is perturbed (bits flipped) before evaluation.
+    If a logger is active, the original and noisy solutions are recorded.
+    Note: For prior noise, original and noisy individual differ,
+    true_fitness is for original, noisy_fitness is for perturbed.
+
+    p = noise_probability / n_items: probability that noise is applied at all.
+    q = noise_intensity / n_items: probability of flipping each bit, given noise is applied.
+    """
+    n_items = len(individual)
+    p = noise_probability / n_items  # probability noise is applied
+    q = noise_intensity / n_items    # per-bit flip probability
+
+    # Calculate true fitness of original (unperturbed) solution
+    orig_weight = sum(items_dict[i][1] * individual[i] for i in range(n_items))
+    orig_value = sum(items_dict[i][0] * individual[i] for i in range(n_items))
+
+    if orig_weight > capacity:
+        if penalty == 1:
+            true_fitness = capacity - orig_weight
+        else:
+            true_fitness = 0
+    else:
+        true_fitness = orig_value
+
+    # Create noisy (perturbed) solution and calculate its fitness
+    if random.random() < p:
+        noisy_individual = [1 - b if random.random() < q else b for b in individual]
+    else:
+        noisy_individual = list(individual)
+    noisy_weight = sum(items_dict[i][1] * noisy_individual[i] for i in range(n_items))
+    noisy_value = sum(items_dict[i][0] * noisy_individual[i] for i in range(n_items))
+
+    if noisy_weight > capacity:
+        if penalty == 1:
+            noisy_fitness = capacity - noisy_weight
+        else:
+            noisy_fitness = 0
+    else:
+        noisy_fitness = noisy_value
+
+    # Log the evaluation if logger is active
+    # For prior noise: different solutions, with their respective fitnesses
+    logger = get_active_logger()
+    if logger is not None:
+        logger.log_noisy_eval(individual, noisy_individual, true_fitness, noisy_fitness)
+
+    return (noisy_fitness,)
+
+def eval_noisy_kp_1q_prior_bitwise(individual, items_dict, capacity, noise_intensity=0, penalty=1):
+    """
+    Calculates fitness for knapsack problem with prior noise.
+
+    The individual is perturbed (bits flipped) before evaluation.
+    If a logger is active, the original and noisy solutions are recorded.
+    Note: For prior noise, original and noisy individual differ,
+    true_fitness is for original, noisy_fitness is for perturbed.
+
+    p = noise_probability / n_items: probability that noise is applied at all.
+    q = noise_intensity / n_items: probability of flipping each bit, given noise is applied.
+    """
+    n_items = len(individual)
+    q = noise_intensity / n_items    # per-bit flip probability
+
+    # Calculate true fitness of original (unperturbed) solution
+    orig_weight = sum(items_dict[i][1] * individual[i] for i in range(n_items))
+    orig_value = sum(items_dict[i][0] * individual[i] for i in range(n_items))
+
+    if orig_weight > capacity:
+        if penalty == 1:
+            true_fitness = capacity - orig_weight
+        else:
+            true_fitness = 0
+    else:
+        true_fitness = orig_value
+
+    # Create noisy (perturbed) solution and calculate its fitness
+    noisy_individual = [1 - b if random.random() < q else b for b in individual]
     noisy_weight = sum(items_dict[i][1] * noisy_individual[i] for i in range(n_items))
     noisy_value = sum(items_dict[i][0] * noisy_individual[i] for i in range(n_items))
 
@@ -339,18 +482,6 @@ def eval_noisy_kp_prior_bitwise(individual, items_dict, capacity, noise_intensit
 # ==============================
 
 def rastrigin_eval(individual, amplitude=10, noise_intensity=0):
-    A = amplitude
-    n = len(individual)
-    true_fitness = A * n + sum((x ** 2 - A * np.cos(2 * np.pi * x)) for x in individual)
-    noisy_fitness = true_fitness + random.gauss(0, noise_intensity)
-
-    logger = get_active_logger()
-    if logger is not None:
-        logger.log_noisy_eval(individual, individual, true_fitness, noisy_fitness)
-
-    return (noisy_fitness,)
-
-def rastrigin_eval_2d(individual, amplitude=2, noise_intensity=0):
     A = amplitude
     n = len(individual)
     true_fitness = A * n + sum((x ** 2 - A * np.cos(2 * np.pi * x)) for x in individual)

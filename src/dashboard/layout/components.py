@@ -449,7 +449,9 @@ def create_lon_options_section():
                             {'label': 'KP V1 mean(w)', 'value': 'kpv1mw'},
                             {'label': 'KP V2 mean(w)', 'value': 'kpv2mw'},
                             {'label': 'KP Prior (Bit Flip)', 'value': 'kppbf'},
-                            {'label': 'KP Prior (Bitwise)', 'value': 'kppbw'},
+                            {'label': 'KP Prior (Mult Bit Flip)', 'value': 'kppmbf'},
+                            {'label': 'KP Prior (p,q) bitwise', 'value': 'kpppqbw'},
+                            {'label': 'KP Prior (1,q) bitwise', 'value': 'kpp1qbw'},
                         ],
                         value='',
                         placeholder='Noisy Fit Func',
@@ -834,6 +836,8 @@ def create_main_plot_section():
     """
     return [
         dcc.Graph(id='trajectory-plot'),
+        html.H3("LON Stats"),
+        html.Div(id='lon-stats-table'),
         html.Div(id="print_STN_series_labels", style=SELECTION_OUTPUT_STYLE),
         html.H3("Plot Information"),
         dcc.Checklist(

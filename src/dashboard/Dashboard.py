@@ -358,22 +358,24 @@ def display_stored_data_mo_box(data):
 @app.callback(
     Output('2DLinePlotEvalsSO', 'figure'),
     Input('plot_2d_data', 'data'),
-    Input('line-evals-show-std', 'value')
+    Input('line-evals-show-std', 'value'),
+    Input('so-fitness-mode', 'value')
 )
-def display_line_evals_so(data, std_checkbox):
+def display_line_evals_so(data, std_checkbox, fitness_mode):
     plot_df = pd.DataFrame(data)
     show_std = bool(std_checkbox and 'show' in std_checkbox)
-    plot = plot2d_line_evals(plot_df, show_std=show_std)
+    plot = plot2d_line_evals(plot_df, fitness_mode=fitness_mode or 'final', show_std=show_std)
     return plot
 
 # 2D box plot (evals, single-objective)
 @app.callback(
     Output('2DBoxPlotEvalsSO', 'figure'),
-    Input('plot_2d_data', 'data')
+    Input('plot_2d_data', 'data'),
+    Input('so-fitness-mode', 'value')
 )
-def display_box_evals_so(data):
+def display_box_evals_so(data, fitness_mode):
     plot_df = pd.DataFrame(data)
-    plot = plot2d_box_evals(plot_df)
+    plot = plot2d_box_evals(plot_df, fitness_mode=fitness_mode or 'final')
     return plot
 
 # ---------- Performance summary table ----------
@@ -556,8 +558,9 @@ def update_mann_whitney_table(data, fitness_mode, selected_rows):
     Output('evals-summary-table', 'children'),
     Input('plot_2d_data', 'data'),
     Input('table1-selected-store', 'data'),
+    Input('so-fitness-mode', 'value'),
 )
-def update_evals_summary_table(data, selected_rows):
+def update_evals_summary_table(data, selected_rows, fitness_mode):
     if not selected_rows:
         return html.P(
             "Select a problem from the table above to see the evaluations summary.",
@@ -568,11 +571,14 @@ def update_evals_summary_table(data, selected_rows):
 
     plot_df = pd.DataFrame(data)
 
-    if not {'algo_name', 'noise', 'n_evals'}.issubset(plot_df.columns):
+    use_best = fitness_mode == 'best' and 'evals_to_best' in plot_df.columns
+    eval_col = 'evals_to_best' if use_best else 'n_evals'
+
+    if not {'algo_name', 'noise', eval_col}.issubset(plot_df.columns):
         return html.P("Required columns not available for evaluations summary.", style={'color': '#888'})
 
-    df_sub = plot_df[['algo_name', 'noise', 'n_evals']].copy()
-    stats = df_sub.groupby(['noise', 'algo_name'])['n_evals'].agg(['median', 'std']).reset_index()
+    df_sub = plot_df[['algo_name', 'noise', eval_col]].dropna(subset=[eval_col]).copy()
+    stats = df_sub.groupby(['noise', 'algo_name'])[eval_col].agg(['median', 'std']).reset_index()
 
     algos = sorted(stats['algo_name'].unique())
     noise_levels = sorted(stats['noise'].unique())
@@ -623,8 +629,9 @@ def update_evals_summary_table(data, selected_rows):
         style_table={'marginBottom': '8px'},
     )
 
+    evals_label = 'Evaluations to Best Found Fitness' if use_best else 'Runtime (n_evals)'
     return html.Div([
-        html.H5("Evaluations Summary: Median Runtime (n_evals) ± Std Dev by Noise Level",
+        html.H5(f"Evaluations Summary: Median {evals_label} ± Std Dev by Noise Level",
                 style={'marginTop': '16px', 'marginBottom': '4px'}),
         html.P("Green highlight indicates the lowest median evaluations for that noise level.",
                style={'color': '#555', 'fontSize': '12px', 'marginBottom': '8px'}),
@@ -638,8 +645,9 @@ def update_evals_summary_table(data, selected_rows):
     Output('evals-mann-whitney-table', 'children'),
     Input('plot_2d_data', 'data'),
     Input('table1-selected-store', 'data'),
+    Input('so-fitness-mode', 'value'),
 )
-def update_evals_mann_whitney_table(data, selected_rows):
+def update_evals_mann_whitney_table(data, selected_rows, fitness_mode):
     from scipy.stats import mannwhitneyu
 
     if not selected_rows:
@@ -652,7 +660,10 @@ def update_evals_mann_whitney_table(data, selected_rows):
 
     plot_df = pd.DataFrame(data)
 
-    if not {'algo_name', 'noise', 'n_evals'}.issubset(plot_df.columns):
+    use_best = fitness_mode == 'best' and 'evals_to_best' in plot_df.columns
+    eval_col = 'evals_to_best' if use_best else 'n_evals'
+
+    if not {'algo_name', 'noise', eval_col}.issubset(plot_df.columns):
         return html.P("Required columns not available for evaluations Mann-Whitney tests.", style={'color': '#888'})
 
     algos = sorted(plot_df['algo_name'].unique())
@@ -665,12 +676,12 @@ def update_evals_mann_whitney_table(data, selected_rows):
 
         for row_idx, algo_row in enumerate(algos):
             row = {'Algorithm': algo_row}
-            samples_row = noise_df[noise_df['algo_name'] == algo_row]['n_evals'].dropna().values
+            samples_row = noise_df[noise_df['algo_name'] == algo_row][eval_col].dropna().values
             for algo_col in algos:
                 if algo_row == algo_col:
                     row[algo_col] = '-'
                 else:
-                    samples_col = noise_df[noise_df['algo_name'] == algo_col]['n_evals'].dropna().values
+                    samples_col = noise_df[noise_df['algo_name'] == algo_col][eval_col].dropna().values
                     if len(samples_row) < 2 or len(samples_col) < 2:
                         row[algo_col] = 'N/A'
                     else:
@@ -707,8 +718,9 @@ def update_evals_mann_whitney_table(data, selected_rows):
         ]
     )
 
+    evals_label = 'Evaluations to Best Found Fitness' if use_best else 'Runtime n_evals'
     return html.Div([
-        html.H5("Mann-Whitney U-Test: Pairwise p-values (Runtime n_evals, two-sided)",
+        html.H5(f"Mann-Whitney U-Test: Pairwise p-values ({evals_label}, two-sided)",
                 style={'marginTop': '16px', 'marginBottom': '4px'}),
         html.P("Green highlight indicates p < 0.05 (statistically significant difference). Each tab shows one noise level.",
                style={'color': '#555', 'fontSize': '12px', 'marginBottom': '8px'}),
@@ -1101,7 +1113,8 @@ def clean_axis_values(custom_x_min, custom_x_max, custom_y_min, custom_y_max, cu
 # callback for main plot
 @app.callback(
     [Output('trajectory-plot', 'figure'),
-     Output('run-print-info', 'children')],
+     Output('run-print-info', 'children'),
+     Output('lon-stats-table', 'children')],
     [Input("optimum", "data"),
      Input("PID", "data"),
      Input("opt_goal", "data"),
@@ -1543,7 +1556,51 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
         # Fallback for other plot types
         fig = go.Figure()
 
-    return fig, debug_summary_component
+    # Build LON stats table
+    lon_nodes = [n for n in G.nodes() if "Local Optimum" in n]
+    total_optima = len(lon_nodes)
+    if total_optima > 0:
+        if opt_feas_map:
+            feasible = sum(
+                1 for n in lon_nodes
+                if opt_feas_map.get(",".join(str(int(x)) for x in G.nodes[n].get('solution', []))) == 1
+            )
+            infeasible = sum(
+                1 for n in lon_nodes
+                if opt_feas_map.get(",".join(str(int(x)) for x in G.nodes[n].get('solution', []))) == 0
+            )
+            feas_display, infeas_display = str(feasible), str(infeasible)
+        else:
+            feas_display, infeas_display = 'N/A', 'N/A'
+        maximizing = (config.opt_goal or 'max')[:3].lower() == 'max'
+        best_fitness = max(G.nodes[n].get('fitness', float('-inf')) for n in lon_nodes) if maximizing \
+            else min(G.nodes[n].get('fitness', float('inf')) for n in lon_nodes)
+        global_opt_weight = sum(
+            G.nodes[n].get('weight', 0)
+            for n in lon_nodes
+            if G.nodes[n].get('fitness') == best_fitness
+        )
+        lon_stats_table = dash_table.DataTable(
+            columns=[
+                {'name': 'Total Optima', 'id': 'total'},
+                {'name': 'Feasible Optima', 'id': 'feasible'},
+                {'name': 'Infeasible Optima', 'id': 'infeasible'},
+                {'name': 'Global Optima Weight', 'id': 'go_weight'},
+            ],
+            data=[{
+                'total': total_optima,
+                'feasible': feas_display,
+                'infeasible': infeas_display,
+                'go_weight': global_opt_weight,
+            }],
+            style_table={'width': '700px'},
+            style_cell={'textAlign': 'center', 'padding': '8px'},
+            style_header={'fontWeight': 'bold'},
+        )
+    else:
+        lon_stats_table = html.Div()
+
+    return fig, debug_summary_component, lon_stats_table
 
 @app.callback(
     Output("plotParetoFront", "figure"),

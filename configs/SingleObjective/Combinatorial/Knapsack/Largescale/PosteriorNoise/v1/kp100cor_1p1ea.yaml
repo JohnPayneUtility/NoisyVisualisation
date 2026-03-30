@@ -25,7 +25,7 @@ run:
     "9": 86078
     "10": 93638
   seed: 1
-  num_runs: 10
+  num_runs: 30
   parallel: true
   override_max_workers: null
   progress_print_interval: 10000  # print update every N evals; set to null to disable
@@ -53,21 +53,32 @@ hydra:
 # Algorithm Configuration
 # ==============================
 algo:
-  name: UMDA
-  type: UMDA
+  name: OnePlusOneEA
+  type: MuPlusLamdaEA
   use_dynamic_pop_size: false
-
+  static_indpb: 0.01
+  use_dynamic_mutation: true
+  
+  # Dynamic mutation rate function
+  indpb_fn:
+    _target_: run_helpers.inverse_n_mut_rate
+    n_items: null  # Will be resolved after problem loading
+    noise: null
+  
   # Algorithm initialization parameters
   init_args:
-    _target_: src.algorithms.Algorithms.UMDA
-    pop_size: 921
-    select_size: 460
+    _target_: src.algorithms.Algorithms.MuPlusLamdaEA
+    mu: 1
+    lam: 1
+    mutate_function: "probFlipBit"
+    mutate_params:
+      indpb: null  # Will be resolved dynamically
 
 # ==============================
 # Problem Configuration
 # ==============================
 problem:
-  PID: knapPI_1_100_1000_1
+  PID: knapPI_3_100_1000_1
   prob_name: knapsack
   prob_type: discrete
   opt_goal: maximise
@@ -81,10 +92,10 @@ problem:
   # Problem loading
   loader:
     _target_: src.problems.ProblemScripts.load_problem_KP
-    filename: knapPI_1_100_1000_1
+    filename: knapPI_3_100_1000_1
   
   # Fitness function
-  fitness_fn: eval_noisy_kp_v2
+  fitness_fn: eval_noisy_kp_v1
   fitness_params:
     items_dict: null  # Will be set after problem loading
     capacity: null    # Will be set after problem loading
