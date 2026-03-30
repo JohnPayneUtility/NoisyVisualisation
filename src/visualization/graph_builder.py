@@ -240,7 +240,7 @@ def add_stn_trajectories(
             noisy_node_label = f"Noisy_{node_label}"
             if noisy_node_label not in G.nodes():
                 try:
-                    G.add_node(noisy_node_label, solution=solution, fitness=noisy_fitnesses[i], color=edge_color)
+                    G.add_node(noisy_node_label, solution=solution, fitness=noisy_fitnesses[i], color=edge_color, is_noisy=True)
                     G.add_edge(
                         node_label,
                         noisy_node_label,

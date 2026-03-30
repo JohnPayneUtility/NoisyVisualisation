@@ -1110,10 +1110,95 @@ def clean_axis_values(custom_x_min, custom_x_max, custom_y_min, custom_y_max, cu
         "custom_z_max": clean(custom_z_max)
     }
 
+def _build_stn_stats_table(stn_algo_data, stn_labels):
+    """Build the STN stats DataTable from per-algorithm trajectory data."""
+    if not stn_algo_data:
+        return html.Div()
+
+    def fmt(values):
+        if not values:
+            return 'N/A'
+        if len(values) == 1:
+            return str(values[0]) if values[0] is not None else 'N/A'
+        return '[' + ','.join(str(v) if v is not None else 'N/A' for v in values) + ']'
+
+    def count_misjudgements(entry):
+        fits = entry[1] if entry and len(entry) > 1 and entry[1] is not None else []
+        return sum(1 for i in range(len(fits) - 1) if fits[i + 1] < fits[i])
+
+    rows = []
+    for idx, selected_trajectories, all_run_trajectories in stn_algo_data:
+        label = stn_labels[idx] if stn_labels and idx < len(stn_labels) else [f'Algo {idx}']
+        algo_name = label[0] if len(label) > 0 else f'Algo {idx}'
+        noise = label[1] if len(label) > 1 else '?'
+        algo_name = f'{algo_name} noise={noise}'
+
+        nodes_per_run = [
+            len(entry[0]) for entry in selected_trajectories
+            if entry and len(entry) > 0 and entry[0] is not None
+        ]
+
+        all_node_counts = [
+            len(entry[0]) for entry in all_run_trajectories
+            if entry and len(entry) > 0 and entry[0] is not None
+        ]
+        mean_nodes = round(sum(all_node_counts) / len(all_node_counts)) if all_node_counts else 'N/A'
+
+        avg_evals_per_run = []
+        for entry in selected_trajectories:
+            sol_evals = entry[12] if entry and len(entry) > 12 else None
+            if sol_evals:
+                avg_evals_per_run.append(round(sum(sol_evals) / len(sol_evals)))
+            else:
+                avg_evals_per_run.append(None)
+
+        all_evals_flat = [
+            e for entry in all_run_trajectories
+            if entry and len(entry) > 12 and entry[12]
+            for e in entry[12]
+        ]
+        mean_avg_evals = round(sum(all_evals_flat) / len(all_evals_flat)) if all_evals_flat else 'N/A'
+
+        misjudgements_per_run = [count_misjudgements(e) for e in selected_trajectories]
+        all_misjudgement_counts = [count_misjudgements(e) for e in all_run_trajectories]
+        mean_misjudgements = round(sum(all_misjudgement_counts) / len(all_misjudgement_counts)) \
+            if all_misjudgement_counts else 'N/A'
+
+        rows.append({
+            'algo': algo_name,
+            'nodes_rendered': fmt(nodes_per_run),
+            'mean_nodes_all': str(mean_nodes),
+            'avg_evals_rendered': fmt(avg_evals_per_run),
+            'mean_avg_evals_all': str(mean_avg_evals),
+            'misjudgements_rendered': fmt(misjudgements_per_run),
+            'mean_misjudgements_all': str(mean_misjudgements),
+        })
+
+    if not rows:
+        return html.Div()
+
+    return dash_table.DataTable(
+        columns=[
+            {'name': 'Algorithm', 'id': 'algo'},
+            {'name': 'Nodes (rendered runs)', 'id': 'nodes_rendered'},
+            {'name': 'Mean nodes (all runs)', 'id': 'mean_nodes_all'},
+            {'name': 'Avg evals/node (rendered runs)', 'id': 'avg_evals_rendered'},
+            {'name': 'Avg evals/node (all runs)', 'id': 'mean_avg_evals_all'},
+            {'name': 'Misjudgements (rendered runs)', 'id': 'misjudgements_rendered'},
+            {'name': 'Mean misjudgements (all runs)', 'id': 'mean_misjudgements_all'},
+        ],
+        data=rows,
+        style_table={'width': '1300px'},
+        style_cell={'textAlign': 'center', 'padding': '8px'},
+        style_header={'fontWeight': 'bold'},
+    )
+
+
 # callback for main plot
 @app.callback(
     [Output('trajectory-plot', 'figure'),
      Output('run-print-info', 'children'),
+     Output('stn-stats-table', 'children'),
      Output('lon-stats-table', 'children')],
     [Input("optimum", "data"),
      Input("PID", "data"),
@@ -1225,6 +1310,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
     stn_node_mapping = {}
     lon_node_mapping = {}
     debug_summaries = []
+    stn_algo_data = []
     node_noise = {}
     fitness_dict = {}
 
@@ -1281,6 +1367,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                 stn_node_min=config.node_size.stn_min,
             )
 
+            stn_algo_data.append((idx, selected_trajectories, all_run_trajectories))
             summary_str = generate_run_summary_string(selected_trajectories)
             debug_summaries.append((summary_str, edge_color))
 
@@ -1320,6 +1407,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                 stn_node_min=config.node_size.stn_min,
             )
 
+            stn_algo_data.append((idx, selected_trajectories, all_run_trajectories))
             summary_str = generate_run_summary_string(selected_trajectories)
             debug_summaries.append((summary_str, edge_color))
 
@@ -1354,6 +1442,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                 G, selected_trajectories, edge_color, idx, stn_node_mapping, config
             )
 
+            stn_algo_data.append((idx, selected_trajectories, all_run_trajectories))
             summary_str = generate_run_summary_string(selected_trajectories)
             debug_summaries.append((summary_str, edge_color))
 
@@ -1366,6 +1455,8 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
         debug_summary_component = html.Div(summary_components)
     else:
         debug_summary_component = html.Div("No trajectory data available.")
+
+    stn_stats_table = _build_stn_stats_table(stn_algo_data, STN_labels)
 
     print('STN TRAJECTORIES ADDED')
     debug_mo_counts(G, by="run_idx", label="[MO]", list_fronts=True, max_list=50)
@@ -1492,13 +1583,13 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                         seen_positions.add(pos_key)
                         scene_annotations.append(dict(
                             x=x, y=y, z=z,
-                            text='Misjudgement',
+                            text='',
                             showarrow=True,
                             arrowhead=2,
                             arrowsize=1,
                             arrowwidth=1.5,
                             arrowcolor='red',
-                            ax=40, ay=-40,
+                            ax=20, ay=0,
                             font=dict(size=11, color='red'),
                         ))
 
@@ -1530,7 +1621,11 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                 lines.append(f'<b>PID:</b> {PID}')
             if fit_func:
                 lines.append(f'<b>Fitness:</b> {fit_func}')
+                lines.append('&#9679; True solution/fitness')
+                lines.append('&#9632; Noisy solution/fitness')
                 lines.append('<i>Node size = evals at node</i>')
+            if 'annotate-mistakes' in (annotation_options or []):
+                lines.append('<span style="color:red">&#8594; Misjudgement</span>')
             if STN_labels:
                 lines.append('')  # blank line separator
                 for idx, label in enumerate(STN_labels):
@@ -1600,7 +1695,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
     else:
         lon_stats_table = html.Div()
 
-    return fig, debug_summary_component, lon_stats_table
+    return fig, debug_summary_component, stn_stats_table, lon_stats_table
 
 @app.callback(
     Output("plotParetoFront", "figure"),

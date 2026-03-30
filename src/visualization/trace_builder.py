@@ -220,7 +220,7 @@ def create_edge_traces(
             elif edge_type in ('Noise', 'Noise_SO'):
                 line_width = 3
                 dash_style = 'solid'
-                display_color = data.get('color', 'grey')
+                display_color = 'grey'
             elif edge_type in ('STN', 'STN_SO'):
                 line_width = STN_edge_size_slider
             elif edge_type == 'STN_ALT':
@@ -315,7 +315,7 @@ def create_node_traces(
     G: nx.MultiDiGraph,
     pos: Dict[str, Tuple[float, float]],
     config: PlotConfig
-) -> Tuple[go.Scatter3d, go.Scatter3d]:
+) -> Tuple[go.Scatter3d, go.Scatter3d, go.Scatter3d]:
     """
     Create Plotly traces for nodes.
 
@@ -325,15 +325,20 @@ def create_node_traces(
         config: PlotConfig object with settings
 
     Returns:
-        Tuple of (LON_node_trace, STN_node_trace)
+        Tuple of (LON_node_trace, STN_node_trace, noisy_node_trace)
     """
     print('Plotting nodes...')
 
     node_x, node_y, node_z = [], [], []
     node_sizes, node_colors, node_hover = [], [], []
 
+    noisy_node_x, noisy_node_y, noisy_node_z = [], [], []
+    noisy_node_sizes, noisy_node_colors, noisy_node_hover = [], [], []
+
     LON_node_x, LON_node_y, LON_node_z = [], [], []
     LON_node_sizes, LON_node_colors, LON_node_hover = [], [], []
+
+    noisy_square = config.stn.noisy_nodes_square
 
     for node, attr in G.nodes(data=True):
         if node not in pos:
@@ -353,6 +358,13 @@ def create_node_traces(
             LON_node_sizes.append(attr.get('size', 1))
             LON_node_colors.append(attr.get('color', 'grey'))
             LON_node_hover.append(hover)
+        elif noisy_square and attr.get('is_noisy', False):
+            noisy_node_x.append(x)
+            noisy_node_y.append(y)
+            noisy_node_z.append(z)
+            noisy_node_sizes.append(attr.get('size', 1))
+            noisy_node_colors.append(attr.get('color', 'blue'))
+            noisy_node_hover.append(hover)
         else:
             node_x.append(x)
             node_y.append(y)
@@ -392,7 +404,23 @@ def create_node_traces(
         showlegend=False
     )
 
-    return LON_node_trace, node_trace
+    noisy_node_trace = go.Scatter3d(
+        x=noisy_node_x,
+        y=noisy_node_y,
+        z=noisy_node_z,
+        mode='markers',
+        marker=dict(
+            size=noisy_node_sizes,
+            color=noisy_node_colors,
+            symbol='square',
+        ),
+        opacity=config.opacity.stn_node,
+        text=noisy_node_hover,
+        hoverinfo='text',
+        showlegend=False
+    )
+
+    return LON_node_trace, node_trace, noisy_node_trace
 
 
 def create_estimated_fitness_traces(
@@ -847,9 +875,10 @@ def build_all_traces(
         traces.append(edge_label_trace)
 
     # Create node traces
-    LON_node_trace, node_trace = create_node_traces(G, pos, config)
+    LON_node_trace, node_trace, noisy_node_trace = create_node_traces(G, pos, config)
     traces.append(LON_node_trace)
     traces.append(node_trace)
+    traces.append(noisy_node_trace)
 
     # Add LON colorbar when a continuous colour scale is in use
     lon_mode = config.lon.node_colour_mode

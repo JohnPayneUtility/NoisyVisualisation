@@ -384,8 +384,9 @@ def create_stn_options_section():
                 {'label': 'Colour edges by evaluations', 'value': 'colour_by_evals'},
                 {'label': 'Show alt representation with fitness', 'value': 'show_alt_rep'},
                 {'label': 'Show alt representation', 'value': 'show_alt_rep_no_fit'},
+                {'label': 'Show noisy nodes as squares', 'value': 'noisy-nodes-square'},
             ],
-            value=[],
+            value=['noisy-nodes-square'],
             labelStyle={'display': 'inline-block', 'margin-right': '10px'}
         ),
         dcc.Dropdown(
@@ -836,6 +837,8 @@ def create_main_plot_section():
     """
     return [
         dcc.Graph(id='trajectory-plot'),
+        html.H3("STN Stats"),
+        html.Div(id='stn-stats-table'),
         html.H3("LON Stats"),
         html.Div(id='lon-stats-table'),
         html.Div(id="print_STN_series_labels", style=SELECTION_OUTPUT_STYLE),

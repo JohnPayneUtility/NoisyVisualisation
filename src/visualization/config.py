@@ -71,6 +71,7 @@ class STNConfig:
     colour_by_evals: bool = False
     show_alt_rep: bool = False
     show_alt_rep_no_fit: bool = False
+    noisy_nodes_square: bool = True
 
 
 @dataclass
@@ -276,6 +277,7 @@ def parse_callback_inputs(
             colour_by_evals='colour_by_evals' in run_options,
             show_alt_rep='show_alt_rep' in run_options,
             show_alt_rep_no_fit='show_alt_rep_no_fit' in run_options,
+            noisy_nodes_square='noisy-nodes-square' in run_options,
         ),
         lon=LONConfig(
             filter_negative='LON-filter-neg' in lon_options,
