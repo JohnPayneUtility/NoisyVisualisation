@@ -727,6 +727,8 @@ def add_lon_nodes(
 
     node_noise = {}
 
+    n_items, capacity, optimal, values, weights, items_dict, problem_info = load_problem_KP(problem_id)
+
     for opt, fitness in zip(local_optima["local_optima"], local_optima["fitness_values"]):
         solution_tuple = tuple(opt)
         key = (solution_tuple, "LON")
@@ -739,8 +741,6 @@ def add_lon_nodes(
 
         # NOISE BOX PLOTS FOR LON
         node_noise[node_label] = []
-        import os; print(f"DEBUG load_problem_KP: problem_id={repr(problem_id)}, CWD={os.getcwd()}, exists={os.path.exists('instances_01_KP/low-dimensional/'+str(problem_id))}")
-        n_items, capacity, optimal, values, weights, items_dict, problem_info = load_problem_KP(problem_id)
 
         nlon_config = config.noisy_lon
         for i in range(nlon_config.samples):

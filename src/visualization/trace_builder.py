@@ -691,6 +691,7 @@ def create_axis_settings(
         title=z_axis_title,
         titlefont=dict(size=24, color='black'),
         tickfont=dict(size=16, color='black'),
+        type='log' if config.axis.log_z else '-',
     )
 
     # Apply custom axis options

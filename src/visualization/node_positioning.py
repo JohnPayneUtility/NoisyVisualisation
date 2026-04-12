@@ -122,7 +122,8 @@ def calculate_positions_mo(
 def calculate_positions_so(
     G: nx.MultiDiGraph,
     layout_type: str,
-    plot_3d: bool = False
+    plot_3d: bool = False,
+    lmds_multiplier: float = 1.0,
 ) -> Dict[str, Tuple[float, float]]:
     """
     Calculate 2D positions for single-objective nodes.
@@ -172,9 +173,10 @@ def calculate_positions_so(
     pos = {}
 
     if layout_type in ('lmds', 'r_lmds'):
-        print(f'\033[33mUsing Landmark MDS with {K} solutions\033[0m')
-        # Use Landmark MDS for efficient embedding
-        positions_2d = landmark_mds(dist_fn, solutions_list, n_landmarks=None, random_state=42)
+        n_landmarks = min(max(20, int(np.sqrt(n))), n)
+        n_landmarks = min(int(n_landmarks * lmds_multiplier), n)
+        print(f'\033[33mUsing Landmark MDS with {n_landmarks} landmarks from {K} solutions (multiplier={lmds_multiplier})\033[0m')
+        positions_2d = landmark_mds(dist_fn, solutions_list, n_landmarks=n_landmarks, random_state=42)
 
         solution_positions = {}
         for i, sol in enumerate(solutions_list):
@@ -348,7 +350,8 @@ def calculate_positions(
     G: nx.MultiDiGraph,
     layout_type: str,
     stn_plot_type: str = 'posterior',
-    plot_3d: bool = False
+    plot_3d: bool = False,
+    lmds_multiplier: float = 1.0,
 ) -> Dict[str, Tuple[float, float]]:
     """
     Calculate 2D positions for all nodes in the graph.
@@ -370,7 +373,7 @@ def calculate_positions(
         pos = calculate_positions_mo(G, layout_type)
     else:
         # Both 'posterior' and 'prior' use SO positioning (Hamming distance)
-        pos = calculate_positions_so(G, layout_type, plot_3d)
+        pos = calculate_positions_so(G, layout_type, plot_3d, lmds_multiplier)
 
     print('\033[32mNode Positions Calculated\033[0m')
     return pos

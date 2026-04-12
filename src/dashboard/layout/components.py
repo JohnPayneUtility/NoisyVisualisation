@@ -513,6 +513,17 @@ def create_lon_options_section():
                 value=[],
                 labelStyle={'display': 'inline-block', 'marginTop': '6px'}
             ),
+            html.Div([
+                html.Label("LMDS multiplier: ", style={'display': 'inline-block', 'verticalAlign': 'middle', 'marginRight': '6px'}),
+                dcc.Input(
+                    id='lmds-multiplier',
+                    type='number',
+                    min=0.1,
+                    step=0.1,
+                    value=1.0,
+                    style={'width': '70px', 'display': 'inline-block'}
+                ),
+            ], style={'marginTop': '6px'}),
         ]),
         html.Hr(),
     ]
@@ -780,6 +791,12 @@ def create_axis_options_section():
                 value=None,
             ),
         ], style=FLEX_ROW_STYLE),
+        dcc.Checklist(
+            id='log-z-axis',
+            options=[{'label': ' Use log for z axis', 'value': 'log_z'}],
+            value=[],
+            inline=True,
+        ),
         html.Hr(),
     ]
 

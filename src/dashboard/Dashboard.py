@@ -107,6 +107,16 @@ def _get_so_xaxis_label(selected_rows):
     fit_func = display1_df.iloc[idx]['fit_func']
     return FIT_FUNC_XAXIS_LABELS.get(fit_func, fit_func)
 
+
+def _get_problem_goal(selected_rows):
+    """Return the problem_goal ('maximise' or 'minimise') for the selected row."""
+    if not selected_rows:
+        return 'maximise'
+    idx = selected_rows[0]
+    if idx >= len(display1_df):
+        return 'maximise'
+    return display1_df.iloc[idx].get('problem_goal', 'maximise')
+
 # ------------------------------
 # Callback: Render Problem Tab Content
 # ------------------------------
@@ -261,11 +271,11 @@ def update_table2(data):
     Output("PID", "data"),
     Output("opt_goal", 'data'),
     Output("fit_func_store", 'data')],
-    Input("data-problem-specific", "data"),
-    [State("table1-selected-store", "data"),
-     State(LON_TABLE_SELECTED_PID_STORE, "data")]
+    [Input("data-problem-specific", "data"),
+     Input(LON_TABLE_SELECTED_PID_STORE, "data")],
+    State("table1-selected-store", "data"),
 )
-def update_table2(data, table1_selection, lon_table_pid):
+def update_table2(data, lon_table_pid, table1_selection):
     # Primary: use problem table selection if available
     if data is not None and table1_selection:
         df = pd.DataFrame(data)
@@ -351,8 +361,9 @@ def display_stored_data(data, fitness_mode, selected_rows):
     xaxis_label = _get_so_xaxis_label(selected_rows)
     if xaxis_label is None:
         return go.Figure()
+    problem_goal = _get_problem_goal(selected_rows)
     plot_df = pd.DataFrame(data)
-    plot = plot2d_line(plot_df, fitness_mode=fitness_mode or 'best', xaxis_title=xaxis_label)
+    plot = plot2d_line(plot_df, fitness_mode=fitness_mode or 'best', problem_goal=problem_goal, xaxis_title=xaxis_label)
     return plot
 # 2D box plot
 @app.callback(
@@ -365,8 +376,9 @@ def display_stored_data(data, fitness_mode, selected_rows):
     xaxis_label = _get_so_xaxis_label(selected_rows)
     if xaxis_label is None:
         return go.Figure()
+    problem_goal = _get_problem_goal(selected_rows)
     plot_df = pd.DataFrame(data)
-    plot = plot2d_box(plot_df, fitness_mode=fitness_mode or 'best', xaxis_title=xaxis_label)
+    plot = plot2d_box(plot_df, fitness_mode=fitness_mode or 'best', problem_goal=problem_goal, xaxis_title=xaxis_label)
     return plot
 
 # 2D line plot (multi-objective)
@@ -438,9 +450,19 @@ def update_performance_summary_table(data, fitness_mode, selected_rows):
     if not data:
         return html.P("No data available.", style={'color': '#888', 'fontStyle': 'italic'})
 
+    problem_goal = _get_problem_goal(selected_rows)
+    minimising = problem_goal == 'minimise'
+
     plot_df = pd.DataFrame(data)
-    fit_col = 'final_fit' if fitness_mode == 'final' else 'max_fit'
-    label = 'Final Fitness' if fitness_mode == 'final' else 'Best Fitness'
+    if fitness_mode == 'final':
+        fit_col = 'final_fit'
+        label = 'Final Fitness'
+    elif minimising:
+        fit_col = 'min_fit'
+        label = 'Best Fitness'
+    else:
+        fit_col = 'max_fit'
+        label = 'Best Fitness'
 
     required_cols = {'algo_name', 'noise', fit_col}
     if not required_cols.issubset(plot_df.columns):
@@ -469,7 +491,7 @@ def update_performance_summary_table(data, fitness_mode, selected_rows):
                 std = algo_row['std'].values[0]
                 std_str = f'{std:.3f}' if pd.notna(std) else 'N/A'
                 row[algo] = f'{med:.3f} ± {std_str}'
-                if best_median is None or med > best_median:
+                if best_median is None or (minimising and med < best_median) or (not minimising and med > best_median):
                     best_median = med
                     best_algos = [algo]
                 elif med == best_median:
@@ -489,6 +511,12 @@ def update_performance_summary_table(data, fitness_mode, selected_rows):
         for row_idx, col_id in highlight_cells
     ]
 
+    highlight_description = (
+        "Green highlight indicates the lowest median fitness for that noise level."
+        if minimising else
+        "Green highlight indicates the highest median fitness for that noise level."
+    )
+
     table = dash_table.DataTable(
         data=rows,
         columns=columns,
@@ -501,7 +529,7 @@ def update_performance_summary_table(data, fitness_mode, selected_rows):
     return html.Div([
         html.H5(f"Performance Summary: Median {label} ± Std Dev by Noise Level",
                 style={'marginTop': '16px', 'marginBottom': '4px'}),
-        html.P("Green highlight indicates the highest median fitness for that noise level.",
+        html.P(highlight_description,
                style={'color': '#555', 'fontSize': '12px', 'marginBottom': '8px'}),
         table,
         html.Hr(),
@@ -526,9 +554,17 @@ def update_mann_whitney_table(data, fitness_mode, selected_rows):
     if not data:
         return html.P("No data available.", style={'color': '#888', 'fontStyle': 'italic'})
 
+    problem_goal = _get_problem_goal(selected_rows)
     plot_df = pd.DataFrame(data)
-    fit_col = 'final_fit' if fitness_mode == 'final' else 'max_fit'
-    label = 'Final Fitness' if fitness_mode == 'final' else 'Best Fitness'
+    if fitness_mode == 'final':
+        fit_col = 'final_fit'
+        label = 'Final Fitness'
+    elif problem_goal == 'minimise':
+        fit_col = 'min_fit'
+        label = 'Best Fitness'
+    else:
+        fit_col = 'max_fit'
+        label = 'Best Fitness'
 
     required_cols = {'algo_name', 'noise', fit_col}
     if not required_cols.issubset(plot_df.columns):
@@ -1134,9 +1170,10 @@ def update_table2_selected(series_list):
      Input('custom_y_min', 'value'),
      Input('custom_y_max', 'value'),
      Input('custom_z_min', 'value'),
-     Input('custom_z_max', 'value')]
+     Input('custom_z_max', 'value'),
+     Input('log-z-axis', 'value')]
 )
-def clean_axis_values(custom_x_min, custom_x_max, custom_y_min, custom_y_max, custom_z_min, custom_z_max):
+def clean_axis_values(custom_x_min, custom_x_max, custom_y_min, custom_y_max, custom_z_min, custom_z_max, log_z):
     def clean(val):
         # If the input is empty, an empty string, or None, return None.
         # Otherwise, assume it's a valid number (or you could cast to float/int).
@@ -1150,7 +1187,8 @@ def clean_axis_values(custom_x_min, custom_x_max, custom_y_min, custom_y_max, cu
         "custom_y_min": clean(custom_y_min),
         "custom_y_max": clean(custom_y_max),
         "custom_z_min": clean(custom_z_min),
-        "custom_z_max": clean(custom_z_max)
+        "custom_z_max": clean(custom_z_max),
+        "log_z": 'log_z' in (log_z or []),
     }
 
 def _build_stn_stats_table(stn_algo_data, stn_labels):
@@ -1253,6 +1291,7 @@ def _build_stn_stats_table(stn_algo_data, stn_labels):
      Input('LON-options', 'value'),
      Input('LON-node-colour-mode', 'value'), # CoLON colour
      Input('LON-edge-colour-feas', 'value'), # CoLON colour
+     Input('lmds-multiplier', 'value'),
      Input('NLON_fit_func', 'value'),
      Input('NLON_intensity', 'value'),
      Input('NLON_samples', 'value'),
@@ -1290,7 +1329,7 @@ def _build_stn_stats_table(stn_algo_data, stn_labels):
 )
 def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limit,
                 LO_fit_percent, LON_options, LON_node_colour_mode, LON_edge_colour_feas,
-                NLON_fit_func, NLON_intensity, NLON_samples, layout_value, plot_type,
+                lmds_multiplier, NLON_fit_func, NLON_intensity, NLON_samples, layout_value, plot_type,
                 hover_info_value, azimuth_deg, elevation_deg, all_trajectories_list, STN_labels,
                 run_start_index, n_runs_display, local_optima, axis_values,
                 opacity_noise_bar, LON_node_opacity, LON_edge_opacity, STN_node_opacity, STN_edge_opacity,
@@ -1320,6 +1359,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
         lon_options=LON_options or [],
         lon_node_colour_mode=LON_node_colour_mode,
         lon_edge_colour_feas=LON_edge_colour_feas or [],
+        lmds_multiplier=lmds_multiplier,
         nlon_fit_func=NLON_fit_func,
         nlon_intensity=NLON_intensity,
         nlon_samples=NLON_samples,
@@ -1552,7 +1592,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
     # ==========
     # STEP 7: Calculate node positions
     # ==========
-    pos = calculate_positions(G, config.layout_type, config.stn_plot_type, config.plot_3d)
+    pos = calculate_positions(G, config.layout_type, config.stn_plot_type, config.plot_3d, config.lon.lmds_multiplier)
 
     # ==========
     # STEP 8: Build visualization traces

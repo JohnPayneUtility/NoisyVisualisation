@@ -395,6 +395,7 @@ def enrich_df_with_payloads(df: pd.DataFrame) -> pd.DataFrame:
 
 @hydra.main(version_base=None, config_path="configs", config_name="test1_kp_1p1")
 def main(cfg: DictConfig):
+    print(OmegaConf.to_yaml(cfg))
     start_time = time.perf_counter() # Record start time
 
     # Resolve dependencies in nested config structure

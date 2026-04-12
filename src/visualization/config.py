@@ -38,6 +38,7 @@ class AxisConfig:
     y_max: Optional[float] = None
     z_min: Optional[float] = None
     z_max: Optional[float] = None
+    log_z: bool = False
 
 
 @dataclass
@@ -85,6 +86,7 @@ class LONConfig:
     node_diamond: bool = False
     edge_colour_feas: bool = False
     edge_size: float = 2.0
+    lmds_multiplier: float = 1.0
 
 
 @dataclass
@@ -164,6 +166,7 @@ def parse_callback_inputs(
     lon_options: List[str],
     lon_node_colour_mode: str,
     lon_edge_colour_feas: List[str],
+    lmds_multiplier: float,
     nlon_fit_func: str,
     nlon_intensity: float,
     nlon_samples: int,
@@ -265,6 +268,7 @@ def parse_callback_inputs(
             y_max=axis_values.get('custom_y_max'),
             z_min=axis_values.get('custom_z_min'),
             z_max=axis_values.get('custom_z_max'),
+            log_z=axis_values.get('log_z', False),
         ),
         camera=CameraConfig(
             azimuth_deg=azimuth_deg,
@@ -289,6 +293,7 @@ def parse_callback_inputs(
             node_diamond='LON-node-diamond' in lon_options,
             edge_colour_feas='edge_feas' in lon_edge_colour_feas,
             edge_size=lon_edge_size_slider,
+            lmds_multiplier=lmds_multiplier if lmds_multiplier is not None else 1.0,
         ),
         noisy_lon=NoisyLONConfig(
             fit_func=nlon_fit_func,

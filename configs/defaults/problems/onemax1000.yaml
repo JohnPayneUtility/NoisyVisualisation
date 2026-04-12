@@ -1,0 +1,21 @@
+# @package _global_
+problem:
+  prob_name: onemax
+  prob_type: discrete
+  opt_goal: maximise
+  dimensions: 1000        # bit-string length
+  opt_global: 1000        # known optimum
+  capacity: 0            # Not applicable for OneMax, set to 0
+  mean_value: 500.0       # Not applicable for OneMax, set to middle value
+  mean_weight: 0.5       # Not applicable for OneMax, set to middle value
+  
+  loader: null  # Problem loading - OneMax doesn't need a loader
+    
+  # Fitness function
+  fitness_fn: OneMax_fitness
+  fitness_params:
+    noise_intensity: 0
+  
+  # Attributes and weights
+  attr_function: binary_attribute
+  weights: [1.0] 

@@ -1,0 +1,10 @@
+# @package _global_
+algo:
+  name: PCEA
+  type: PCEA
+  use_dynamic_pop_size: false
+
+  # Algorithm initialization parameters
+  init_args:
+    _target_: src.algorithms.Algorithms.PCEA
+    pop_size: 461

@@ -1,0 +1,11 @@
+# @package _global_
+algo:
+  name: UMDA
+  type: UMDA
+  use_dynamic_pop_size: false
+
+  # Algorithm initialization parameters
+  init_args:
+    _target_: src.algorithms.Algorithms.UMDA
+    pop_size: 921
+    select_size: 460

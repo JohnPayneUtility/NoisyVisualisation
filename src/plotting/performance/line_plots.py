@@ -10,7 +10,7 @@ import plotly.graph_objects as go
 from ..base import DEFAULT_TEMPLATE, create_empty_figure
 
 
-def plot_line(dataframe, fitness_mode='best', xaxis_title=None):
+def plot_line(dataframe, fitness_mode='best', problem_goal='maximise', xaxis_title=None):
     """
     Create a line plot comparing algorithm performance across noise levels.
 
@@ -20,9 +20,11 @@ def plot_line(dataframe, fitness_mode='best', xaxis_title=None):
         dataframe: DataFrame with columns:
             - algo_name: Algorithm identifier
             - noise: Noise level
-            - max_fit: Best fitness value recorded across the run
+            - max_fit: Best fitness value recorded across the run (maximisation)
+            - min_fit: Best fitness value recorded across the run (minimisation)
             - final_fit: Final fitness value at end of run
-        fitness_mode: 'best' to plot max_fit, 'final' to plot final_fit
+        fitness_mode: 'best' to plot best fit, 'final' to plot final_fit
+        problem_goal: 'maximise' or 'minimise' — determines which column is 'best'
 
     Returns:
         go.Figure: Line plot with error bars
@@ -32,6 +34,9 @@ def plot_line(dataframe, fitness_mode='best', xaxis_title=None):
     if fitness_mode == 'final':
         fit_col = 'final_fit'
         yaxis_label = 'Final solution found'
+    elif problem_goal == 'minimise':
+        fit_col = 'min_fit'
+        yaxis_label = 'Best solution found'
     else:
         fit_col = 'max_fit'
         yaxis_label = 'Best solution found'

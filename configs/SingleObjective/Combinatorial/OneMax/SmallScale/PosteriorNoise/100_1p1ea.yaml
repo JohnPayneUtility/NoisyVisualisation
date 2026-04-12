@@ -1,5 +1,11 @@
+# @package _global_
 # Nested config for OnePlusOneEA on Knapsack experiment
 # This shows how we could use nested structure with dependency resolution
+
+defaults:
+  - /defaults/run
+  - /defaults/mlflow
+  - _self_   # ensures overrides below take precedence
 
 experiment_name: "SOOneMaxPostNoise"
 
@@ -25,7 +31,7 @@ run:
     "9": 86078
     "10": 93638
   seed: 1
-  num_runs: 30
+  num_runs: 50
   parallel: true
   override_max_workers: null
   progress_print_interval: 10000  # print update every N evals, set to null to disable
