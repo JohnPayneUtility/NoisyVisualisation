@@ -11,6 +11,13 @@ import plotly.express as px
 from ..base import DEFAULT_TEMPLATE, create_empty_figure
 
 
+def _viridis_colors(n):
+    if n == 1:
+        return [px.colors.sample_colorscale('Viridis', [0.5])[0]]
+    positions = [i / (n - 1) for i in range(n)]
+    return px.colors.sample_colorscale('Viridis', positions)
+
+
 def plot_box(dataframe, fitness_mode='best', problem_goal='maximise', xaxis_title=None):
     """
     Create a box plot comparing algorithm performance across noise levels.
@@ -46,13 +53,16 @@ def plot_box(dataframe, fitness_mode='best', problem_goal='maximise', xaxis_titl
     df = df[['algo_name', 'noise', fit_col]]
 
     noise_levels = sorted(df['noise'].unique())
+    algos = sorted(df['algo_name'].unique())
+    colors = _viridis_colors(len(algos))
 
     fig = px.box(
         df,
         x="noise",
         y=fit_col,
         color="algo_name",
-        category_orders={"noise": noise_levels},
+        category_orders={"noise": noise_levels, "algo_name": algos},
+        color_discrete_sequence=colors,
         points=False
     )
 
@@ -111,13 +121,16 @@ def plot_box_evals(dataframe, fitness_mode='final', xaxis_title=None):
     df = df[['algo_name', 'noise', eval_col]].dropna(subset=[eval_col])
 
     noise_levels = sorted(df['noise'].unique())
+    algos = sorted(df['algo_name'].unique())
+    colors = _viridis_colors(len(algos))
 
     fig = px.box(
         df,
         x="noise",
         y=eval_col,
         color="algo_name",
-        category_orders={"noise": noise_levels},
+        category_orders={"noise": noise_levels, "algo_name": algos},
+        color_discrete_sequence=colors,
         points=False
     )
 
@@ -178,13 +191,16 @@ def plot_box_mo(dataframe):
     df = df[['algo_name', 'noise', 'final_true_hv']]
 
     noise_levels = sorted(df['noise'].unique())
+    algos = sorted(df['algo_name'].unique())
+    colors = _viridis_colors(len(algos))
 
     fig = px.box(
         df,
         x="noise",
         y="final_true_hv",
         color="algo_name",
-        category_orders={"noise": noise_levels},
+        category_orders={"noise": noise_levels, "algo_name": algos},
+        color_discrete_sequence=colors,
         points=False
     )
 

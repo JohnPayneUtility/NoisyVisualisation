@@ -1,0 +1,42 @@
+# @package _global_
+# Run budget determined by 2x evaluations required by PCEA to find optimum
+run:
+  max_gens: 1e6
+  eval_limit: 1e6
+  target_stop: true
+  no_improve_limit: 1e6
+  use_noise_dependent_eval_limit: true
+  eval_limit_for_noise:
+    "0": 38392
+    "1": 38392
+    "2": 41066
+    "3": 44477
+    "4": 50728
+    "5": 56851
+    "6": 64079
+    "7": 70736
+    "8": 79344
+    "9": 86078
+    "10": 93638 # end of Aish's numbers
+    "11": 141988
+    "12": 147520
+    "13": 165960
+    "14": 178868
+    "15": 192698
+    "16": 199152
+    "17": 218514
+    "18": 218514
+    "19": 235110
+    "20": 256316
+    "21": 270146
+    "22": 290430
+    "23": 302416
+    "24": 304260
+    "25": 313480
+  seed: 1
+  num_runs: 30
+  parallel: true
+  override_max_workers: null
+  progress_print_interval: 10000
+  record_population: false
+  # nvme_path: ${hydra:runtime.cwd}/fast_storage

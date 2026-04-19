@@ -1325,7 +1325,9 @@ def _build_stn_stats_table(stn_algo_data, stn_labels):
      Input('annotation-options', 'value'),
      Input('fit_func_store', 'data'),
      Input('info-panel-x', 'value'),
-     Input('info-panel-y', 'value')]
+     Input('info-panel-y', 'value'),
+     Input('axes-text-scale', 'value'),
+     Input('annotation-text-scale', 'value')]
 )
 def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limit,
                 LO_fit_percent, LON_options, LON_node_colour_mode, LON_edge_colour_feas,
@@ -1336,7 +1338,8 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                 STN_node_min, STN_node_max, LON_node_min, LON_node_max,
                 LON_edge_size_slider, STN_edge_size_slider, noisy_fitnesses_list,
                 stn_plot_type, STN_MO_data, STN_MO_series_labels, stn_node_size_metric,
-                annotation_options, fit_func, info_panel_x, info_panel_y):
+                annotation_options, fit_func, info_panel_x, info_panel_y,
+                axes_text_scale, annotation_text_scale):
     """
     Main visualization callback - orchestrates the visualization pipeline.
 
@@ -1604,9 +1607,11 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
         # ==========
         # STEP 9: Configure axes and create figure
         # ==========
-        xaxis_settings, yaxis_settings, zaxis_settings = create_axis_settings(G, pos, config, node_noise)
+        xaxis_settings, yaxis_settings, zaxis_settings = create_axis_settings(
+            G, pos, config, node_noise, axes_text_scale=axes_text_scale or 1.0)
 
         # Build scene annotations from enabled annotation options
+        ann_font_size = round(11 * (annotation_text_scale or 1.0))
         scene_annotations = []
         if 'annotate-start-nodes' in (annotation_options or []):
             seen_positions = set()
@@ -1626,7 +1631,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                             arrowwidth=1.5,
                             arrowcolor='black',
                             ax=80, ay=0,
-                            font=dict(size=11, color='black'),
+                            font=dict(size=ann_font_size, color='black'),
                         ))
 
         if 'annotate-end-nodes' in (annotation_options or []):
@@ -1649,7 +1654,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                             arrowwidth=1.5,
                             arrowcolor='black',
                             ax=80, ay=0,
-                            font=dict(size=11, color='black'),
+                            font=dict(size=ann_font_size, color='black'),
                         ))
 
         if 'annotate-mistakes' in (annotation_options or []):
@@ -1680,7 +1685,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                             arrowwidth=1.5,
                             arrowcolor='red',
                             ax=20, ay=0,
-                            font=dict(size=11, color='red'),
+                            font=dict(size=ann_font_size, color='red'),
                         ))
 
         if 'annotate-optimum' in (annotation_options or []) and config.optimum is not None:
@@ -1697,7 +1702,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                         arrowwidth=1.5,
                         arrowcolor='black',
                         ax=40, ay=-40,
-                        font=dict(size=11, color='black'),
+                        font=dict(size=ann_font_size, color='black'),
                     ))
                     break  # Only one global optimum
 
@@ -1735,7 +1740,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                     bgcolor='rgba(255,255,255,0.8)',
                     bordercolor='grey',
                     borderwidth=1,
-                    font=dict(size=11),
+                    font=dict(size=ann_font_size),
                 )
     else:
         # Fallback for other plot types

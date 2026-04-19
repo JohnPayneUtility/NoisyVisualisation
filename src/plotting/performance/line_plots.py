@@ -6,8 +6,16 @@ performance across different noise levels.
 """
 
 import plotly.graph_objects as go
+import plotly.express as px
 
 from ..base import DEFAULT_TEMPLATE, create_empty_figure
+
+
+def _viridis_colors(n):
+    if n == 1:
+        return [px.colors.sample_colorscale('Viridis', [0.5])[0]]
+    positions = [i / (n - 1) for i in range(n)]
+    return px.colors.sample_colorscale('Viridis', positions)
 
 
 def plot_line(dataframe, fitness_mode='best', problem_goal='maximise', xaxis_title=None):
@@ -44,8 +52,11 @@ def plot_line(dataframe, fitness_mode='best', problem_goal='maximise', xaxis_tit
     df = df[['algo_name', 'noise', fit_col]]
     stats = df.groupby(['algo_name', 'noise'])[fit_col].agg(['mean', 'std']).reset_index()
 
+    algos = list(stats['algo_name'].unique())
+    colors = _viridis_colors(len(algos))
+
     fig = go.Figure()
-    for algo in stats['algo_name'].unique():
+    for algo, color in zip(algos, colors):
         subset = stats[stats['algo_name'] == algo]
         fig.add_trace(go.Scatter(
             x=subset['noise'],
@@ -58,7 +69,9 @@ def plot_line(dataframe, fitness_mode='best', problem_goal='maximise', xaxis_tit
                 width=5
             ),
             mode='lines+markers',
-            name=algo
+            name=algo,
+            line=dict(color=color),
+            marker=dict(color=color)
         ))
 
     fig.update_layout(
@@ -103,8 +116,11 @@ def plot_line_evals(dataframe, fitness_mode='final', show_std=True, xaxis_title=
 
     stats = df.groupby(['algo_name', 'noise'])[eval_col].agg(['mean', 'std']).reset_index()
 
+    algos = list(stats['algo_name'].unique())
+    colors = _viridis_colors(len(algos))
+
     fig = go.Figure()
-    for algo in stats['algo_name'].unique():
+    for algo, color in zip(algos, colors):
         subset = stats[stats['algo_name'] == algo]
         error_y = dict(
             type='data',
@@ -118,7 +134,9 @@ def plot_line_evals(dataframe, fitness_mode='final', show_std=True, xaxis_title=
             y=subset['mean'],
             error_y=error_y,
             mode='lines+markers',
-            name=algo
+            name=algo,
+            line=dict(color=color),
+            marker=dict(color=color)
         ))
 
     fig.update_layout(
@@ -164,8 +182,11 @@ def plot_line_mo(dataframe):
     # Calculate statistics
     stats = df.groupby(['algo_name', 'noise'])['final_true_hv'].agg(['mean', 'std']).reset_index()
 
+    algos = list(stats['algo_name'].unique())
+    colors = _viridis_colors(len(algos))
+
     fig = go.Figure()
-    for algo in stats['algo_name'].unique():
+    for algo, color in zip(algos, colors):
         subset = stats[stats['algo_name'] == algo]
         fig.add_trace(go.Scatter(
             x=subset['noise'],
@@ -178,7 +199,9 @@ def plot_line_mo(dataframe):
                 width=5
             ),
             mode='lines+markers',
-            name=algo
+            name=algo,
+            line=dict(color=color),
+            marker=dict(color=color)
         ))
 
     fig.update_layout(
