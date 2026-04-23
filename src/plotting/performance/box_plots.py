@@ -11,14 +11,14 @@ import plotly.express as px
 from ..base import DEFAULT_TEMPLATE, create_empty_figure
 
 
-def _viridis_colors(n):
+def _viridis_colors(n, colorscale='Viridis'):
     if n == 1:
-        return [px.colors.sample_colorscale('Viridis', [0.5])[0]]
+        return [px.colors.sample_colorscale(colorscale, [0.5])[0]]
     positions = [i / (n - 1) for i in range(n)]
-    return px.colors.sample_colorscale('Viridis', positions)
+    return px.colors.sample_colorscale(colorscale, positions)
 
 
-def plot_box(dataframe, fitness_mode='best', problem_goal='maximise', xaxis_title=None):
+def plot_box(dataframe, fitness_mode='best', problem_goal='maximise', xaxis_title=None, colorscale='Viridis'):
     """
     Create a box plot comparing algorithm performance across noise levels.
 
@@ -54,7 +54,7 @@ def plot_box(dataframe, fitness_mode='best', problem_goal='maximise', xaxis_titl
 
     noise_levels = sorted(df['noise'].unique())
     algos = sorted(df['algo_name'].unique())
-    colors = _viridis_colors(len(algos))
+    colors = _viridis_colors(len(algos), colorscale)
 
     fig = px.box(
         df,
@@ -92,7 +92,7 @@ def plot_box(dataframe, fitness_mode='best', problem_goal='maximise', xaxis_titl
     return fig
 
 
-def plot_box_evals(dataframe, fitness_mode='final', xaxis_title=None):
+def plot_box_evals(dataframe, fitness_mode='final', xaxis_title=None, colorscale='Viridis'):
     """
     Create a box plot comparing algorithm runtime (evaluations) across noise levels.
 
@@ -122,7 +122,7 @@ def plot_box_evals(dataframe, fitness_mode='final', xaxis_title=None):
 
     noise_levels = sorted(df['noise'].unique())
     algos = sorted(df['algo_name'].unique())
-    colors = _viridis_colors(len(algos))
+    colors = _viridis_colors(len(algos), colorscale)
 
     fig = px.box(
         df,
@@ -160,7 +160,7 @@ def plot_box_evals(dataframe, fitness_mode='final', xaxis_title=None):
     return fig
 
 
-def plot_box_mo(dataframe):
+def plot_box_mo(dataframe, colorscale='Viridis'):
     """
     Create a box plot for multi-objective performance using hypervolume.
 
@@ -192,7 +192,7 @@ def plot_box_mo(dataframe):
 
     noise_levels = sorted(df['noise'].unique())
     algos = sorted(df['algo_name'].unique())
-    colors = _viridis_colors(len(algos))
+    colors = _viridis_colors(len(algos), colorscale)
 
     fig = px.box(
         df,

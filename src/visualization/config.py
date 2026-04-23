@@ -153,6 +153,7 @@ class PlotConfig:
     algo_colors: List[str] = field(default_factory=lambda: ['blue', 'orange', 'purple', 'cyan', 'magenta', 'brown'])
     noisy_node_color: str = 'grey'
     node_color_shared: str = 'green'
+    colorscale: str = 'Viridis'
 
 
 def parse_callback_inputs(
@@ -191,6 +192,7 @@ def parse_callback_inputs(
     stn_edge_size_slider: float,
     stn_plot_type: str,
     node_size_metric: str = 'generations',
+    colorscale: str = 'Viridis',
 ) -> PlotConfig:
     """
     Parse raw callback inputs into a structured PlotConfig object.
@@ -300,4 +302,5 @@ def parse_callback_inputs(
             intensity=nlon_intensity,
             samples=nlon_samples,
         ),
+        colorscale=colorscale,
     )

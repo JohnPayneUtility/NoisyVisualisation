@@ -1,0 +1,22 @@
+# @package _global_
+# BASE SETTINGS
+defaults:
+  - /defaults/mlflow
+  - _self_   # ensures overrides below take precedence
+
+# OVERRIDES
+# none
+
+# EXPERIMENT SETTINGS
+experiment_name: "experiment_config_test"
+
+hydra:
+  mode: MULTIRUN
+  sweeper: # sweep through various combinations of parameters
+    params:
+      +defaults/run: run_budget_onemax
+      +defaults/problems: onemax100
+      +defaults/algos: mup1ea,1p1ea,umda
+      problem.fitness_params.noise_intensity: 0,1,2,3,4,5
+  sweep:
+    dir: data/outputs

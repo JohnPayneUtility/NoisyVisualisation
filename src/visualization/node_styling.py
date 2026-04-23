@@ -187,7 +187,7 @@ def apply_node_colors(
                     norm = (float(data['fitness']) - min_fit) / (max_fit - min_fit)
                 else:
                     norm = 0.5
-                data['color'] = px.colors.sample_colorscale('Viridis', float(np.clip(norm, 0.0, 0.9999)))[0]
+                data['color'] = px.colors.sample_colorscale(config.colorscale, float(np.clip(norm, 0.0, 0.9999)))[0]
 
             elif node_colour_mode == 'feasible':
                 feas = lookup_map(opt_feas_map, sol_tuple)
@@ -195,7 +195,7 @@ def apply_node_colors(
 
             elif node_colour_mode == 'neigh':
                 p = lookup_map(neigh_feas_map, sol_tuple)
-                data['color'] = px.colors.sample_colorscale('Viridis', float(np.clip(p, 0.0, 0.9999)))[0] if p is not None else 'grey'
+                data['color'] = px.colors.sample_colorscale(config.colorscale, float(np.clip(p, 0.0, 0.9999)))[0] if p is not None else 'grey'
 
             else:
                 data['color'] = 'grey'
@@ -227,7 +227,7 @@ def style_nodes(
 
     # Apply generation coloring first (for MO mode)
     if config.stn_plot_type == 'multiobjective':
-        apply_generation_coloring(G)
+        apply_generation_coloring(G, config.colorscale)
 
     # Apply sizes
     apply_node_sizes(G, config, optimum)

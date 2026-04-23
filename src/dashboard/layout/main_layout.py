@@ -4,7 +4,7 @@ Main layout assembly for the Dashboard.
 This module imports components from other layout files and assembles
 them into the complete dashboard layout.
 """
-from dash import html
+from dash import html, dcc
 
 from .stores import create_all_stores
 from .components import (
@@ -43,6 +43,24 @@ def create_layout(display2_df, display2_hidden_cols):
 
     # Header
     children.append(html.H2("LON/STN Dashboard", style={'textAlign': 'center'}))
+    children.append(html.Div([
+        html.Label("Plot theme:", style={'fontWeight': 'bold', 'marginRight': '8px'}),
+        dcc.Dropdown(
+            id='plot-theme',
+            options=[
+                {'label': 'Viridis', 'value': 'Viridis'},
+                {'label': 'Viridis (reversed)', 'value': 'Viridis_r'},
+                {'label': 'Plasma', 'value': 'Plasma'},
+                {'label': 'Inferno', 'value': 'Inferno'},
+                {'label': 'Magma', 'value': 'Magma'},
+                {'label': 'Cividis', 'value': 'Cividis'},
+                {'label': 'Turbo', 'value': 'Turbo'},
+            ],
+            value='Viridis',
+            clearable=False,
+            style={'width': '200px', 'display': 'inline-block', 'verticalAlign': 'middle'},
+        ),
+    ], style={'textAlign': 'center', 'marginBottom': '10px'}))
 
     # Hidden stores for state management
     children.extend(create_all_stores())

@@ -11,14 +11,14 @@ import plotly.express as px
 from ..base import DEFAULT_TEMPLATE, create_empty_figure
 
 
-def _viridis_colors(n):
+def _viridis_colors(n, colorscale='Viridis'):
     if n == 1:
-        return [px.colors.sample_colorscale('Viridis', [0.5])[0]]
+        return [px.colors.sample_colorscale(colorscale, [0.5])[0]]
     positions = [i / (n - 1) for i in range(n)]
-    return px.colors.sample_colorscale('Viridis', positions)
+    return px.colors.sample_colorscale(colorscale, positions)
 
 
-def plot_line(dataframe, fitness_mode='best', problem_goal='maximise', xaxis_title=None):
+def plot_line(dataframe, fitness_mode='best', problem_goal='maximise', xaxis_title=None, colorscale='Viridis'):
     """
     Create a line plot comparing algorithm performance across noise levels.
 
@@ -53,7 +53,7 @@ def plot_line(dataframe, fitness_mode='best', problem_goal='maximise', xaxis_tit
     stats = df.groupby(['algo_name', 'noise'])[fit_col].agg(['mean', 'std']).reset_index()
 
     algos = list(stats['algo_name'].unique())
-    colors = _viridis_colors(len(algos))
+    colors = _viridis_colors(len(algos), colorscale)
 
     fig = go.Figure()
     for algo, color in zip(algos, colors):
@@ -85,7 +85,7 @@ def plot_line(dataframe, fitness_mode='best', problem_goal='maximise', xaxis_tit
     return fig
 
 
-def plot_line_evals(dataframe, fitness_mode='final', show_std=True, xaxis_title=None):
+def plot_line_evals(dataframe, fitness_mode='final', show_std=True, xaxis_title=None, colorscale='Viridis'):
     """
     Create a line plot comparing algorithm runtime (evaluations) across noise levels.
 
@@ -117,7 +117,7 @@ def plot_line_evals(dataframe, fitness_mode='final', show_std=True, xaxis_title=
     stats = df.groupby(['algo_name', 'noise'])[eval_col].agg(['mean', 'std']).reset_index()
 
     algos = list(stats['algo_name'].unique())
-    colors = _viridis_colors(len(algos))
+    colors = _viridis_colors(len(algos), colorscale)
 
     fig = go.Figure()
     for algo, color in zip(algos, colors):
@@ -150,7 +150,7 @@ def plot_line_evals(dataframe, fitness_mode='final', show_std=True, xaxis_title=
     return fig
 
 
-def plot_line_mo(dataframe):
+def plot_line_mo(dataframe, colorscale='Viridis'):
     """
     Create a line plot for multi-objective performance using hypervolume.
 
@@ -183,7 +183,7 @@ def plot_line_mo(dataframe):
     stats = df.groupby(['algo_name', 'noise'])['final_true_hv'].agg(['mean', 'std']).reset_index()
 
     algos = list(stats['algo_name'].unique())
-    colors = _viridis_colors(len(algos))
+    colors = _viridis_colors(len(algos), colorscale)
 
     fig = go.Figure()
     for algo, color in zip(algos, colors):

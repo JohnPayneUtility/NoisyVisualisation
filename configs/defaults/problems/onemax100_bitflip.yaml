@@ -1,0 +1,25 @@
+# @package _global_
+# ==============================
+# Problem Configuration
+# ==============================
+problem:
+  prob_name: onemax
+  prob_type: discrete
+  opt_goal: maximise
+  dimensions: 100        # bit-string length
+  opt_global: 100        # known optimum
+  capacity: 0            # Not applicable for OneMax, set to 0
+  mean_value: 50.0       # Not applicable for OneMax, set to middle value
+  mean_weight: 0.5       # Not applicable for OneMax, set to middle value
+  
+  # Problem loading - OneMax doesn't need a loader, dimensions are fixed
+  loader: null
+  
+  # Fitness function
+  fitness_fn: OneMax_prior_bitflip_fitness
+  fitness_params:
+    noise_intensity: 0
+  
+  # Attributes and weights
+  attr_function: binary_attribute
+  weights: [1.0] 

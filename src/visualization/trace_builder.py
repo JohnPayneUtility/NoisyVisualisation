@@ -135,7 +135,7 @@ def create_edge_traces(
             eval_min, eval_max = eval_range
             norm_eval = (edge_evals - eval_min) / (eval_max - eval_min) if eval_max > eval_min else 0.5
             norm_eval = float(np.clip(norm_eval, 0.0, 1.0))
-            display_color = px.colors.sample_colorscale('Viridis', norm_eval)[0]
+            display_color = px.colors.sample_colorscale(config.colorscale, norm_eval)[0]
         else:
             display_color = edge_color
 
@@ -768,7 +768,7 @@ def create_figure(
     return fig
 
 
-def create_evals_colorbar_trace(eval_min: float, eval_max: float) -> go.Scatter3d:
+def create_evals_colorbar_trace(eval_min: float, eval_max: float, colorscale: str = 'Viridis') -> go.Scatter3d:
     """
     Create an invisible dummy trace whose sole purpose is to render a Viridis
     colorbar representing the evaluations scale used when colour_by_evals is on.
@@ -785,7 +785,7 @@ def create_evals_colorbar_trace(eval_min: float, eval_max: float) -> go.Scatter3
         mode='markers',
         marker=dict(
             color=[eval_min, eval_max],
-            colorscale='Viridis',
+            colorscale=colorscale,
             cmin=eval_min,
             cmax=eval_max,
             colorbar=dict(
@@ -803,7 +803,7 @@ def create_evals_colorbar_trace(eval_min: float, eval_max: float) -> go.Scatter3
     )
 
 
-def create_lon_colorbar_trace(cmin: float, cmax: float, title: str, x_pos: float = 1.02) -> go.Scatter3d:
+def create_lon_colorbar_trace(cmin: float, cmax: float, title: str, x_pos: float = 1.02, colorscale: str = 'Viridis') -> go.Scatter3d:
     """
     Create an invisible dummy trace whose sole purpose is to render a Viridis
     colorbar for LON node colouring (fitness or neighbourhood feasibility).
@@ -823,7 +823,7 @@ def create_lon_colorbar_trace(cmin: float, cmax: float, title: str, x_pos: float
         mode='markers',
         marker=dict(
             color=[cmin, cmax],
-            colorscale='Viridis',
+            colorscale=colorscale,
             cmin=cmin,
             cmax=cmax,
             colorbar=dict(
@@ -871,7 +871,7 @@ def build_all_traces(
 
     # Add evaluation colorbar when colour_by_evals is enabled
     if eval_range is not None:
-        traces.append(create_evals_colorbar_trace(*eval_range))
+        traces.append(create_evals_colorbar_trace(*eval_range, colorscale=config.colorscale))
 
     # Add edge labels
     edge_label_trace = create_edge_label_trace(edge_label_x, edge_label_y, edge_label_z, edge_labels)
@@ -896,7 +896,7 @@ def build_all_traces(
                 cmin, cmax, title = 0.0, 1.0, 'Neighbourhood<br>Feasibility'
             # Shift right if an evals colorbar is also present to avoid overlap
             x_pos = 1.17 if eval_range is not None else 1.02
-            traces.append(create_lon_colorbar_trace(cmin, cmax, title, x_pos))
+            traces.append(create_lon_colorbar_trace(cmin, cmax, title, x_pos, colorscale=config.colorscale))
 
     # Add boxplot traces if needed
     if config.plot_type == 'NLon_box' and node_noise and fitness_dict:

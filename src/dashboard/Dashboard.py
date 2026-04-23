@@ -84,13 +84,13 @@ app.layout = create_layout(display2_df, display2_hidden_cols)
 FIT_FUNC_XAXIS_LABELS = {
     'OneMax_fitness': 'sigma (s.d. of gaussian Noise N(0, sigma))',
     'OneMax_prior_bitflip_fitness': 'p (probability of single bit flip (p/n))',
-    'OneMax_prior_mult_bitflip_fitness': 'n (number of bit flips)',
+    'OneMax_prior_mult_bitflip_fitness': 'k (number of bit flips)',
     'OneMax_prior_pq_bitwise_fitness': 'q (bitwise flip probability q/n), probability of applying noise 1/n',
     'OneMax_prior_1q_bitwise_fitness': 'q (bitwise flip probability q/n)',
     'eval_noisy_kp_v1': 'd, where d x mean(W) is s.d. of noise',
     'eval_noisy_kp_v2': 'd, where d x mean(W) is s.d. of noise',
     'eval_noisy_kp_prior_bitflip': 'p (probability of single bit flip (p/n))',
-    'eval_noisy_kp_prior_mult_bitflip': 'n (number of bit flips)',
+    'eval_noisy_kp_prior_mult_bitflip': 'k (number of bit flips)',
     'eval_noisy_kp_pq_prior_bitwise': 'q (bitwise flip probability q/n), probability of applying noise 1/n',
     'eval_noisy_kp_1q_prior_bitwise': 'q (bitwise flip probability q/n)',
     'rastrigin_eval': 'sigma (s.d. of gaussian Noise N(0, sigma))',
@@ -356,14 +356,15 @@ def display_stored_data(data):
     Input('plot_2d_data', 'data'),
     Input('so-fitness-mode', 'value'),
     Input('table1-selected-store', 'data'),
+    Input('plot-theme', 'value'),
 )
-def display_stored_data(data, fitness_mode, selected_rows):
+def display_stored_data(data, fitness_mode, selected_rows, plot_theme):
     xaxis_label = _get_so_xaxis_label(selected_rows)
     if xaxis_label is None:
         return go.Figure()
     problem_goal = _get_problem_goal(selected_rows)
     plot_df = pd.DataFrame(data)
-    plot = plot2d_line(plot_df, fitness_mode=fitness_mode or 'best', problem_goal=problem_goal, xaxis_title=xaxis_label)
+    plot = plot2d_line(plot_df, fitness_mode=fitness_mode or 'best', problem_goal=problem_goal, xaxis_title=xaxis_label, colorscale=plot_theme or 'Viridis')
     return plot
 # 2D box plot
 @app.callback(
@@ -371,34 +372,37 @@ def display_stored_data(data, fitness_mode, selected_rows):
     Input('plot_2d_data', 'data'),
     Input('so-fitness-mode', 'value'),
     Input('table1-selected-store', 'data'),
+    Input('plot-theme', 'value'),
 )
-def display_stored_data(data, fitness_mode, selected_rows):
+def display_stored_data(data, fitness_mode, selected_rows, plot_theme):
     xaxis_label = _get_so_xaxis_label(selected_rows)
     if xaxis_label is None:
         return go.Figure()
     problem_goal = _get_problem_goal(selected_rows)
     plot_df = pd.DataFrame(data)
-    plot = plot2d_box(plot_df, fitness_mode=fitness_mode or 'best', problem_goal=problem_goal, xaxis_title=xaxis_label)
+    plot = plot2d_box(plot_df, fitness_mode=fitness_mode or 'best', problem_goal=problem_goal, xaxis_title=xaxis_label, colorscale=plot_theme or 'Viridis')
     return plot
 
 # 2D line plot (multi-objective)
 @app.callback(
     Output('2DLinePlotMO', 'figure'),
-    Input('plot_2d_data', 'data')
+    Input('plot_2d_data', 'data'),
+    Input('plot-theme', 'value'),
 )
-def display_stored_data_mo_line(data):
+def display_stored_data_mo_line(data, plot_theme):
     plot_df = pd.DataFrame(data)
-    plot = plot2d_line_mo(plot_df)
+    plot = plot2d_line_mo(plot_df, colorscale=plot_theme or 'Viridis')
     return plot
 
 # 2D box plot (multi-objective)
 @app.callback(
     Output('2DBoxPlotMO', 'figure'),
-    Input('plot_2d_data', 'data')
+    Input('plot_2d_data', 'data'),
+    Input('plot-theme', 'value'),
 )
-def display_stored_data_mo_box(data):
+def display_stored_data_mo_box(data, plot_theme):
     plot_df = pd.DataFrame(data)
-    plot = plot2d_box_mo(plot_df)
+    plot = plot2d_box_mo(plot_df, colorscale=plot_theme or 'Viridis')
     return plot
 
 # 2D line plot (evals, single-objective)
@@ -408,14 +412,15 @@ def display_stored_data_mo_box(data):
     Input('line-evals-show-std', 'value'),
     Input('so-fitness-mode', 'value'),
     Input('table1-selected-store', 'data'),
+    Input('plot-theme', 'value'),
 )
-def display_line_evals_so(data, std_checkbox, fitness_mode, selected_rows):
+def display_line_evals_so(data, std_checkbox, fitness_mode, selected_rows, plot_theme):
     xaxis_label = _get_so_xaxis_label(selected_rows)
     if xaxis_label is None:
         return go.Figure()
     plot_df = pd.DataFrame(data)
     show_std = bool(std_checkbox and 'show' in std_checkbox)
-    plot = plot2d_line_evals(plot_df, fitness_mode=fitness_mode or 'final', show_std=show_std, xaxis_title=xaxis_label)
+    plot = plot2d_line_evals(plot_df, fitness_mode=fitness_mode or 'final', show_std=show_std, xaxis_title=xaxis_label, colorscale=plot_theme or 'Viridis')
     return plot
 
 # 2D box plot (evals, single-objective)
@@ -424,13 +429,14 @@ def display_line_evals_so(data, std_checkbox, fitness_mode, selected_rows):
     Input('plot_2d_data', 'data'),
     Input('so-fitness-mode', 'value'),
     Input('table1-selected-store', 'data'),
+    Input('plot-theme', 'value'),
 )
-def display_box_evals_so(data, fitness_mode, selected_rows):
+def display_box_evals_so(data, fitness_mode, selected_rows, plot_theme):
     xaxis_label = _get_so_xaxis_label(selected_rows)
     if xaxis_label is None:
         return go.Figure()
     plot_df = pd.DataFrame(data)
-    plot = plot2d_box_evals(plot_df, fitness_mode=fitness_mode or 'final', xaxis_title=xaxis_label)
+    plot = plot2d_box_evals(plot_df, fitness_mode=fitness_mode or 'final', xaxis_title=xaxis_label, colorscale=plot_theme or 'Viridis')
     return plot
 
 # ---------- Performance summary table ----------
@@ -1275,6 +1281,22 @@ def _build_stn_stats_table(stn_algo_data, stn_labels):
     )
 
 
+# print mode: uncheck info panel, set scale defaults
+@app.callback(
+    [Output('annotation-options', 'value'),
+     Output('axes-text-scale', 'value'),
+     Output('annotation-text-scale', 'value')],
+    Input('annotation-options', 'value'),
+    prevent_initial_call=True,
+)
+def handle_print_mode(annotation_options):
+    options = annotation_options or []
+    if 'print-mode' in options:
+        options = [o for o in options if o != 'annotate-info-panel']
+        return options, 1.2, 2
+    return options, dash.no_update, dash.no_update
+
+
 # callback for main plot
 @app.callback(
     [Output('trajectory-plot', 'figure'),
@@ -1327,7 +1349,8 @@ def _build_stn_stats_table(stn_algo_data, stn_labels):
      Input('info-panel-x', 'value'),
      Input('info-panel-y', 'value'),
      Input('axes-text-scale', 'value'),
-     Input('annotation-text-scale', 'value')]
+     Input('annotation-text-scale', 'value'),
+     Input('plot-theme', 'value')]
 )
 def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limit,
                 LO_fit_percent, LON_options, LON_node_colour_mode, LON_edge_colour_feas,
@@ -1339,7 +1362,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                 LON_edge_size_slider, STN_edge_size_slider, noisy_fitnesses_list,
                 stn_plot_type, STN_MO_data, STN_MO_series_labels, stn_node_size_metric,
                 annotation_options, fit_func, info_panel_x, info_panel_y,
-                axes_text_scale, annotation_text_scale):
+                axes_text_scale, annotation_text_scale, plot_theme):
     """
     Main visualization callback - orchestrates the visualization pipeline.
 
@@ -1387,6 +1410,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
         stn_edge_size_slider=STN_edge_size_slider,
         stn_plot_type=stn_plot_type,
         node_size_metric=stn_node_size_metric or 'generations',
+        colorscale=plot_theme or 'Viridis',
     )
 
     # Apply viridis color palette for series if enabled
@@ -1394,7 +1418,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
         n_series = len(STN_labels or STN_MO_series_labels or [])
         if n_series > 0:
             positions = [i / max(n_series - 1, 1) for i in range(n_series)]
-            config.algo_colors = [px.colors.sample_colorscale('Viridis', p)[0] for p in positions]
+            config.algo_colors = [px.colors.sample_colorscale(config.colorscale, p)[0] for p in positions]
 
     # ==========
     # STEP 2: Initialize graph and node mappings
@@ -1710,26 +1734,29 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                             scene_annotations=scene_annotations or None)
 
         # Add 2D info panel annotation in top-right corner
-        if 'annotate-info-panel' in (annotation_options or []):
+        annotation_opts = annotation_options or []
+        print_mode = 'print-mode' in annotation_opts
+        if 'annotate-info-panel' in annotation_opts or print_mode:
             lines = []
-            if PID:
-                lines.append(f'<b>PID:</b> {PID}')
-            if fit_func:
-                lines.append(f'<b>Fitness:</b> {fit_func}')
-                lines.append('&#9679; True solution/fitness')
-                lines.append('&#9632; Noisy solution/fitness')
-                lines.append('<i>Node size = evals at node</i>')
-            if 'annotate-mistakes' in (annotation_options or []):
-                lines.append('<span style="color:red">&#8594; Misjudgement</span>')
+            if not print_mode:
+                if PID:
+                    lines.append(f'<b>PID:</b> {PID}')
+                if fit_func:
+                    lines.append(f'<b>Fitness:</b> {fit_func}')
+                    lines.append('&#9679; True solution/fitness')
+                    lines.append('&#9632; Noisy solution/fitness')
+                    lines.append('<i>Node size = evals at node</i>')
+
             if STN_labels:
-                lines.append('')  # blank line separator
+                if lines:
+                    lines.append('')  # blank line separator
                 for idx, label in enumerate(STN_labels):
                     algo_name = label[0] if len(label) > 0 else '?'
                     noise = label[1] if len(label) > 1 else '?'
                     color = config.algo_colors[idx % len(config.algo_colors)]
                     lines.append(f'<span style="color:{color}"><b>{algo_name}</b> noise={noise}</span>')
             if lines:
-                fig.add_annotation(
+                annotation_kwargs = dict(
                     xref='paper', yref='paper',
                     x=(info_panel_x if info_panel_x is not None else 90) / 100,
                     y=(info_panel_y if info_panel_y is not None else 75) / 100,
@@ -1737,11 +1764,15 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                     text='<br>'.join(lines),
                     showarrow=False,
                     align='right',
-                    bgcolor='rgba(255,255,255,0.8)',
-                    bordercolor='grey',
-                    borderwidth=1,
                     font=dict(size=ann_font_size),
                 )
+                if not print_mode:
+                    annotation_kwargs.update(
+                        bgcolor='rgba(255,255,255,0.8)',
+                        bordercolor='grey',
+                        borderwidth=1,
+                    )
+                fig.add_annotation(**annotation_kwargs)
     else:
         # Fallback for other plot types
         fig = go.Figure()

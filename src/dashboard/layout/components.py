@@ -818,6 +818,7 @@ def create_annotation_options_section():
                 {'label': ' End nodes', 'value': 'annotate-end-nodes'},
                 {'label': ' Misjudgements', 'value': 'annotate-mistakes'},
                 {'label': ' Info panel', 'value': 'annotate-info-panel'},
+                {'label': ' Print mode', 'value': 'print-mode'},
             ],
             value=['annotate-start-nodes', 'annotate-optimum', 'annotate-end-nodes', 'annotate-mistakes', 'annotate-info-panel'],
             inline=True,
