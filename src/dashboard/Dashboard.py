@@ -42,7 +42,7 @@ from ..visualization import (
 
 # Plotting module imports - using registry for dynamic dispatch
 from ..plotting import get_pareto_plot
-from ..plotting.performance import plot2d_line, plot2d_box, plot2d_line_mo, plot2d_box_mo, plot2d_line_evals, plot2d_box_evals
+from ..plotting.performance import plot2d_line, plot2d_box, plot2d_line_mo, plot2d_box_mo, plot2d_line_evals, plot2d_box_evals, plot2d_box_misjudgements_so
 
 # ==========
 # Data Loading
@@ -357,6 +357,20 @@ def display_box_evals_so(data, fitness_mode, fit_func, plot_theme):
         return go.Figure()
     plot_df = pd.DataFrame(data)
     return plot2d_box_evals(plot_df, fitness_mode=fitness_mode or 'final', xaxis_title=xaxis_label, colorscale=plot_theme or 'Viridis')
+
+# 2D box plot (misjudgements, single-objective)
+@app.callback(
+    Output('2DBoxPlotMisjudgementsSO', 'figure'),
+    Input('plot_2d_data', 'data'),
+    Input('fit_func_store', 'data'),
+    Input('plot-theme', 'value'),
+)
+def display_box_misjudgements_so(data, fit_func, plot_theme):
+    xaxis_label = _get_so_xaxis_label(fit_func)
+    if xaxis_label is None:
+        return go.Figure()
+    plot_df = pd.DataFrame(data)
+    return plot2d_box_misjudgements_so(plot_df, xaxis_title=xaxis_label, colorscale=plot_theme or 'Viridis')
 
 # ---------- Performance summary table ----------
 @app.callback(
@@ -770,6 +784,10 @@ def render_content_2DPlot_tab(tab):
         return html.Div([
             dcc.Graph(id='2DBoxPlotEvalsSO', style={'width': '800px', 'height': '600px'}),
         ])
+    elif tab == 'p8':
+        return html.Div([
+            dcc.Graph(id='2DBoxPlotMisjudgementsSO', style={'width': '800px', 'height': '600px'}),
+        ])
     elif tab == 'p5':
         return html.Div([
             dash_table.DataTable(
@@ -1117,7 +1135,7 @@ def clean_axis_values(custom_x_min, custom_x_max, custom_y_min, custom_y_max, cu
         "log_z": 'log_z' in (log_z or []),
     }
 
-def _build_stn_stats_table(stn_algo_data, stn_labels):
+def _build_stn_stats_table(stn_algo_data, stn_labels, problem_goal='maximise'):
     """Build the STN stats DataTable from per-algorithm trajectory data."""
     if not stn_algo_data:
         return html.Div()
@@ -1129,8 +1147,12 @@ def _build_stn_stats_table(stn_algo_data, stn_labels):
             return str(values[0]) if values[0] is not None else 'N/A'
         return '[' + ','.join(str(v) if v is not None else 'N/A' for v in values) + ']'
 
+    minimising = str(problem_goal or 'maximise')[:3].lower() == 'min'
+
     def count_misjudgements(entry):
         fits = entry[1] if entry and len(entry) > 1 and entry[1] is not None else []
+        if minimising:
+            return sum(1 for i in range(len(fits) - 1) if fits[i + 1] > fits[i])
         return sum(1 for i in range(len(fits) - 1) if fits[i + 1] < fits[i])
 
     rows = []
@@ -1493,7 +1515,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
     else:
         debug_summary_component = html.Div("No trajectory data available.")
 
-    stn_stats_table = _build_stn_stats_table(stn_algo_data, STN_labels)
+    stn_stats_table = _build_stn_stats_table(stn_algo_data, STN_labels, problem_goal=opt_goal)
 
     print('STN TRAJECTORIES ADDED')
     debug_mo_counts(G, by="run_idx", label="[MO]", list_fronts=True, max_list=50)

@@ -133,6 +133,12 @@ def create_2d_plot_tabs():
                 selected_style=TAB_SELECTED_STYLE
             ),
             dcc.Tab(
+                label='Box plot misjudgements (SO)',
+                value='p8',
+                style=TAB_STYLE,
+                selected_style=TAB_SELECTED_STYLE
+            ),
+            dcc.Tab(
                 label='Line plot (MO)',
                 value='p3',
                 style=TAB_STYLE,

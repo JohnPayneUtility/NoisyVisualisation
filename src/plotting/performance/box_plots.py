@@ -160,6 +160,74 @@ def plot_box_evals(dataframe, fitness_mode='final', xaxis_title=None, colorscale
     return fig
 
 
+def plot_box_misjudgements_so(dataframe, xaxis_title=None, colorscale='Viridis'):
+    """
+    Create a box plot showing the number of misjudgements per run for each
+    algorithm at each noise level (single-objective problems only).
+
+    A misjudgement is any step where the representative solution's true fitness
+    moved in the wrong direction relative to the previous step.
+
+    Args:
+        dataframe: DataFrame with columns:
+            - algo_name: Algorithm identifier
+            - noise: Noise level
+            - n_misjudgements: Count of misjudgements for this run
+        xaxis_title: Label for the x axis (noise parameter description)
+
+    Returns:
+        go.Figure: Grouped box plot, one series per algorithm
+    """
+    df = dataframe.copy()
+
+    if 'n_misjudgements' not in df.columns:
+        return create_empty_figure('No misjudgement data available')
+
+    df = df[['algo_name', 'noise', 'n_misjudgements']].dropna(subset=['n_misjudgements'])
+
+    if df.empty:
+        return create_empty_figure('No misjudgement data available')
+
+    noise_levels = sorted(df['noise'].unique())
+    algos = sorted(df['algo_name'].unique())
+    colors = _viridis_colors(len(algos), colorscale)
+
+    fig = px.box(
+        df,
+        x='noise',
+        y='n_misjudgements',
+        color='algo_name',
+        category_orders={'noise': noise_levels, 'algo_name': algos},
+        color_discrete_sequence=colors,
+        points=False,
+    )
+
+    fig.update_layout(
+        xaxis=dict(
+            title=dict(
+                text=xaxis_title or 'Noise level',
+                font=dict(size=24, color='black'),
+            ),
+            tickfont=dict(size=20, color='black'),
+        ),
+        yaxis=dict(
+            title=dict(
+                text='No. misjudgements',
+                font=dict(size=24, color='black'),
+            ),
+            tickfont=dict(size=20, color='black'),
+        ),
+        legend=dict(
+            title=dict(font=dict(size=24, color='black')),
+            font=dict(size=20, color='black'),
+        ),
+        boxmode='group',
+        template=DEFAULT_TEMPLATE,
+    )
+
+    return fig
+
+
 def plot_box_mo(dataframe, colorscale='Viridis'):
     """
     Create a box plot for multi-objective performance using hypervolume.

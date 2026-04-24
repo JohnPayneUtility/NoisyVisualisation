@@ -19,6 +19,24 @@ from .column_config import (
 )
 
 
+def _compute_n_misjudgements(row) -> int:
+    """
+    Count misjudgements in a run: steps where the representative solution's
+    true fitness moved in the wrong direction (worse than the previous step).
+
+    For maximisation: fits[i+1] < fits[i] is a misjudgement.
+    For minimisation: fits[i+1] > fits[i] is a misjudgement.
+    """
+    rep_fits = row.get('rep_fits') if hasattr(row, 'get') else row['rep_fits']
+    if not rep_fits or len(rep_fits) < 2:
+        return 0
+    problem_goal = row.get('problem_goal', 'maximise') if hasattr(row, 'get') else row['problem_goal']
+    minimising = str(problem_goal)[:3].lower() == 'min'
+    if minimising:
+        return sum(1 for i in range(len(rep_fits) - 1) if rep_fits[i + 1] > rep_fits[i])
+    return sum(1 for i in range(len(rep_fits) - 1) if rep_fits[i + 1] < rep_fits[i])
+
+
 def _compute_evals_to_best(row) -> object:
     """
     Compute cumulative evaluations at the visit where the best fitness was first achieved.
@@ -60,9 +78,11 @@ def create_df_no_lists(df: pd.DataFrame) -> pd.DataFrame:
     """
     df_no_lists = df.copy()
 
-    # Compute evals_to_best before list columns are dropped
+    # Compute scalar metrics from list columns before they are dropped
     if 'rep_fits' in df_no_lists.columns and 'sol_iterations_evals' in df_no_lists.columns:
         df_no_lists['evals_to_best'] = df_no_lists.apply(_compute_evals_to_best, axis=1)
+    if 'rep_fits' in df_no_lists.columns:
+        df_no_lists['n_misjudgements'] = df_no_lists.apply(_compute_n_misjudgements, axis=1)
 
     df_no_lists.drop(
         LIST_COLUMNS,
