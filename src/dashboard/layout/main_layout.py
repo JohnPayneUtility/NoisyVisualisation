@@ -8,7 +8,7 @@ from dash import html, dcc
 
 from .stores import create_all_stores
 from .components import (
-    create_problem_selection_tabs,
+    create_problem_selection_section,
     create_2d_plot_tabs,
     create_performance_summary_table,
     create_mann_whitney_table,
@@ -27,13 +27,17 @@ from .components import (
 )
 
 
-def create_layout(display2_df, display2_hidden_cols):
+def create_layout(display2_df, display2_hidden_cols, display1_df, df_lon, lon_display_columns, experiment_names):
     """
     Create the complete dashboard layout.
 
     Args:
         display2_df: DataFrame for algorithm selection table.
         display2_hidden_cols: List of column names to hide in table2.
+        display1_df: DataFrame for problem selection table.
+        df_lon: LON results DataFrame.
+        lon_display_columns: Columns to show in the LON table.
+        experiment_names: Sorted list of unique experiment name strings.
 
     Returns:
         html.Div: The complete dashboard layout.
@@ -65,8 +69,8 @@ def create_layout(display2_df, display2_hidden_cols):
     # Hidden stores for state management
     children.extend(create_all_stores())
 
-    # Problem selection tabs
-    children.append(create_problem_selection_tabs())
+    # Problem selection section (experiment dropdown, Table 1 and LON table)
+    children.append(create_problem_selection_section(display1_df, df_lon, lon_display_columns, experiment_names))
 
     # 2D performance plot tabs
     children.append(create_2d_plot_tabs())

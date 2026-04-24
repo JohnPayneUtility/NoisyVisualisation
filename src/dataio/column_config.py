@@ -30,6 +30,7 @@ DISPLAY2_HIDDEN_COLUMNS = [
     'dimensions',
     'opt_global',
     'PID',
+    'experiment_name',
 ]
 
 # Columns to show in problem selection table (table 1)

@@ -1,0 +1,15 @@
+# @package _global_
+run:
+  max_gens: null
+  eval_limit: 1e5
+  target_stop: true
+  no_improve_limit: null
+  use_noise_dependent_eval_limit: false
+  eval_limit_for_noise: null
+  seed: 1
+  num_runs: 50
+  parallel: true
+  override_max_workers: null
+  progress_print_interval: 10000
+  record_population: false
+  # nvme_path: ${hydra:runtime.cwd}/fast_storage

@@ -26,29 +26,62 @@ from .styles import (
 )
 
 
-def create_problem_selection_tabs():
+def create_problem_selection_section(display1_df, df_lon, lon_display_columns, experiment_names):
     """
-    Create the tabbed section for problem selection.
+    Create the problem selection section with experiment dropdown, Table 1, and the LON table.
+
+    Args:
+        display1_df: DataFrame for problem selection (Table 1).
+        df_lon: LON results DataFrame.
+        lon_display_columns: Columns to show in the LON table.
+        experiment_names: Sorted list of unique experiment name strings.
 
     Returns:
-        html.Div: Problem selection tabs container.
+        html.Div: Problem selection container.
     """
+    table_wrapper_style = {
+        "display": "flex",
+        "justifyContent": "flex-start",
+        "alignItems": "center",
+        "padding": "10px",
+        "marginTop": "0px",
+    }
     return html.Div([
-        dcc.Tabs(id='problemTabSelection', value='p1', children=[
-            dcc.Tab(
-                label='Select problem',
-                value='p1',
-                style=TAB_STYLE,
-                selected_style=TAB_SELECTED_STYLE
+        html.B("Experiment Selection", style={"padding": "10px 10px 4px", "display": "block"}),
+        html.Div(
+            dcc.Dropdown(
+                id='experiment-selector',
+                options=[{'label': name, 'value': name} for name in experiment_names],
+                value=experiment_names[0] if experiment_names else None,
+                clearable=False,
+                style={'width': '500px'},
             ),
-            dcc.Tab(
-                label='Select additional problem (optional)',
-                value='p2',
-                style=TAB_STYLE,
-                selected_style=TAB_SELECTED_STYLE
-            ),
+            style={"padding": "0px 10px 10px"},
+        ),
+        html.B("Problem selection table", style={"padding": "10px 10px 0px", "display": "block"}),
+        html.Div(style=table_wrapper_style, children=[
+            dash_table.DataTable(
+                id="table1",
+                data=display1_df.to_dict("records"),
+                columns=[{"name": col, "id": col} for col in display1_df.columns],
+                page_size=10,
+                filter_action="native",
+                row_selectable="single",
+                selected_rows=[],
+                style_table={"overflowX": "auto"},
+            )
         ]),
-        html.Div(id='problemTabsContent'),
+        html.B("LON selection table", style={"padding": "10px 10px 0px", "display": "block"}),
+        html.Div(style=table_wrapper_style, children=[
+            dash_table.DataTable(
+                id="LON_table",
+                data=df_lon[lon_display_columns].to_dict("records"),
+                columns=[{"name": col, "id": col} for col in lon_display_columns],
+                page_size=10,
+                row_selectable="single",
+                style_table={"overflowX": "auto"},
+            )
+        ]),
     ], style=SECTION_STYLE)
 
 

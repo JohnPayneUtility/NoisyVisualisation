@@ -19,7 +19,6 @@ from .styles import (
 from .stores import (
     # Selection stores
     TABLE1_SELECTED_STORE,
-    TABLE1_TAB2_SELECTED_STORE,
     TABLE2_SELECTED_STORE,
     DATA_PROBLEM_SPECIFIC,
     OPTIMUM_STORE,
@@ -49,7 +48,6 @@ __all__ = [
     'SELECTION_OUTPUT_STYLE',
     # Store IDs
     'TABLE1_SELECTED_STORE',
-    'TABLE1_TAB2_SELECTED_STORE',
     'TABLE2_SELECTED_STORE',
     'DATA_PROBLEM_SPECIFIC',
     'OPTIMUM_STORE',

@@ -1,5 +1,5 @@
 import dash
-from dash import html, dcc, dash_table, Input, Output, State
+from dash import html, dcc, dash_table, Input, Output, State, ctx
 import pandas as pd
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
@@ -48,6 +48,8 @@ from ..plotting.performance import plot2d_line, plot2d_box, plot2d_line_mo, plot
 # Data Loading
 # ==========
 from ..dataio import DashboardData, DISPLAY2_HIDDEN_COLUMNS, LON_HIDDEN_COLUMNS
+from ..dataio.transformers import create_display2_df
+from ..dataio.column_config import DISPLAY1_COLUMNS
 
 # Load all dashboard data using the data module
 data = DashboardData.load()
@@ -64,6 +66,9 @@ LON_display_columns = data.lon_display_columns  # Columns to show in LON table
 # Column configuration for table displays
 display2_hidden_cols = DISPLAY2_HIDDEN_COLUMNS
 LON_hidden_cols = LON_HIDDEN_COLUMNS
+
+# Unique experiment names for the top-level filter dropdown
+experiment_names = sorted(df['experiment_name'].dropna().unique().tolist()) if 'experiment_name' in df.columns else []
 # ==========
 # Main Dashboard App
 # ==========
@@ -78,7 +83,7 @@ app = dash.Dash(__name__, suppress_callback_exceptions=True)
 tab_style = TAB_STYLE
 tab_selected_style = TAB_SELECTED_STYLE
 
-app.layout = create_layout(display2_df, display2_hidden_cols)
+app.layout = create_layout(display2_df, display2_hidden_cols, display1_df, df_LONs, LON_display_columns, experiment_names)
 
 # ---------- Fit function -> x-axis label mapping ----------
 FIT_FUNC_XAXIS_LABELS = {
@@ -97,116 +102,40 @@ FIT_FUNC_XAXIS_LABELS = {
     'birastrigin_eval': 'sigma (s.d. of gaussian Noise N(0, sigma))',
 }
 
-def _get_so_xaxis_label(selected_rows):
-    """Return the x-axis label for the selected problem row, or None if nothing is selected."""
-    if not selected_rows:
+def _get_so_xaxis_label(fit_func):
+    """Return the x-axis label for the given fit_func, or None if unset."""
+    if not fit_func:
         return None
-    idx = selected_rows[0]
-    if idx >= len(display1_df):
-        return None
-    fit_func = display1_df.iloc[idx]['fit_func']
     return FIT_FUNC_XAXIS_LABELS.get(fit_func, fit_func)
 
 
-def _get_problem_goal(selected_rows):
-    """Return the problem_goal ('maximise' or 'minimise') for the selected row."""
-    if not selected_rows:
-        return 'maximise'
-    idx = selected_rows[0]
-    if idx >= len(display1_df):
-        return 'maximise'
-    return display1_df.iloc[idx].get('problem_goal', 'maximise')
-
-# ------------------------------
-# Callback: Render Problem Tab Content
-# ------------------------------
-
-@app.callback(
-    Output('problemTabsContent', 'children'),
-    [Input('problemTabSelection', 'value'),
-     Input('table1-selected-store', 'data'),
-     Input('table1tab2-selected-store', 'data')]
-)
-def render_content_problem_tab(tab, stored_selection_tab1, stored_selection_tab2):
-    if tab == 'p1':
-        return html.Div([
-            html.Div(
-                style={
-                    "display": "flex",
-                    "justifyContent": "flex-start",
-                    "alignItems": "center",
-                    "padding": "10px",
-                    "marginTop": "0px"
-                },
-                children=[
-                    dash_table.DataTable(
-                        id="table1",
-                        data=display1_df.to_dict("records"),
-                        columns=[{"name": col, "id": col} for col in display1_df.columns],
-                        page_size=10,
-                        filter_action="native",
-                        row_selectable="single",
-                        # Use stored selection from Tab 1
-                        selected_rows=stored_selection_tab1 if stored_selection_tab1 else [],
-                        style_table={"overflowX": "auto"},
-                    )
-                ]
-            ),
-            html.Div(
-                style={
-                    "display": "flex",
-                    "justifyContent": "flex-start",
-                    "alignItems": "center",
-                    "padding": "10px",
-                    "marginTop": "0px"
-                },
-                children=[
-                    dash_table.DataTable(
-                        id="LON_table",
-                        data=df_LONs[LON_display_columns].to_dict("records"),
-                        columns=[{"name": col, "id": col} for col in LON_display_columns],
-                        page_size=10,
-                        # filter_action="native",
-                        row_selectable="single",
-                        style_table={"overflowX": "auto"},
-                    )
-                ]
-            )
-        ])
-    elif tab == 'p2':
-        # ADD ANOTHER VERSION OF TAB 1 HERE WITH UPDATED NAMES
-        return html.Div([
-            html.H3('Content for Tab Two'),
-            dash_table.DataTable(
-                id="table1_tab2",
-                data=display1_df.to_dict("records"),
-                columns=[{"name": col, "id": col} for col in display1_df.columns],
-                page_size=10,
-                filter_action="native",
-                row_selectable="single",
-                selected_rows=stored_selection_tab2 if stored_selection_tab2 else [],
-                style_table={"overflowX": "auto"},
-            )
-        ])
+def _get_problem_goal(opt_goal):
+    """Return the problem_goal ('maximise' or 'minimise') from the opt_goal store."""
+    return opt_goal or 'maximise'
 
 # ------------------------------
 # Callbacks: Update Selection Stores
 # ------------------------------
 
 @app.callback(
-    Output("table1-selected-store", "data"),
-    Input("table1", "selected_rows"),
-    prevent_initial_call=True
+    Output("table1", "data"),
+    Input("experiment-selector", "value"),
 )
-def update_table1_store(selected_rows):
-    return selected_rows
+def update_table1_for_experiment(experiment_name):
+    filtered = df[df['experiment_name'] == experiment_name] if experiment_name and 'experiment_name' in df.columns else df
+    available_cols = [col for col in DISPLAY1_COLUMNS if col in filtered.columns]
+    return filtered[available_cols].drop_duplicates().to_dict("records")
+
 
 @app.callback(
-    Output("table1tab2-selected-store", "data"),
-    Input("table1_tab2", "selected_rows"),
+    Output("table1-selected-store", "data"),
+    Input("table1", "selected_rows"),
+    Input("experiment-selector", "value"),
     prevent_initial_call=True
 )
-def update_table1tab2_store(selected_rows):
+def update_table1_store(selected_rows, _experiment_name):
+    if ctx.triggered_id == "experiment-selector":
+        return []
     return selected_rows
 
 @app.callback(
@@ -224,35 +153,27 @@ def update_table2_store(selected_rows):
 # Update data store filtered by specific problem
 @app.callback(
     Output("data-problem-specific", "data"),
-    [Input("table1-selected-store", "data"),
-     Input("table1tab2-selected-store", "data")]
+    Input("table1-selected-store", "data"),
+    Input("experiment-selector", "value"),
+    State("table1", "data"),
 )
-def filter_table2(selection1, selection2):
+def filter_table2(selection1, experiment_name, table1_current_data):
+    exp_df = df[df['experiment_name'] == experiment_name] if experiment_name and 'experiment_name' in df.columns else df
+    exp_display2_df = create_display2_df(exp_df)
+
     union = set()
-    # For Table 1 (Tab 1), use display1_df to retrieve PID and fit_func.
-    if selection1:
+    if selection1 and table1_current_data:
         for idx in selection1:
-            if idx < len(display1_df):
-                row = display1_df.iloc[idx]
+            if idx < len(table1_current_data):
+                row = table1_current_data[idx]
                 union.add((row['PID'], row['fit_func']))
-                # union.add(display1_df.iloc[idx]['PID'])  # Old: PID only
-    # For Table 1 on Tab 2, also use display1_df.
-    if selection2:
-        for idx in selection2:
-            if idx < len(display1_df):
-                row = display1_df.iloc[idx]
-                union.add((row['PID'], row['fit_func']))
-                # union.add(display1_df.iloc[idx]['PID'])  # Old: PID only
     if not union:
-        return display2_df.to_dict("records")
+        return exp_display2_df.to_dict("records")
     else:
-        # Filter by both PID and fit_func
-        mask = display2_df.apply(
+        mask = exp_display2_df.apply(
             lambda r: (r['PID'], r['fit_func']) in union, axis=1
         )
-        filtered_df = display2_df[mask]
-        # filtered_df = display2_df[display2_df['PID'].isin(union)]  # Old: PID only
-        return filtered_df.to_dict("records")
+        return exp_display2_df[mask].to_dict("records")
 
 # Update table 2 to use problem specific data store
 @app.callback(
@@ -268,9 +189,9 @@ def update_table2(data):
 
 @app.callback(
     [Output("optimum", "data"),
-    Output("PID", "data"),
-    Output("opt_goal", 'data'),
-    Output("fit_func_store", 'data')],
+     Output("PID", "data"),
+     Output("opt_goal", 'data'),
+     Output("fit_func_store", 'data')],
     [Input("data-problem-specific", "data"),
      Input(LON_TABLE_SELECTED_PID_STORE, "data")],
     State("table1-selected-store", "data"),
@@ -355,33 +276,33 @@ def display_stored_data(data):
     Output('2DLinePlot', 'figure'),
     Input('plot_2d_data', 'data'),
     Input('so-fitness-mode', 'value'),
-    Input('table1-selected-store', 'data'),
+    Input('fit_func_store', 'data'),
+    Input('opt_goal', 'data'),
     Input('plot-theme', 'value'),
 )
-def display_stored_data(data, fitness_mode, selected_rows, plot_theme):
-    xaxis_label = _get_so_xaxis_label(selected_rows)
+def display_stored_data(data, fitness_mode, fit_func, opt_goal, plot_theme):
+    xaxis_label = _get_so_xaxis_label(fit_func)
     if xaxis_label is None:
         return go.Figure()
-    problem_goal = _get_problem_goal(selected_rows)
+    problem_goal = _get_problem_goal(opt_goal)
     plot_df = pd.DataFrame(data)
-    plot = plot2d_line(plot_df, fitness_mode=fitness_mode or 'best', problem_goal=problem_goal, xaxis_title=xaxis_label, colorscale=plot_theme or 'Viridis')
-    return plot
+    return plot2d_line(plot_df, fitness_mode=fitness_mode or 'best', problem_goal=problem_goal, xaxis_title=xaxis_label, colorscale=plot_theme or 'Viridis')
 # 2D box plot
 @app.callback(
     Output('2DBoxPlot', 'figure'),
     Input('plot_2d_data', 'data'),
     Input('so-fitness-mode', 'value'),
-    Input('table1-selected-store', 'data'),
+    Input('fit_func_store', 'data'),
+    Input('opt_goal', 'data'),
     Input('plot-theme', 'value'),
 )
-def display_stored_data(data, fitness_mode, selected_rows, plot_theme):
-    xaxis_label = _get_so_xaxis_label(selected_rows)
+def display_stored_data(data, fitness_mode, fit_func, opt_goal, plot_theme):
+    xaxis_label = _get_so_xaxis_label(fit_func)
     if xaxis_label is None:
         return go.Figure()
-    problem_goal = _get_problem_goal(selected_rows)
+    problem_goal = _get_problem_goal(opt_goal)
     plot_df = pd.DataFrame(data)
-    plot = plot2d_box(plot_df, fitness_mode=fitness_mode or 'best', problem_goal=problem_goal, xaxis_title=xaxis_label, colorscale=plot_theme or 'Viridis')
-    return plot
+    return plot2d_box(plot_df, fitness_mode=fitness_mode or 'best', problem_goal=problem_goal, xaxis_title=xaxis_label, colorscale=plot_theme or 'Viridis')
 
 # 2D line plot (multi-objective)
 @app.callback(
@@ -411,44 +332,42 @@ def display_stored_data_mo_box(data, plot_theme):
     Input('plot_2d_data', 'data'),
     Input('line-evals-show-std', 'value'),
     Input('so-fitness-mode', 'value'),
-    Input('table1-selected-store', 'data'),
+    Input('fit_func_store', 'data'),
     Input('plot-theme', 'value'),
 )
-def display_line_evals_so(data, std_checkbox, fitness_mode, selected_rows, plot_theme):
-    xaxis_label = _get_so_xaxis_label(selected_rows)
+def display_line_evals_so(data, std_checkbox, fitness_mode, fit_func, plot_theme):
+    xaxis_label = _get_so_xaxis_label(fit_func)
     if xaxis_label is None:
         return go.Figure()
     plot_df = pd.DataFrame(data)
     show_std = bool(std_checkbox and 'show' in std_checkbox)
-    plot = plot2d_line_evals(plot_df, fitness_mode=fitness_mode or 'final', show_std=show_std, xaxis_title=xaxis_label, colorscale=plot_theme or 'Viridis')
-    return plot
+    return plot2d_line_evals(plot_df, fitness_mode=fitness_mode or 'final', show_std=show_std, xaxis_title=xaxis_label, colorscale=plot_theme or 'Viridis')
 
 # 2D box plot (evals, single-objective)
 @app.callback(
     Output('2DBoxPlotEvalsSO', 'figure'),
     Input('plot_2d_data', 'data'),
     Input('so-fitness-mode', 'value'),
-    Input('table1-selected-store', 'data'),
+    Input('fit_func_store', 'data'),
     Input('plot-theme', 'value'),
 )
-def display_box_evals_so(data, fitness_mode, selected_rows, plot_theme):
-    xaxis_label = _get_so_xaxis_label(selected_rows)
+def display_box_evals_so(data, fitness_mode, fit_func, plot_theme):
+    xaxis_label = _get_so_xaxis_label(fit_func)
     if xaxis_label is None:
         return go.Figure()
     plot_df = pd.DataFrame(data)
-    plot = plot2d_box_evals(plot_df, fitness_mode=fitness_mode or 'final', xaxis_title=xaxis_label, colorscale=plot_theme or 'Viridis')
-    return plot
+    return plot2d_box_evals(plot_df, fitness_mode=fitness_mode or 'final', xaxis_title=xaxis_label, colorscale=plot_theme or 'Viridis')
 
 # ---------- Performance summary table ----------
 @app.callback(
     Output('performance-summary-table', 'children'),
     Input('plot_2d_data', 'data'),
     Input('so-fitness-mode', 'value'),
-    Input('table1-selected-store', 'data'),
+    Input('fit_func_store', 'data'),
+    Input('opt_goal', 'data'),
 )
-def update_performance_summary_table(data, fitness_mode, selected_rows):
-    # Blank when no problem is selected
-    if not selected_rows:
+def update_performance_summary_table(data, fitness_mode, fit_func, opt_goal):
+    if not fit_func:
         return html.P(
             "Select a problem from the table above to see the performance summary.",
             style={'color': '#888', 'fontStyle': 'italic', 'padding': '8px 0'}
@@ -456,7 +375,7 @@ def update_performance_summary_table(data, fitness_mode, selected_rows):
     if not data:
         return html.P("No data available.", style={'color': '#888', 'fontStyle': 'italic'})
 
-    problem_goal = _get_problem_goal(selected_rows)
+    problem_goal = _get_problem_goal(opt_goal)
     minimising = problem_goal == 'minimise'
 
     plot_df = pd.DataFrame(data)
@@ -547,12 +466,13 @@ def update_performance_summary_table(data, fitness_mode, selected_rows):
     Output('mann-whitney-table', 'children'),
     Input('plot_2d_data', 'data'),
     Input('so-fitness-mode', 'value'),
-    Input('table1-selected-store', 'data'),
+    Input('fit_func_store', 'data'),
+    Input('opt_goal', 'data'),
 )
-def update_mann_whitney_table(data, fitness_mode, selected_rows):
+def update_mann_whitney_table(data, fitness_mode, fit_func, opt_goal):
     from scipy.stats import mannwhitneyu
 
-    if not selected_rows:
+    if not fit_func:
         return html.P(
             "Select a problem from the table above to see the Mann-Whitney U-test results.",
             style={'color': '#888', 'fontStyle': 'italic', 'padding': '8px 0'}
@@ -560,7 +480,7 @@ def update_mann_whitney_table(data, fitness_mode, selected_rows):
     if not data:
         return html.P("No data available.", style={'color': '#888', 'fontStyle': 'italic'})
 
-    problem_goal = _get_problem_goal(selected_rows)
+    problem_goal = _get_problem_goal(opt_goal)
     plot_df = pd.DataFrame(data)
     if fitness_mode == 'final':
         fit_col = 'final_fit'
@@ -642,11 +562,11 @@ def update_mann_whitney_table(data, fitness_mode, selected_rows):
 @app.callback(
     Output('evals-summary-table', 'children'),
     Input('plot_2d_data', 'data'),
-    Input('table1-selected-store', 'data'),
+    Input('fit_func_store', 'data'),
     Input('so-fitness-mode', 'value'),
 )
-def update_evals_summary_table(data, selected_rows, fitness_mode):
-    if not selected_rows:
+def update_evals_summary_table(data, fit_func, fitness_mode):
+    if not fit_func:
         return html.P(
             "Select a problem from the table above to see the evaluations summary.",
             style={'color': '#888', 'fontStyle': 'italic', 'padding': '8px 0'}
@@ -729,13 +649,13 @@ def update_evals_summary_table(data, selected_rows, fitness_mode):
 @app.callback(
     Output('evals-mann-whitney-table', 'children'),
     Input('plot_2d_data', 'data'),
-    Input('table1-selected-store', 'data'),
+    Input('fit_func_store', 'data'),
     Input('so-fitness-mode', 'value'),
 )
-def update_evals_mann_whitney_table(data, selected_rows, fitness_mode):
+def update_evals_mann_whitney_table(data, fit_func, fitness_mode):
     from scipy.stats import mannwhitneyu
 
-    if not selected_rows:
+    if not fit_func:
         return html.P(
             "Select a problem from the table above to see the evaluations Mann-Whitney U-test results.",
             style={'color': '#888', 'fontStyle': 'italic', 'padding': '8px 0'}
@@ -978,7 +898,7 @@ def update_filtered_view(selected_rows, table2_data):
     df_selected = pd.DataFrame(selected_data)
 
     # Only filter by the identity keys for an algorithm series
-    KEYS = ["PID", "fit_func", "algo_type", "algo_name", "noise"]
+    KEYS = ["PID", "fit_func", "algo_type", "algo_name", "noise", "experiment_name"]
 
     mask = pd.Series(True, index=df.index)
     for col in KEYS:

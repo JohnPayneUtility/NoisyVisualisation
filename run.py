@@ -200,6 +200,7 @@ def hydra_algo_data_single(prob_info: Dict[str, Any],
         "mean_value": prob_info["mean_value"],
         "mean_weight": prob_info["mean_weight"],
         "PID": prob_info["PID"],
+        "experiment_name": prob_info["experiment_name"],
 
         "fit_func": algo_params["fitness_function"][0].__name__,
         "noise": algo_params["fitness_function"][1]["noise_intensity"],
@@ -408,14 +409,15 @@ def main(cfg: DictConfig):
     # Problem metadata
     # Problem info is passed to algorithm class via run function
     prob_info = {
-        'name':       cfg.problem.prob_name,
-        'type':       cfg.problem.prob_type,
-        'goal':       cfg.problem.opt_goal,
-        'dimensions': cfg.problem.dimensions,
-        'opt_global': cfg.problem.opt_global,
-        'mean_value': cfg.problem.mean_value,
-        'mean_weight': cfg.problem.mean_weight,
-        'PID':        cfg.problem.PID,
+        'name':            cfg.problem.prob_name,
+        'type':            cfg.problem.prob_type,
+        'goal':            cfg.problem.opt_goal,
+        'dimensions':      cfg.problem.dimensions,
+        'opt_global':      cfg.problem.opt_global,
+        'mean_value':      cfg.problem.mean_value,
+        'mean_weight':     cfg.problem.mean_weight,
+        'PID':             cfg.problem.PID,
+        'experiment_name': cfg.experiment_name,
     }
 
     # Instantiate fitness

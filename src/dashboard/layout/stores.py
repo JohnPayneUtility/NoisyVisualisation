@@ -13,7 +13,6 @@ from dash import dcc
 
 # Selection stores (for table selections)
 TABLE1_SELECTED_STORE = "table1-selected-store"
-TABLE1_TAB2_SELECTED_STORE = "table1tab2-selected-store"
 TABLE2_SELECTED_STORE = "table2-selected-store"
 LON_TABLE_SELECTED_PID_STORE = "lon-table-selected-pid-store"
 DATA_PROBLEM_SPECIFIC = "data-problem-specific"
@@ -46,7 +45,6 @@ def create_selection_stores():
     """
     return [
         dcc.Store(id=TABLE1_SELECTED_STORE, data=[]),
-        dcc.Store(id=TABLE1_TAB2_SELECTED_STORE, data=[]),
         dcc.Store(id=DATA_PROBLEM_SPECIFIC, data=[]),
         dcc.Store(id=TABLE2_SELECTED_STORE, data=[]),
         dcc.Store(id=LON_TABLE_SELECTED_PID_STORE, data=None),

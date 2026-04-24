@@ -8,7 +8,7 @@ defaults:
 # none
 
 # EXPERIMENT SETTINGS
-experiment_name: "experiment_config_test"
+experiment_name: "config_test"
 
 hydra:
   mode: MULTIRUN
