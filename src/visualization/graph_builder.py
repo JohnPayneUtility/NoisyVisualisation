@@ -260,6 +260,10 @@ def add_stn_trajectories(
                 tgt = stn_node_mapping[curr_key]
                 target_evals = cumulative_evals[j + 1] if (j + 1) < len(cumulative_evals) else 0
                 G.add_edge(src, tgt, weight=edge_size, color=edge_color, edge_type='STN', evals=target_evals)
+                noisy_src = f"Noisy_{src}"
+                noisy_tgt = f"Noisy_{tgt}"
+                if noisy_src in G.nodes and noisy_tgt in G.nodes:
+                    G.add_edge(noisy_src, noisy_tgt, weight=edge_size, color=edge_color, edge_type='NoisyPath_SO')
 
     return stn_node_mapping
 
@@ -590,6 +594,7 @@ def add_prior_noise_stn_v5(
             continue
 
         prev_base = None
+        prev_noisy = None
 
         for i, solution in enumerate(rep_sols):
             true_fitness = rep_fits[i]
@@ -680,6 +685,13 @@ def add_prior_noise_stn_v5(
                         weight=0.5, color=noisy_node_color,
                         edge_type="Noise_SO", is_noisy=True,
                     )
+                if prev_noisy is not None:
+                    G.add_edge(
+                        prev_noisy, node_noisy,
+                        weight=0.5, color=edge_color,
+                        edge_type="NoisyPath_SO", is_noisy=True,
+                    )
+                prev_noisy = node_noisy
 
             # -------- temporal edge --------
             if prev_base is not None:

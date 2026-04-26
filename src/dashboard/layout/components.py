@@ -424,6 +424,7 @@ def create_stn_options_section():
                 {'label': 'Show alt representation with fitness', 'value': 'show_alt_rep'},
                 {'label': 'Show alt representation', 'value': 'show_alt_rep_no_fit'},
                 {'label': 'Show noisy nodes as squares', 'value': 'noisy-nodes-square'},
+                {'label': 'Show noisy path', 'value': 'show_noisy_path'},
                 {'label': 'Use viridis for series', 'value': 'use-viridis'},
             ],
             value=['noisy-nodes-square', 'use-viridis'],

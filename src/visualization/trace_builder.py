@@ -121,12 +121,16 @@ def create_edge_traces(
         edge_opacity = 1.0
         mid_x, mid_y, mid_z = 0, 0, 0
 
+        # Skip noisy path edges if the option is disabled
+        if edge_type == 'NoisyPath_SO' and not config.stn.show_noisy_path:
+            continue
+
         # Determine opacity based on edge type
         if edge_type == 'LON':
             edge_opacity = LON_edge_opacity
         elif edge_type in ('STN', 'STN_SO', 'STN_ALT'):
             edge_opacity = STN_edge_opacity
-        elif edge_type in ('Noise', 'Noise_SO'):
+        elif edge_type in ('Noise', 'Noise_SO', 'NoisyPath_SO'):
             edge_opacity = STN_edge_opacity
 
         # Resolve display color for STN edges when colouring by evaluations
@@ -221,6 +225,9 @@ def create_edge_traces(
                 line_width = 3
                 dash_style = 'solid'
                 display_color = 'grey'
+            elif edge_type == 'NoisyPath_SO':
+                line_width = STN_edge_size_slider
+                dash_style = 'dash'
             elif edge_type in ('STN', 'STN_SO'):
                 line_width = STN_edge_size_slider
             elif edge_type == 'STN_ALT':

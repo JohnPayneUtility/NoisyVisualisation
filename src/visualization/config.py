@@ -74,6 +74,7 @@ class STNConfig:
     show_alt_rep_no_fit: bool = False
     noisy_nodes_square: bool = True
     use_viridis: bool = True
+    show_noisy_path: bool = False
 
 
 @dataclass
@@ -286,6 +287,7 @@ def parse_callback_inputs(
             show_alt_rep_no_fit='show_alt_rep_no_fit' in run_options,
             noisy_nodes_square='noisy-nodes-square' in run_options,
             use_viridis='use-viridis' in run_options,
+            show_noisy_path='show_noisy_path' in run_options,
         ),
         lon=LONConfig(
             filter_negative='LON-filter-neg' in lon_options,
