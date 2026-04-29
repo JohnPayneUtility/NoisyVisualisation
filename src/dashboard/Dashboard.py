@@ -1578,6 +1578,12 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
 
         # Build scene annotations from enabled annotation options
         ann_font_size = round(11 * (annotation_text_scale or 1.0))
+        log_z = config.axis.log_z
+        def ann_z(z):
+            import math
+            if log_z and z is not None and z > 0:
+                return math.log10(z)
+            return z
         scene_annotations = []
         if 'annotate-start-nodes' in (annotation_options or []):
             seen_positions = set()
@@ -1589,7 +1595,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                     if pos_key not in seen_positions:
                         seen_positions.add(pos_key)
                         scene_annotations.append(dict(
-                            x=x, y=y, z=z,
+                            x=x, y=y, z=ann_z(z),
                             text='Start node',
                             showarrow=True,
                             arrowhead=2,
@@ -1612,7 +1618,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                     if pos_key not in seen_positions:
                         seen_positions.add(pos_key)
                         scene_annotations.append(dict(
-                            x=x, y=y, z=z,
+                            x=x, y=y, z=ann_z(z),
                             text='End node',
                             showarrow=True,
                             arrowhead=2,
@@ -1643,7 +1649,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                     if pos_key not in seen_positions:
                         seen_positions.add(pos_key)
                         scene_annotations.append(dict(
-                            x=x, y=y, z=z,
+                            x=x, y=y, z=ann_z(z),
                             text='',
                             showarrow=True,
                             arrowhead=2,
@@ -1660,7 +1666,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                     x, y = pos[node][:2]
                     z = attr.get('fitness', 0)
                     scene_annotations.append(dict(
-                        x=x, y=y, z=z,
+                        x=x, y=y, z=ann_z(z),
                         text='Global optimum',
                         showarrow=True,
                         arrowhead=2,

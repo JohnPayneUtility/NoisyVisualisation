@@ -4,7 +4,7 @@ experiment_name: "test02_KP_LON"
 # Run Configuration
 # ==============================
 run:
-  num_runs: 1000  # how many basin-hops (seeds) to aggregate
+  num_runs: 500  # how many basin-hops (seeds) to aggregate
   seed: 1
   parallel: true
   num_workers: 50

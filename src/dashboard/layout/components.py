@@ -52,8 +52,8 @@ def create_problem_selection_section(display1_df, df_lon, lon_display_columns, e
             dcc.Dropdown(
                 id='experiment-selector',
                 options=[{'label': name, 'value': name} for name in experiment_names],
-                value=experiment_names[0] if experiment_names else None,
-                clearable=False,
+                value=None,
+                clearable=True,
                 style={'width': '500px'},
             ),
             style={"padding": "0px 10px 10px"},

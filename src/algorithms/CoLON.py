@@ -13,7 +13,8 @@ def BinaryCoLON(pert_attempts, len_sol, weights,
                 starting_solution=None,
                 true_fitness_function=None,
                 include_start_nodes: bool = False,
-                target_stop=None):
+                target_stop=None,
+                only_improving_perturbations: bool = False):
     """
     Build a constrained LON (CoLON) using Deb's constraint-handling preorder.
 
@@ -214,16 +215,22 @@ def BinaryCoLON(pert_attempts, len_sol, weights,
                 import logging
                 logging.info(f"PertAttmpt: {pert_attempt}")
 
-            # Accept perturbed if better by Deb’s rule; if so, reset attempts
-            if deb_better(perturbed, individual):
+            # Accept perturbed solution
+            if only_improving_perturbations:
+                # Only accept if strictly better under Deb’s rule; if so, reset attempts
+                if deb_better(perturbed, individual):
+                    individual[:] = perturbed
+                    if hasattr(individual.fitness, "values"):
+                        del individual.fitness.values
+                    evaluate_both(individual)
+                    pert_attempt = 0
+                    import logging
+                    logging.info(f"Accepted perturbation via Deb’s rule. Curr f={individual.fitness.values[0]:.6f}, "
+                                 f"v={individual.violation:.6g}")
+            else:
                 individual[:] = perturbed
-                if hasattr(individual.fitness, "values"):
-                    del individual.fitness.values
-                evaluate_both(individual)
-                pert_attempt = 0
-                import logging
-                logging.info(f"Accepted perturbation via Deb's rule. Curr f={individual.fitness.values[0]:.6f}, "
-                             f"v={individual.violation:.6g}")
+                individual.fitness.values = perturbed.fitness.values
+                individual.violation = perturbed.violation
 
         elif improv_method == 'first':
             raise NotImplementedError("first-improvement not implemented yet.")
