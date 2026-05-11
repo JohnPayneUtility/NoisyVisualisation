@@ -69,6 +69,21 @@ LON_hidden_cols = LON_HIDDEN_COLUMNS
 
 # Unique experiment names for the top-level filter dropdown
 experiment_names = sorted(df['experiment_name'].dropna().unique().tolist()) if 'experiment_name' in df.columns else []
+
+def _filter_by_experiment(data_df, selected):
+    """Filter a dataframe by the experiment-selector value (single string, list, or None).
+    '__null__' matches rows where experiment_name is NaN/None."""
+    if not selected or 'experiment_name' not in data_df.columns:
+        return data_df
+    if isinstance(selected, str):
+        selected = [selected]
+    include_null = '__null__' in selected
+    named = [n for n in selected if n != '__null__']
+    if include_null and named:
+        return data_df[data_df['experiment_name'].isna() | data_df['experiment_name'].isin(named)]
+    if include_null:
+        return data_df[data_df['experiment_name'].isna()]
+    return data_df[data_df['experiment_name'].isin(named)]
 # ==========
 # Main Dashboard App
 # ==========
@@ -122,7 +137,7 @@ def _get_problem_goal(opt_goal):
     Input("experiment-selector", "value"),
 )
 def update_table1_for_experiment(experiment_name):
-    filtered = df[df['experiment_name'] == experiment_name] if experiment_name and 'experiment_name' in df.columns else df
+    filtered = _filter_by_experiment(df, experiment_name)
     available_cols = [col for col in DISPLAY1_COLUMNS if col in filtered.columns]
     return filtered[available_cols].drop_duplicates().to_dict("records")
 
@@ -158,7 +173,7 @@ def update_table2_store(selected_rows):
     State("table1", "data"),
 )
 def filter_table2(selection1, experiment_name, table1_current_data):
-    exp_df = df[df['experiment_name'] == experiment_name] if experiment_name and 'experiment_name' in df.columns else df
+    exp_df = _filter_by_experiment(df, experiment_name)
     exp_display2_df = create_display2_df(exp_df)
 
     union = set()
@@ -923,8 +938,15 @@ def update_filtered_view(selected_rows, table2_data):
         # skip if missing for any reason
         if col not in df_selected.columns or col not in df.columns:
             continue
-        allowed = df_selected[col].dropna().unique()
-        mask &= df[col].isin(allowed)
+        col_vals = df_selected[col]
+        has_nulls = col_vals.isna().any()
+        allowed = col_vals.dropna().unique()
+        if len(allowed) == 0 and has_nulls:
+            mask &= df[col].isna()
+        elif has_nulls:
+            mask &= df[col].isin(allowed) | df[col].isna()
+        else:
+            mask &= df[col].isin(allowed)
 
     df_result = df[mask]
 
@@ -1700,11 +1722,25 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
             if STN_labels:
                 if lines:
                     lines.append('')  # blank line separator
+                condense = print_mode and 'condense-print-names' in annotation_opts
+                if condense:
+                    algo_names = [label[0] if len(label) > 0 else '?' for label in STN_labels]
+                    noise_vals = [str(label[1]) if len(label) > 1 else '?' for label in STN_labels]
+                    all_same_algo = len(set(algo_names)) == 1
+                    all_same_noise = len(set(noise_vals)) == 1
+                else:
+                    all_same_algo = all_same_noise = False
                 for idx, label in enumerate(STN_labels):
                     algo_name = label[0] if len(label) > 0 else '?'
                     noise = label[1] if len(label) > 1 else '?'
                     color = config.algo_colors[idx % len(config.algo_colors)]
-                    lines.append(f'<span style="color:{color}"><b>{algo_name}</b> noise={noise}</span>')
+                    if condense and all_same_algo:
+                        label_text = f'noise={noise}'
+                    elif condense and all_same_noise:
+                        label_text = f'<b>{algo_name}</b>'
+                    else:
+                        label_text = f'<b>{algo_name}</b> noise={noise}'
+                    lines.append(f'<span style="color:{color}">{label_text}</span>')
             if lines:
                 annotation_kwargs = dict(
                     xref='paper', yref='paper',

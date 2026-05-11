@@ -51,8 +51,10 @@ def create_problem_selection_section(display1_df, df_lon, lon_display_columns, e
         html.Div(
             dcc.Dropdown(
                 id='experiment-selector',
-                options=[{'label': name, 'value': name} for name in experiment_names],
+                options=[{'label': '(null — no experiment name)', 'value': '__null__'}]
+                        + [{'label': name, 'value': name} for name in experiment_names],
                 value=None,
+                multi=True,
                 clearable=True,
                 style={'width': '500px'},
             ),
@@ -874,6 +876,7 @@ def create_annotation_options_section():
                 {'label': ' Misjudgements', 'value': 'annotate-mistakes'},
                 {'label': ' Info panel', 'value': 'annotate-info-panel'},
                 {'label': ' Print mode', 'value': 'print-mode'},
+                {'label': ' Condense names in print mode', 'value': 'condense-print-names'},
             ],
             value=['annotate-start-nodes', 'annotate-optimum', 'annotate-end-nodes', 'annotate-mistakes', 'annotate-info-panel'],
             inline=True,
