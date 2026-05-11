@@ -1254,6 +1254,7 @@ def handle_print_mode(annotation_options):
      Input('LON-fit-percent', 'value'),
      Input('LON-options', 'value'),
      Input('LON-node-colour-mode', 'value'), # CoLON colour
+     Input('LON-surface-colour', 'value'),
      Input('LON-edge-colour-feas', 'value'), # CoLON colour
      Input('lmds-multiplier', 'value'),
      Input('NLON_fit_func', 'value'),
@@ -1295,7 +1296,7 @@ def handle_print_mode(annotation_options):
      Input('plot-theme', 'value')]
 )
 def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limit,
-                LO_fit_percent, LON_options, LON_node_colour_mode, LON_edge_colour_feas,
+                LO_fit_percent, LON_options, LON_node_colour_mode, LON_surface_colour, LON_edge_colour_feas,
                 lmds_multiplier, NLON_fit_func, NLON_intensity, NLON_samples, layout_value, plot_type,
                 hover_info_value, azimuth_deg, elevation_deg, all_trajectories_list, STN_labels,
                 run_start_index, n_runs_display, local_optima, axis_values,
@@ -1326,6 +1327,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
         lo_fit_percent=LO_fit_percent,
         lon_options=LON_options or [],
         lon_node_colour_mode=LON_node_colour_mode,
+        lon_surface_colour=LON_surface_colour,
         lon_edge_colour_feas=LON_edge_colour_feas or [],
         lmds_multiplier=lmds_multiplier,
         nlon_fit_func=NLON_fit_func,
@@ -1568,7 +1570,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
     # ==========
     if config.plot_type in ('RegLon', 'NLon_box'):
         print('CREATING PLOT...')
-        traces = build_all_traces(G, pos, config, node_noise, fitness_dict)
+        traces = build_all_traces(G, pos, config, node_noise, fitness_dict, neigh_feas_map)
 
         # ==========
         # STEP 9: Configure axes and create figure

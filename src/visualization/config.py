@@ -85,6 +85,9 @@ class LONConfig:
     fit_percent: float = 100.0
     node_colour_mode: str = 'fitness'  # 'fitness' | 'feasible' | 'neigh'
     node_diamond: bool = False
+    display_mesh: bool = False
+    display_surface: bool = False
+    surface_colour: str = 'fitness'
     edge_colour_feas: bool = False
     edge_size: float = 2.0
     lmds_multiplier: float = 1.0
@@ -167,6 +170,7 @@ def parse_callback_inputs(
     lo_fit_percent: float,
     lon_options: List[str],
     lon_node_colour_mode: str,
+    lon_surface_colour: str,
     lon_edge_colour_feas: List[str],
     lmds_multiplier: float,
     nlon_fit_func: str,
@@ -295,7 +299,10 @@ def parse_callback_inputs(
             fit_percent=lo_fit_percent,
             node_colour_mode=lon_node_colour_mode,
             node_diamond='LON-node-diamond' in lon_options,
-            edge_colour_feas='edge_feas' in lon_edge_colour_feas,
+            display_mesh='LON-display-mesh' in lon_options,
+            display_surface='LON-display-surface' in lon_options,
+            surface_colour=lon_surface_colour or 'fitness',
+            edge_colour_feas='edge_feas' in (lon_edge_colour_feas or []),
             edge_size=lon_edge_size_slider,
             lmds_multiplier=lmds_multiplier if lmds_multiplier is not None else 1.0,
         ),

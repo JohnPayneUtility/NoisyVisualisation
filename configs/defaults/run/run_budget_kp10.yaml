@@ -1,0 +1,27 @@
+# @package _global_
+# Run budget determined by 2x evaluations required by PCEA to find optimum
+run:
+  max_gens: 1e6
+  eval_limit: 1e6
+  target_stop: true
+  no_improve_limit: 1e6
+  use_noise_dependent_eval_limit: true
+  eval_limit_for_noise:
+    "0": 2766
+    "1": 19362
+    "2": 23972
+    "3": 45178
+    "4": 55320
+    "5": 61774
+    "6": 63618
+    "7": 82058
+    "8": 81136
+    "9": 86668
+    "10": 95888
+  seed: 1
+  num_runs: 30
+  parallel: true
+  override_max_workers: null
+  progress_print_interval: 10000
+  record_population: false
+  # nvme_path: ${hydra:runtime.cwd}/fast_storage

@@ -472,11 +472,26 @@ def create_lon_options_section():
                         {'label': 'Filter negative', 'value': 'LON-filter-neg'},
                         {'label': 'Hamming distance labels', 'value': 'LON-hamming'},
                         {'label': 'Represent nodes as diamonds', 'value': 'LON-node-diamond'},
+                        {'label': 'Display mesh', 'value': 'LON-display-mesh'},
+                        {'label': 'Display surface', 'value': 'LON-display-surface'},
                     ],
                     value=[],
                     labelStyle={'display': 'inline-block', 'margin-right': '10px'}
                 ),
             ], style=FLEX_WITH_GAP_STYLE),
+            html.Div([
+                html.Label("Surface colour: ", style={'verticalAlign': 'middle', 'marginRight': '6px'}),
+                dcc.Dropdown(
+                    id='LON-surface-colour',
+                    options=[
+                        {'label': 'Fitness', 'value': 'fitness'},
+                        {'label': 'Neighbourhood feasibility', 'value': 'neigh_feas'},
+                    ],
+                    value='fitness',
+                    clearable=False,
+                    style={'width': '220px', 'display': 'inline-block', 'verticalAlign': 'middle'},
+                ),
+            ], style={'marginTop': '6px', 'marginBottom': '4px'}),
             html.Div([
                 html.Div(
                     html.Label(" Noisy fitness function: "),

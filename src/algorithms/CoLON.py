@@ -14,7 +14,7 @@ def BinaryCoLON(pert_attempts, len_sol, weights,
                 true_fitness_function=None,
                 include_start_nodes: bool = False,
                 target_stop=None,
-                only_improving_perturbations: bool = False):
+                only_improving_perturbations: bool = True):
     """
     Build a constrained LON (CoLON) using Deb's constraint-handling preorder.
 

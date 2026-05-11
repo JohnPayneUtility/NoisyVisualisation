@@ -12,7 +12,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 
 from .config import PlotConfig
-from ..common import hamming_distance
+from ..common import hamming_distance, sol_tuple_ints, lookup_map
 from ..dashboard.DashboardHelpers import quadratic_bezier, should_label_edge
 
 
@@ -848,12 +848,101 @@ def create_lon_colorbar_trace(cmin: float, cmax: float, title: str, x_pos: float
     )
 
 
+def create_lon_mesh_trace(
+    x: List[float],
+    y: List[float],
+    z: List[float],
+    colour_values: Optional[List[float]] = None,
+    opacity: float = 0.3,
+) -> Optional[go.Mesh3d]:
+    """
+    Create a Mesh3d surface over LON nodes using Delaunay triangulation in the x/y plane.
+
+    Returns None if fewer than 3 nodes are available (triangulation requires at least 3 points).
+    If colour_values is provided, vertices are coloured by that array; otherwise a flat colour is used.
+    """
+    if len(x) < 3:
+        return None
+    if colour_values is not None:
+        return go.Mesh3d(
+            x=x, y=y, z=z,
+            delaunayaxis='z',
+            intensity=colour_values,
+            intensitymode='vertex',
+            colorscale='Viridis',
+            showscale=False,
+            opacity=opacity,
+            showlegend=False,
+            hoverinfo='none',
+        )
+    return go.Mesh3d(
+        x=x, y=y, z=z,
+        delaunayaxis='z',
+        opacity=opacity,
+        color='lightblue',
+        showlegend=False,
+        hoverinfo='none',
+    )
+
+
+def create_lon_surface_trace(
+    x: List[float],
+    y: List[float],
+    z: List[float],
+    colour_values: Optional[List[float]] = None,
+    opacity: float = 0.4,
+    grid_resolution: int = 50,
+) -> Optional[go.Surface]:
+    """
+    Create a Surface trace over LON nodes by interpolating onto a regular grid.
+
+    Uses scipy griddata with linear interpolation; points outside the convex hull
+    of the LON nodes are left as NaN and are not rendered.
+
+    If colour_values is provided it is interpolated onto the same grid and passed as
+    surfacecolor, decoupling colour from the z (fitness) geometry. Otherwise colour
+    defaults to z-value (Plotly default behaviour).
+
+    Returns None if fewer than 3 nodes are available.
+    """
+    import numpy as np
+    from scipy.interpolate import griddata
+
+    if len(x) < 3:
+        return None
+
+    points = np.column_stack([x, y])
+    xi = np.linspace(min(x), max(x), grid_resolution)
+    yi = np.linspace(min(y), max(y), grid_resolution)
+    xi_grid, yi_grid = np.meshgrid(xi, yi)
+
+    zi_grid = griddata(points=points, values=z, xi=(xi_grid, yi_grid), method='linear')
+
+    surface_kwargs = dict(
+        x=xi_grid,
+        y=yi_grid,
+        z=zi_grid,
+        opacity=opacity,
+        showscale=False,
+        showlegend=False,
+        hoverinfo='none',
+    )
+
+    if colour_values is not None:
+        ci_grid = griddata(points=points, values=colour_values, xi=(xi_grid, yi_grid), method='linear')
+        surface_kwargs['surfacecolor'] = ci_grid
+        surface_kwargs['colorscale'] = 'Viridis'
+
+    return go.Surface(**surface_kwargs)
+
+
 def build_all_traces(
     G: nx.MultiDiGraph,
     pos: Dict[str, Tuple[float, float]],
     config: PlotConfig,
     node_noise: Optional[Dict[str, List[float]]] = None,
-    fitness_dict: Optional[Dict[str, float]] = None
+    fitness_dict: Optional[Dict[str, float]] = None,
+    neigh_feas_map: Optional[Dict] = None,
 ) -> List[go.Scatter3d]:
     """
     Build all traces for the visualization.
@@ -890,6 +979,32 @@ def build_all_traces(
     traces.append(LON_node_trace)
     traces.append(node_trace)
     traces.append(noisy_node_trace)
+
+    # Add LON mesh / surface if enabled — collect node coords once and share
+    if config.lon.display_mesh or config.lon.display_surface:
+        lon_nodes = [n for n in G.nodes() if "Local Optimum" in n and n in pos]
+        lon_x = [pos[n][0] for n in lon_nodes]
+        lon_y = [pos[n][1] for n in lon_nodes]
+        lon_z = [G.nodes[n].get('fitness', 0) for n in lon_nodes]
+
+        # Resolve per-node colour values for the selected surface colour mode
+        colour_values = None
+        if config.lon.surface_colour == 'neigh_feas' and neigh_feas_map:
+            resolved = []
+            for n in lon_nodes:
+                sol = sol_tuple_ints(G.nodes[n].get('solution', []))
+                val = lookup_map(neigh_feas_map, sol)
+                resolved.append(float(val) if val is not None else 0.0)
+            colour_values = resolved
+
+        if config.lon.display_mesh:
+            mesh_trace = create_lon_mesh_trace(lon_x, lon_y, lon_z, colour_values)
+            if mesh_trace is not None:
+                traces.append(mesh_trace)
+        if config.lon.display_surface:
+            surface_trace = create_lon_surface_trace(lon_x, lon_y, lon_z, colour_values)
+            if surface_trace is not None:
+                traces.append(surface_trace)
 
     # Add LON colorbar when a continuous colour scale is in use
     lon_mode = config.lon.node_colour_mode
