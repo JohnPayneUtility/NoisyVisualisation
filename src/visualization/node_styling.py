@@ -169,6 +169,19 @@ def apply_node_colors(
     else:
         min_fit = max_fit = 0.0
 
+    # Compute neighbourhood feasibility range for 'neigh' mode colouring
+    if node_colour_mode == 'neigh' and neigh_feas_map and local_optimum_nodes:
+        neigh_vals = []
+        for node in local_optimum_nodes:
+            sol_tuple = sol_tuple_ints(G.nodes[node].get('solution', []))
+            p = lookup_map(neigh_feas_map, sol_tuple)
+            if p is not None:
+                neigh_vals.append(float(p))
+        min_neigh = min(neigh_vals) if neigh_vals else 0.0
+        max_neigh = max(neigh_vals) if neigh_vals else 1.0
+    else:
+        min_neigh, max_neigh = 0.0, 1.0
+
     # Node colours
     for node, data in G.nodes(data=True):
         if "STN" in node and "Local Optimum" not in node:
@@ -195,7 +208,11 @@ def apply_node_colors(
 
             elif node_colour_mode == 'neigh':
                 p = lookup_map(neigh_feas_map, sol_tuple)
-                data['color'] = px.colors.sample_colorscale(config.colorscale, float(np.clip(p, 0.0, 0.9999)))[0] if p is not None else 'grey'
+                if p is not None:
+                    norm = (float(p) - min_neigh) / (max_neigh - min_neigh) if max_neigh > min_neigh else 0.5
+                    data['color'] = px.colors.sample_colorscale(config.colorscale, float(np.clip(norm, 0.0, 0.9999)))[0]
+                else:
+                    data['color'] = 'grey'
 
             else:
                 data['color'] = 'grey'

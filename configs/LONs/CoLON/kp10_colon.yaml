@@ -26,11 +26,14 @@ hydra:
 # LON Configuration
 # ==============================
 lon:
-  name: CoLON
+  name: CoLON_startNodes
   pert_attempts: 1500
   n_flips_mut: 1
   n_flips_pert: 2
-  compression_accs: ["None", 0, 1, 2, 5, 10]
+  # compression_accs: ["None", 0, 1, 2, 5, 10]
+  compression_accs: ["None"]
+  include_start_nodes: False
+  only_improving_perturbations: True
 
 # ==============================
 # Problem Configuration

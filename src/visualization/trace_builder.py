@@ -1015,7 +1015,15 @@ def build_all_traces(
                 all_fit = [G.nodes[n]['fitness'] for n in local_optimum_nodes]
                 cmin, cmax, title = min(all_fit), max(all_fit), 'Fitness'
             else:
-                cmin, cmax, title = 0.0, 1.0, 'Neighbourhood<br>Feasibility'
+                neigh_vals = []
+                for n in local_optimum_nodes:
+                    sol = sol_tuple_ints(G.nodes[n].get('solution', []))
+                    val = lookup_map(neigh_feas_map, sol) if neigh_feas_map else None
+                    if val is not None:
+                        neigh_vals.append(float(val))
+                cmin = min(neigh_vals) if neigh_vals else 0.0
+                cmax = max(neigh_vals) if neigh_vals else 1.0
+                title = 'Neighbourhood<br>Feasibility'
             # Shift right if an evals colorbar is also present to avoid overlap
             x_pos = 1.17 if eval_range is not None else 1.02
             traces.append(create_lon_colorbar_trace(cmin, cmax, title, x_pos, colorscale=config.colorscale))
