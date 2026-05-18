@@ -1,0 +1,22 @@
+# @package _global_
+algo:
+  name: OnePlusOneEA
+  type: MuPlusLamdaEA
+  use_dynamic_pop_size: false
+  static_indpb: 0.01
+  use_dynamic_mutation: true # 1/n mutation rate
+  
+  # Dynamic mutation rate function
+  indpb_fn:
+    _target_: run_helpers.inverse_n_mut_rate
+    n_items: null  # Will be resolved after problem loading
+    noise: null
+  
+  # Algorithm initialization parameters
+  init_args:
+    _target_: src.algorithms.Algorithms.MuPlusLamdaEA
+    mu: 50
+    lam: 1
+    mutate_function: "probFlipBit"
+    mutate_params:
+      indpb: null  # Will be resolved dynamically

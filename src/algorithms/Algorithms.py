@@ -449,9 +449,15 @@ class PCEA(OptimisationAlgorithm):
         self.initialise_population(self.pop_size)
         self.record_state(self.population)
 
+    def stop_condition(self) -> bool:
+        if len(set(tuple(ind) for ind in self.population)) == 1:
+            self.stop_trigger = 'convergence'
+            return True
+        return super().stop_condition()
+
     def perform_generation(self):
         """Perform generation of PCEA Evolutionary Algorithm"""
-        # Generate offspring 
+        # Generate offspring
         offspring = []
         for _ in range(len(self.population)):
             parent1, parent2 = random.sample(self.population, 2)

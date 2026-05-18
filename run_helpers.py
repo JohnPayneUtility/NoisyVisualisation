@@ -17,6 +17,15 @@ def dynamic_pop_size_mu(n_items, noise):
 def inverse_n_mut_rate(n_items, noise):
     return 1/n_items
 
+def dynamic_pop_size_mup1ea(n_items):
+    return int()
+
+def dynamic_pop_size_1plambdaea(n_items):
+    """
+    
+    """
+    return int()
+
 # -------------------------------
 # Helpers for config dependencies
 # -------------------------------

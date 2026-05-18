@@ -36,9 +36,11 @@ from ..visualization import (
     calculate_positions,
     calculate_lon_statistics,
     build_all_traces,
+    create_guide_traces,
     create_axis_settings,
     create_figure,
 )
+from ..common import is_continuous_solution
 
 # Plotting module imports - using registry for dynamic dispatch
 from ..plotting import get_pareto_plot
@@ -70,6 +72,15 @@ LON_hidden_cols = LON_HIDDEN_COLUMNS
 # Unique experiment names for the top-level filter dropdown
 experiment_names = sorted(df['experiment_name'].dropna().unique().tolist()) if 'experiment_name' in df.columns else []
 
+# Map experiment_name -> description (first non-empty value found per name)
+experiment_descriptions = {}
+if 'experiment_description' in df.columns and 'experiment_name' in df.columns:
+    for name in experiment_names:
+        desc = df.loc[df['experiment_name'] == name, 'experiment_description'].dropna()
+        desc = desc[desc != '']
+        if not desc.empty:
+            experiment_descriptions[name] = desc.iloc[0]
+
 def _filter_by_experiment(data_df, selected):
     """Filter a dataframe by the experiment-selector value (single string, list, or None).
     '__null__' matches rows where experiment_name is NaN/None."""
@@ -84,6 +95,38 @@ def _filter_by_experiment(data_df, selected):
     if include_null:
         return data_df[data_df['experiment_name'].isna()]
     return data_df[data_df['experiment_name'].isin(named)]
+def _add_guide_nodes(G: nx.MultiDiGraph) -> None:
+    """Add binary guide nodes to G before position calculation.
+
+    Skipped silently for continuous problems or when G has no solutions.
+    Series 1: all-zeros and all-ones.
+    Series 2: one bit set per node, left to right (bit 0 first).
+    Series 3: increasing Hamming weight from the right (bit n-1 first),
+              so the first node of series 3 always differs from series 2.
+    """
+    n = None
+    for _, attr in G.nodes(data=True):
+        sol = attr.get('solution')
+        if sol:
+            if is_continuous_solution(sol):
+                return
+            n = len(sol)
+            break
+    if not n:
+        return
+
+    G.add_node('Guide_S1_zeros', type='guide', guide_series=1, fitness=0, solution=[0] * n)
+    G.add_node('Guide_S1_ones',  type='guide', guide_series=1, fitness=0, solution=[1] * n)
+
+    for k in range(n):
+        sol = [1 if i == k else 0 for i in range(n)]
+        G.add_node(f'Guide_S2_bit_{k}', type='guide', guide_series=2, fitness=0, solution=sol)
+
+    for k in range(1, n):
+        sol = [0] * (n - k) + [1] * k
+        G.add_node(f'Guide_S3_hw_{k}', type='guide', guide_series=3, fitness=0, solution=sol)
+
+
 # ==========
 # Main Dashboard App
 # ==========
@@ -98,7 +141,7 @@ app = dash.Dash(__name__, suppress_callback_exceptions=True)
 tab_style = TAB_STYLE
 tab_selected_style = TAB_SELECTED_STYLE
 
-app.layout = create_layout(display2_df, display2_hidden_cols, display1_df, df_LONs, LON_display_columns, experiment_names)
+app.layout = create_layout(display2_df, display2_hidden_cols, display1_df, df_LONs, LON_display_columns, experiment_names, experiment_descriptions)
 
 # ---------- Fit function -> x-axis label mapping ----------
 FIT_FUNC_XAXIS_LABELS = {
@@ -131,6 +174,27 @@ def _get_problem_goal(opt_goal):
 # ------------------------------
 # Callbacks: Update Selection Stores
 # ------------------------------
+
+@app.callback(
+    Output("experiment-description-display", "children"),
+    Input("experiment-selector", "value"),
+)
+def update_experiment_description(selected):
+    if not selected:
+        return ""
+    names = [selected] if isinstance(selected, str) else selected
+    items = []
+    for name in names:
+        if name == '__null__':
+            continue
+        desc = experiment_descriptions.get(name, '')
+        if desc:
+            items.append(html.Div([
+                html.Span(name, style={'fontWeight': 'bold'}),
+                html.Span(f": {desc}", style={'marginLeft': '4px'}),
+            ], style={'marginBottom': '4px'}))
+    return items or ""
+
 
 @app.callback(
     Output("table1", "data"),
@@ -1583,6 +1647,12 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
     calculate_lon_statistics(G, verbose=True)
 
     # ==========
+    # STEP 6.5: Inject binary guide nodes before layout (so they're placed naturally)
+    # ==========
+    if 'show-guides' in (annotation_options or []):
+        _add_guide_nodes(G)
+
+    # ==========
     # STEP 7: Calculate node positions
     # ==========
     pos = calculate_positions(G, config.layout_type, config.stn_plot_type, config.plot_3d, config.lon.lmds_multiplier)
@@ -1593,6 +1663,9 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
     if config.plot_type in ('RegLon', 'NLon_box'):
         print('CREATING PLOT...')
         traces = build_all_traces(G, pos, config, node_noise, fitness_dict, neigh_feas_map)
+
+        if 'show-guides' in (annotation_options or []):
+            traces.extend(create_guide_traces(G, pos))
 
         # ==========
         # STEP 9: Configure axes and create figure

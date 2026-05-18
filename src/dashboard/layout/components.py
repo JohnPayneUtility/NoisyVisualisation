@@ -26,7 +26,7 @@ from .styles import (
 )
 
 
-def create_problem_selection_section(display1_df, df_lon, lon_display_columns, experiment_names):
+def create_problem_selection_section(display1_df, df_lon, lon_display_columns, experiment_names, experiment_descriptions=None):
     """
     Create the problem selection section with experiment dropdown, Table 1, and the LON table.
 
@@ -35,6 +35,7 @@ def create_problem_selection_section(display1_df, df_lon, lon_display_columns, e
         df_lon: LON results DataFrame.
         lon_display_columns: Columns to show in the LON table.
         experiment_names: Sorted list of unique experiment name strings.
+        experiment_descriptions: Dict mapping experiment name to description string.
 
     Returns:
         html.Div: Problem selection container.
@@ -49,16 +50,22 @@ def create_problem_selection_section(display1_df, df_lon, lon_display_columns, e
     return html.Div([
         html.B("Experiment Selection", style={"padding": "10px 10px 4px", "display": "block"}),
         html.Div(
-            dcc.Dropdown(
-                id='experiment-selector',
-                options=[{'label': '(null — no experiment name)', 'value': '__null__'}]
-                        + [{'label': name, 'value': name} for name in experiment_names],
-                value=None,
-                multi=True,
-                clearable=True,
-                style={'width': '500px'},
-            ),
-            style={"padding": "0px 10px 10px"},
+            style={"display": "flex", "alignItems": "flex-start", "padding": "0px 10px 10px", "gap": "16px"},
+            children=[
+                dcc.Dropdown(
+                    id='experiment-selector',
+                    options=[{'label': '(null — no experiment name)', 'value': '__null__'}]
+                            + [{'label': name, 'value': name} for name in experiment_names],
+                    value=None,
+                    multi=True,
+                    clearable=True,
+                    style={'width': '500px'},
+                ),
+                html.Div(
+                    id='experiment-description-display',
+                    style={'flex': '1', 'fontSize': '13px', 'color': '#444', 'paddingTop': '6px'},
+                ),
+            ],
         ),
         html.B("Problem selection table", style={"padding": "10px 10px 0px", "display": "block"}),
         html.Div(style=table_wrapper_style, children=[
@@ -877,6 +884,7 @@ def create_annotation_options_section():
                 {'label': ' Info panel', 'value': 'annotate-info-panel'},
                 {'label': ' Print mode', 'value': 'print-mode'},
                 {'label': ' Condense names in print mode', 'value': 'condense-print-names'},
+                {'label': ' Show guides', 'value': 'show-guides'},
             ],
             value=['annotate-start-nodes', 'annotate-optimum', 'annotate-end-nodes', 'annotate-mistakes', 'annotate-info-panel'],
             inline=True,

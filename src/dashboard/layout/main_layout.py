@@ -27,7 +27,7 @@ from .components import (
 )
 
 
-def create_layout(display2_df, display2_hidden_cols, display1_df, df_lon, lon_display_columns, experiment_names):
+def create_layout(display2_df, display2_hidden_cols, display1_df, df_lon, lon_display_columns, experiment_names, experiment_descriptions=None):
     """
     Create the complete dashboard layout.
 
@@ -70,7 +70,7 @@ def create_layout(display2_df, display2_hidden_cols, display1_df, df_lon, lon_di
     children.extend(create_all_stores())
 
     # Problem selection section (experiment dropdown, Table 1 and LON table)
-    children.append(create_problem_selection_section(display1_df, df_lon, lon_display_columns, experiment_names))
+    children.append(create_problem_selection_section(display1_df, df_lon, lon_display_columns, experiment_names, experiment_descriptions or {}))
 
     # 2D performance plot tabs
     children.append(create_2d_plot_tabs())

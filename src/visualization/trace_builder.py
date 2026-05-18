@@ -350,6 +350,8 @@ def create_node_traces(
     for node, attr in G.nodes(data=True):
         if node not in pos:
             continue
+        if attr.get('type') == 'guide':
+            continue
 
         x, y = pos[node][:2]
         z = attr.get('fitness', 0)
@@ -934,6 +936,56 @@ def create_lon_surface_trace(
         surface_kwargs['colorscale'] = 'Viridis'
 
     return go.Surface(**surface_kwargs)
+
+
+_GUIDE_COLORS = {1: 'grey', 2: 'coral', 3: 'steelblue'}
+_GUIDE_NAMES = {1: 'Guide: endpoints', 2: 'Guide: single bit', 3: 'Guide: Hamming weight'}
+
+
+def create_guide_traces(
+    G: nx.MultiDiGraph,
+    pos: Dict[str, Tuple[float, float]],
+) -> List[go.Scatter3d]:
+    """
+    Create Plotly traces for the three binary guide series.
+
+    Reads guide nodes (type='guide', guide_series in {1,2,3}) from G and emits
+    one Scatter3d marker trace per series, all at z=0 with no edges.
+    """
+    series_data: Dict[int, Tuple[List, List, List, List]] = {
+        s: ([], [], [], []) for s in (1, 2, 3)
+    }
+
+    for node, attr in G.nodes(data=True):
+        if attr.get('type') != 'guide' or node not in pos:
+            continue
+        s = attr.get('guide_series')
+        if s not in series_data:
+            continue
+        x_list, y_list, z_list, hover_list = series_data[s]
+        x, y = pos[node][:2]
+        x_list.append(x)
+        y_list.append(y)
+        z_list.append(0.0)
+        hover_list.append(f"{_GUIDE_NAMES.get(s, 'Guide')}<br>Solution: {attr.get('solution')}")
+
+    traces = []
+    for s, (x_list, y_list, z_list, hover_list) in series_data.items():
+        if not x_list:
+            continue
+        traces.append(go.Scatter3d(
+            x=x_list,
+            y=y_list,
+            z=z_list,
+            mode='markers',
+            marker=dict(size=5, color=_GUIDE_COLORS[s], symbol='circle'),
+            text=hover_list,
+            hoverinfo='text',
+            name=_GUIDE_NAMES[s],
+            showlegend=True,
+        ))
+
+    return traces
 
 
 def build_all_traces(

@@ -1,0 +1,27 @@
+# @package _global_
+# BASE SETTINGS
+defaults:
+  - /defaults/mlflow
+  - _self_   # ensures overrides below take precedence
+
+# OVERRIDES
+# none
+
+# EXPERIMENT SETTINGS
+experiment_name: "PCEA_budgets_1mil"
+experiment_description: >
+  PCEA with various noise models, eval budget of 1m,
+  used to determine reasonable eval budgets for other algorithms
+
+hydra:
+  mode: MULTIRUN
+  sweeper: # sweep through various combinations of parameters
+    params:
+      +defaults/run: run_1m_evals
+      # +defaults/problems: kp20_v1, kp20_v2, kp20_bitflip, kp20_1qbitwise
+      +defaults/problems: kp20_v1
+      +defaults/algos_vpop: pcea
+      # problem.fitness_params.noise_intensity: 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20
+      problem.fitness_params.noise_intensity: 0,1,2,3,4,5,6,7,8,9,10
+  sweep:
+    dir: data/outputs

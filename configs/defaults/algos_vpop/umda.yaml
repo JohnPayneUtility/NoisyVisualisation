@@ -1,0 +1,15 @@
+# @package _global_
+algo:
+  name: UMDA
+  type: UMDA
+  use_dynamic_pop_size: true
+  pop_size_fn:
+    _target_: run_helpers.dynamic_pop_size_UMDA
+    n_items: null   # resolved from problem.dimensions
+    noise: null     # resolved from problem.fitness_params.noise_intensity
+
+  # Algorithm initialization parameters
+  init_args:
+    _target_: src.algorithms.Algorithms.UMDA
+    pop_size: 921
+    select_size: 460

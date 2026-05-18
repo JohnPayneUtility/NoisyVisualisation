@@ -113,7 +113,14 @@ def resolve_config_dependencies(cfg: DictConfig) -> DictConfig:
             if hasattr(resolved_cfg.algo, 'static_indpb'):
                 resolved_cfg.algo.init_args.mutate_params.indpb = resolved_cfg.algo.static_indpb
     
-    # Step 4: Resolve noise-dependent eval limits
+    # Step 4: Resolve dynamic population size
+    if getattr(resolved_cfg.algo, 'use_dynamic_pop_size', False):
+        fn_cfg = resolved_cfg.algo.pop_size_fn
+        fn_cfg.n_items = resolved_cfg.problem.dimensions
+        fn_cfg.noise = resolved_cfg.problem.fitness_params.noise_intensity
+        resolved_cfg.algo.init_args.pop_size = call(fn_cfg)
+
+    # Step 5: Resolve noise-dependent eval limits
     if hasattr(resolved_cfg.run, 'use_noise_dependent_eval_limit'):
         if resolved_cfg.run.use_noise_dependent_eval_limit:
             noise_val = resolved_cfg.problem.fitness_params.noise_intensity
@@ -200,7 +207,8 @@ def hydra_algo_data_single(prob_info: Dict[str, Any],
         "mean_value": prob_info["mean_value"],
         "mean_weight": prob_info["mean_weight"],
         "PID": prob_info["PID"],
-        "experiment_name": prob_info["experiment_name"],
+        "experiment_name":        prob_info["experiment_name"],
+        "experiment_description": prob_info["experiment_description"],
 
         "fit_func": algo_params["fitness_function"][0].__name__,
         "noise": algo_params["fitness_function"][1]["noise_intensity"],
@@ -417,7 +425,8 @@ def main(cfg: DictConfig):
         'mean_value':      cfg.problem.mean_value,
         'mean_weight':     cfg.problem.mean_weight,
         'PID':             cfg.problem.PID,
-        'experiment_name': cfg.experiment_name,
+        'experiment_name':        cfg.experiment_name,
+        'experiment_description': cfg.get('experiment_description', ''),
     }
 
     # Instantiate fitness

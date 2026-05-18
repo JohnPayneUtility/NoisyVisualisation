@@ -83,6 +83,7 @@ from .trace_builder import (
     create_axis_settings,
     create_figure,
     build_all_traces,
+    create_guide_traces,
 )
 
 __all__ = [
@@ -137,4 +138,5 @@ __all__ = [
     'create_axis_settings',
     'create_figure',
     'build_all_traces',
+    'create_guide_traces',
 ]
