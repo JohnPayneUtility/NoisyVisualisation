@@ -115,6 +115,15 @@ def create_2d_plot_tabs():
                 clearable=False,
                 style={'width': '260px'},
             ),
+            html.Label("Cap noise for plot:"),
+            dcc.Input(
+                id='noise-cap-input',
+                type='number',
+                min=0,
+                step=1,
+                value=0,
+                style={'width': '80px'},
+            ),
         ], style={'display': 'flex', 'alignItems': 'center', 'gap': '12px', 'marginBottom': '8px'}),
         dcc.Tabs(id='2DPlotTabSelection', value='p1', children=[
             dcc.Tab(
@@ -428,6 +437,7 @@ def create_stn_options_section():
                 {'label': 'Dedup prior noise', 'value': 'dedup-prior-noise'},
                 {'label': 'Show estimated fitness (adopted)', 'value': 'show_estimated_adopted'},
                 {'label': 'Show estimated fitness (discarded)', 'value': 'show_estimated_discarded'},
+                {'label': 'use est fitness (discarded) as base nodes', 'value': 'use_est_discarded_as_base'},
                 {'label': 'Show fitness box plots', 'value': 'show_stn_boxplots'},
                 {'label': 'Colour edges by evaluations', 'value': 'colour_by_evals'},
                 {'label': 'Show alt representation with fitness', 'value': 'show_alt_rep'},

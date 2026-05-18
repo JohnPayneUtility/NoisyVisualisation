@@ -172,10 +172,18 @@ def add_stn_trajectories(
                 cnt_discarded = count_fits_discarded[i] if i < len(count_fits_discarded) else None
                 boxplot_stat = fitness_boxplot_stats[i] if i < len(fitness_boxplot_stats) else None
 
+                # When use_est_discarded_as_base is set, use estimated discarded fitness as the
+                # base node fitness. Falls back to noisy fitness if est_discarded is None
+                # (i.e. no discarded estimate was recorded for this node).
+                if config.use_est_discarded_as_base:
+                    base_fitness = est_discarded if est_discarded is not None else noisy_fitnesses[i]
+                else:
+                    base_fitness = unique_fitnesses[i]
+
                 G.add_node(
                     node_label,
                     solution=solution,
-                    fitness=unique_fitnesses[i],
+                    fitness=base_fitness,
                     estimated_fitness_adopted=est_adopted,
                     estimated_fitness_discarded=est_discarded,
                     count_estimated_adopted=cnt_adopted,
@@ -389,6 +397,7 @@ def add_prior_noise_stn_v4(
     show_alt_rep: bool = False,
     show_alt_rep_no_fit: bool = False,
     stn_node_min: float = 5.0,
+    use_est_discarded_as_base: bool = False,
 ) -> None:
     """
     Add single-objective STN nodes with two kinds of noisy nodes (V4).
@@ -432,12 +441,20 @@ def add_prior_noise_stn_v4(
             # -------- base node --------
             node_base = f"STN_S{series_idx}_R{run_idx}_Sol{i}_True"
             if node_base not in G.nodes:
+                est_discarded = estimated_fits_discarded[i] if i < len(estimated_fits_discarded) else None
+                # When use_est_discarded_as_base is set, use estimated discarded fitness as the
+                # base node fitness. Falls back to noisy fitness if est_discarded is None
+                # (i.e. no discarded estimate was recorded for this node).
+                if use_est_discarded_as_base:
+                    base_fitness = est_discarded if est_discarded is not None else rep_noisy_fits[i]
+                else:
+                    base_fitness = true_fitness
                 G.add_node(
                     node_base,
                     type="STN_SO",
                     is_noisy=False,
                     solution=solution,
-                    fitness=true_fitness,
+                    fitness=base_fitness,
                     iterations=sol_iterations[i] if i < len(sol_iterations) else 1,
                     evals=sol_evals[i] if i < len(sol_evals) else 0,
                     sol_idx=i,
@@ -446,7 +463,7 @@ def add_prior_noise_stn_v4(
                     color=edge_color,
                     fitness_boxplot_stats=fitness_boxplot_stats[i] if i < len(fitness_boxplot_stats) else None,
                     estimated_fitness_adopted=estimated_fits_adopted[i] if i < len(estimated_fits_adopted) else None,
-                    estimated_fitness_discarded=estimated_fits_discarded[i] if i < len(estimated_fits_discarded) else None,
+                    estimated_fitness_discarded=est_discarded,
                     count_estimated_adopted=count_fits_adopted[i] if i < len(count_fits_adopted) else None,
                     count_estimated_discarded=count_fits_discarded[i] if i < len(count_fits_discarded) else None,
                     start_node=i == 0,
@@ -560,6 +577,7 @@ def add_prior_noise_stn_v5(
     show_alt_rep: bool = False,
     show_alt_rep_no_fit: bool = False,
     stn_node_min: float = 5.0,
+    use_est_discarded_as_base: bool = False,
 ) -> None:
     """
     Add single-objective STN nodes with one noisy node per base (V5).
@@ -602,12 +620,20 @@ def add_prior_noise_stn_v5(
             # -------- base node --------
             node_base = f"STN_S{series_idx}_R{run_idx}_Sol{i}_True"
             if node_base not in G.nodes:
+                est_discarded = estimated_fits_discarded[i] if i < len(estimated_fits_discarded) else None
+                # When use_est_discarded_as_base is set, use estimated discarded fitness as the
+                # base node fitness. Falls back to noisy fitness if est_discarded is None
+                # (i.e. no discarded estimate was recorded for this node).
+                if use_est_discarded_as_base:
+                    base_fitness = est_discarded if est_discarded is not None else rep_noisy_fits[i]
+                else:
+                    base_fitness = true_fitness
                 G.add_node(
                     node_base,
                     type="STN_SO",
                     is_noisy=False,
                     solution=solution,
-                    fitness=true_fitness,
+                    fitness=base_fitness,
                     iterations=sol_iterations[i] if i < len(sol_iterations) else 1,
                     evals=sol_evals[i] if i < len(sol_evals) else 0,
                     sol_idx=i,
@@ -616,7 +642,7 @@ def add_prior_noise_stn_v5(
                     color=edge_color,
                     fitness_boxplot_stats=fitness_boxplot_stats[i] if i < len(fitness_boxplot_stats) else None,
                     estimated_fitness_adopted=estimated_fits_adopted[i] if i < len(estimated_fits_adopted) else None,
-                    estimated_fitness_discarded=estimated_fits_discarded[i] if i < len(estimated_fits_discarded) else None,
+                    estimated_fitness_discarded=est_discarded,
                     count_estimated_adopted=count_fits_adopted[i] if i < len(count_fits_adopted) else None,
                     count_estimated_discarded=count_fits_discarded[i] if i < len(count_fits_discarded) else None,
                     start_node=i == 0,

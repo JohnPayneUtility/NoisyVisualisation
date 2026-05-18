@@ -128,6 +128,7 @@ class PlotConfig:
     show_estimated_adopted: bool = False
     show_estimated_discarded: bool = False
     show_stn_boxplots: bool = False
+    use_est_discarded_as_base: bool = False
 
     # Mode settings
     stn_plot_type: str = 'posterior'  # 'posterior', 'prior', 'multiobjective'
@@ -238,6 +239,7 @@ def parse_callback_inputs(
         show_estimated_adopted='show_estimated_adopted' in run_options,
         show_estimated_discarded='show_estimated_discarded' in run_options,
         show_stn_boxplots='show_stn_boxplots' in run_options,
+        use_est_discarded_as_base='use_est_discarded_as_base' in run_options,
 
         # Mode settings
         stn_plot_type=stn_plot_type or 'posterior',
