@@ -346,6 +346,21 @@ def _cap_noise(plot_df, cap):
         plot_df = plot_df[plot_df['noise'] <= cap]
     return plot_df
 
+def _hide_series(plot_df, hidden):
+    if hidden and 'algo_name' in plot_df.columns:
+        plot_df = plot_df[~plot_df['algo_name'].isin(hidden)]
+    return plot_df
+
+@app.callback(
+    Output('hide-series-dropdown', 'options'),
+    Input('plot_2d_data', 'data'),
+)
+def update_hide_series_options(data):
+    if not data:
+        return []
+    algo_names = pd.DataFrame(data)['algo_name'].dropna().unique()
+    return [{'label': name, 'value': name} for name in sorted(algo_names)]
+
 # ---------- 2D plot callbacks ----------
 # Plot data table
 @app.callback(
@@ -364,13 +379,14 @@ def display_stored_data(data):
     Input('opt_goal', 'data'),
     Input('plot-theme', 'value'),
     Input('noise-cap-input', 'value'),
+    Input('hide-series-dropdown', 'value'),
 )
-def display_stored_data(data, fitness_mode, fit_func, opt_goal, plot_theme, noise_cap):
+def display_stored_data(data, fitness_mode, fit_func, opt_goal, plot_theme, noise_cap, hidden_series):
     xaxis_label = _get_so_xaxis_label(fit_func)
     if xaxis_label is None:
         return go.Figure()
     problem_goal = _get_problem_goal(opt_goal)
-    plot_df = _cap_noise(pd.DataFrame(data), noise_cap)
+    plot_df = _hide_series(_cap_noise(pd.DataFrame(data), noise_cap), hidden_series)
     return plot2d_line(plot_df, fitness_mode=fitness_mode or 'best', problem_goal=problem_goal, xaxis_title=xaxis_label, colorscale=plot_theme or 'Viridis')
 # 2D box plot
 @app.callback(
@@ -381,13 +397,14 @@ def display_stored_data(data, fitness_mode, fit_func, opt_goal, plot_theme, nois
     Input('opt_goal', 'data'),
     Input('plot-theme', 'value'),
     Input('noise-cap-input', 'value'),
+    Input('hide-series-dropdown', 'value'),
 )
-def display_stored_data(data, fitness_mode, fit_func, opt_goal, plot_theme, noise_cap):
+def display_stored_data(data, fitness_mode, fit_func, opt_goal, plot_theme, noise_cap, hidden_series):
     xaxis_label = _get_so_xaxis_label(fit_func)
     if xaxis_label is None:
         return go.Figure()
     problem_goal = _get_problem_goal(opt_goal)
-    plot_df = _cap_noise(pd.DataFrame(data), noise_cap)
+    plot_df = _hide_series(_cap_noise(pd.DataFrame(data), noise_cap), hidden_series)
     return plot2d_box(plot_df, fitness_mode=fitness_mode or 'best', problem_goal=problem_goal, xaxis_title=xaxis_label, colorscale=plot_theme or 'Viridis')
 
 # 2D line plot (multi-objective)
@@ -396,9 +413,10 @@ def display_stored_data(data, fitness_mode, fit_func, opt_goal, plot_theme, nois
     Input('plot_2d_data', 'data'),
     Input('plot-theme', 'value'),
     Input('noise-cap-input', 'value'),
+    Input('hide-series-dropdown', 'value'),
 )
-def display_stored_data_mo_line(data, plot_theme, noise_cap):
-    plot_df = _cap_noise(pd.DataFrame(data), noise_cap)
+def display_stored_data_mo_line(data, plot_theme, noise_cap, hidden_series):
+    plot_df = _hide_series(_cap_noise(pd.DataFrame(data), noise_cap), hidden_series)
     plot = plot2d_line_mo(plot_df, colorscale=plot_theme or 'Viridis')
     return plot
 
@@ -408,9 +426,10 @@ def display_stored_data_mo_line(data, plot_theme, noise_cap):
     Input('plot_2d_data', 'data'),
     Input('plot-theme', 'value'),
     Input('noise-cap-input', 'value'),
+    Input('hide-series-dropdown', 'value'),
 )
-def display_stored_data_mo_box(data, plot_theme, noise_cap):
-    plot_df = _cap_noise(pd.DataFrame(data), noise_cap)
+def display_stored_data_mo_box(data, plot_theme, noise_cap, hidden_series):
+    plot_df = _hide_series(_cap_noise(pd.DataFrame(data), noise_cap), hidden_series)
     plot = plot2d_box_mo(plot_df, colorscale=plot_theme or 'Viridis')
     return plot
 
@@ -423,12 +442,13 @@ def display_stored_data_mo_box(data, plot_theme, noise_cap):
     Input('fit_func_store', 'data'),
     Input('plot-theme', 'value'),
     Input('noise-cap-input', 'value'),
+    Input('hide-series-dropdown', 'value'),
 )
-def display_line_evals_so(data, std_checkbox, fitness_mode, fit_func, plot_theme, noise_cap):
+def display_line_evals_so(data, std_checkbox, fitness_mode, fit_func, plot_theme, noise_cap, hidden_series):
     xaxis_label = _get_so_xaxis_label(fit_func)
     if xaxis_label is None:
         return go.Figure()
-    plot_df = _cap_noise(pd.DataFrame(data), noise_cap)
+    plot_df = _hide_series(_cap_noise(pd.DataFrame(data), noise_cap), hidden_series)
     show_std = bool(std_checkbox and 'show' in std_checkbox)
     return plot2d_line_evals(plot_df, fitness_mode=fitness_mode or 'final', show_std=show_std, xaxis_title=xaxis_label, colorscale=plot_theme or 'Viridis')
 
@@ -440,12 +460,13 @@ def display_line_evals_so(data, std_checkbox, fitness_mode, fit_func, plot_theme
     Input('fit_func_store', 'data'),
     Input('plot-theme', 'value'),
     Input('noise-cap-input', 'value'),
+    Input('hide-series-dropdown', 'value'),
 )
-def display_box_evals_so(data, fitness_mode, fit_func, plot_theme, noise_cap):
+def display_box_evals_so(data, fitness_mode, fit_func, plot_theme, noise_cap, hidden_series):
     xaxis_label = _get_so_xaxis_label(fit_func)
     if xaxis_label is None:
         return go.Figure()
-    plot_df = _cap_noise(pd.DataFrame(data), noise_cap)
+    plot_df = _hide_series(_cap_noise(pd.DataFrame(data), noise_cap), hidden_series)
     return plot2d_box_evals(plot_df, fitness_mode=fitness_mode or 'final', xaxis_title=xaxis_label, colorscale=plot_theme or 'Viridis')
 
 # 2D box plot (misjudgements, single-objective)
@@ -455,12 +476,13 @@ def display_box_evals_so(data, fitness_mode, fit_func, plot_theme, noise_cap):
     Input('fit_func_store', 'data'),
     Input('plot-theme', 'value'),
     Input('noise-cap-input', 'value'),
+    Input('hide-series-dropdown', 'value'),
 )
-def display_box_misjudgements_so(data, fit_func, plot_theme, noise_cap):
+def display_box_misjudgements_so(data, fit_func, plot_theme, noise_cap, hidden_series):
     xaxis_label = _get_so_xaxis_label(fit_func)
     if xaxis_label is None:
         return go.Figure()
-    plot_df = _cap_noise(pd.DataFrame(data), noise_cap)
+    plot_df = _hide_series(_cap_noise(pd.DataFrame(data), noise_cap), hidden_series)
     return plot2d_box_misjudgements_so(plot_df, xaxis_title=xaxis_label, colorscale=plot_theme or 'Viridis')
 
 # ---------- Performance summary table ----------

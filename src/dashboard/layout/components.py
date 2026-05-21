@@ -124,6 +124,15 @@ def create_2d_plot_tabs():
                 value=0,
                 style={'width': '80px'},
             ),
+            html.Label("Hide series:"),
+            dcc.Dropdown(
+                id='hide-series-dropdown',
+                options=[],
+                value=[],
+                multi=True,
+                placeholder='Select series to hide...',
+                style={'width': '320px'},
+            ),
         ], style={'display': 'flex', 'alignItems': 'center', 'gap': '12px', 'marginBottom': '8px'}),
         dcc.Tabs(id='2DPlotTabSelection', value='p1', children=[
             dcc.Tab(
@@ -355,6 +364,7 @@ def create_multiobjective_options_section():
                 id='stn-plot-type',
                 options=[
                     {'label': 'Posterior noise STN plot', 'value': 'posterior'},
+                    {'label': 'Posterior noise STN (algo POV)', 'value': 'posterior_algo_pov'},
                     {'label': 'Prior noise STN V4 plot', 'value': 'prior_v4'},
                     {'label': 'Prior noise STN V5 plot', 'value': 'prior_v5'},
                     {'label': 'Multiobjective STN plot', 'value': 'multiobjective'},

@@ -151,6 +151,8 @@ def add_stn_trajectories(
         alt_rep_fits = entry[14] if len(entry) > 14 else []
 
         # Create nodes and store node labels in order for this run
+        algo_pov = config.stn_plot_type == 'posterior_algo_pov'
+
         for i, solution in enumerate(unique_solutions):
             current_fitness = unique_fitnesses[i]
             if lower_fit_limit is not None:
@@ -177,6 +179,8 @@ def add_stn_trajectories(
                 # (i.e. no discarded estimate was recorded for this node).
                 if config.use_est_discarded_as_base:
                     base_fitness = est_discarded if est_discarded is not None else noisy_fitnesses[i]
+                elif algo_pov:
+                    base_fitness = noisy_fitnesses[i]
                 else:
                     base_fitness = unique_fitnesses[i]
 
@@ -244,11 +248,14 @@ def add_stn_trajectories(
                                 edge_type='STN_ALT',
                             )
 
-            # Add noisy node for STN data (if desired)
+            # Add satellite node for STN data.
+            # Default (posterior): base=true fitness, satellite=noisy fitness.
+            # Algo POV (posterior_algo_pov): base=noisy fitness, satellite=true fitness.
             noisy_node_label = f"Noisy_{node_label}"
             if noisy_node_label not in G.nodes():
                 try:
-                    G.add_node(noisy_node_label, solution=solution, fitness=noisy_fitnesses[i], color=edge_color, is_noisy=True)
+                    satellite_fitness = unique_fitnesses[i] if algo_pov else noisy_fitnesses[i]
+                    G.add_node(noisy_node_label, solution=solution, fitness=satellite_fitness, color=edge_color, is_noisy=True)
                     G.add_edge(
                         node_label,
                         noisy_node_label,
