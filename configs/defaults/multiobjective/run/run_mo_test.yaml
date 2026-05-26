@@ -1,0 +1,10 @@
+# @package _global_
+run:
+  max_gens: 1e6
+  stop_without_improvement_in_gens: 100
+  eval_limit: 100000
+  use_noise_dependent_eval_limit: false
+  seed: 1
+  num_runs: 50
+  parallel: true
+  verbose_rate: 0

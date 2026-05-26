@@ -1,0 +1,9 @@
+# @package _global_
+algo:
+  name: MoUMDA
+  type: MoUMDA
+  use_dynamic_pop_size: false
+  init_args:
+    _target_: src.algorithms.MOAlgorithms.MoUMDA
+    pop_size: 100
+    select_size: 50

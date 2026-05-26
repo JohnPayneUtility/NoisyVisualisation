@@ -1,0 +1,6 @@
+# @package _global_
+algo:
+  name: SEMO
+  type: SEMO
+  init_args:
+    _target_: src.algorithms.MOAlgorithms.SEMO

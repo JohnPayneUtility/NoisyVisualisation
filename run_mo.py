@@ -24,9 +24,11 @@ from run_helpers import *
 
 # explicit mlflow path
 from pathlib import Path
-base = Path(__file__).resolve().parents[1]  # project root
-mlruns_dir = base / "data" / "mlruns"
-mlflow.set_tracking_uri(f"file:{mlruns_dir}")
+base = Path(__file__).resolve().parents[0]          # folder containing run_mo.py
+project_root = base                                 # run_mo.py is in project root
+mlruns_dir = project_root / "data" / "mlruns"
+mlruns_dir.mkdir(parents=True, exist_ok=True)
+mlflow.set_tracking_uri(f"file:{mlruns_dir.as_posix()}")
 
 print("RUN tracking:", mlflow.get_tracking_uri())
 # -------------------------------
@@ -127,7 +129,14 @@ def resolve_config_dependencies(cfg: DictConfig) -> DictConfig:
             if hasattr(resolved_cfg.algo, 'static_indpb'):
                 resolved_cfg.algo.init_args[target_path].indpb = resolved_cfg.algo.static_indpb
 
-    # Step 4: Resolve noise-dependent eval limits
+    # Step 4: Resolve dynamic population size
+    if getattr(resolved_cfg.algo, 'use_dynamic_pop_size', False):
+        fn_cfg = resolved_cfg.algo.pop_size_fn
+        fn_cfg.n_items = resolved_cfg.problem.dimensions
+        fn_cfg.noise = resolved_cfg.problem.fitness_params.noise_intensity
+        resolved_cfg.algo.init_args.pop_size = call(fn_cfg)
+
+    # Step 5: Resolve noise-dependent eval limits
     if hasattr(resolved_cfg.run, 'use_noise_dependent_eval_limit'):
         if resolved_cfg.run.use_noise_dependent_eval_limit:
             noise_val = resolved_cfg.problem.fitness_params.noise_intensity
@@ -163,14 +172,16 @@ def hydra_algo_data_single(prob_info: Dict[str, Any],
     # seed_signature = algo_instance.seed_signature
     
     return {
-        "problem_name": prob_info['name'],
-        "problem_type": prob_info['type'],
-        "problem_goal": prob_info['goal'],
-        "dimensions": prob_info['dimensions'],
-        "opt_global": prob_info['opt_global'],
-        "mean_value": prob_info['mean_value'],
-        "mean_weight": prob_info['mean_weight'],
-        'PID': prob_info['PID'],
+        "problem_name":           prob_info['name'],
+        "problem_type":           prob_info['type'],
+        "problem_goal":           prob_info['goal'],
+        "dimensions":             prob_info['dimensions'],
+        "opt_global":             prob_info['opt_global'],
+        "mean_value":             prob_info['mean_value'],
+        "mean_weight":            prob_info['mean_weight'],
+        'PID':                    prob_info['PID'],
+        "experiment_name":        prob_info['experiment_name'],
+        "experiment_description": prob_info['experiment_description'],
         "fit_func": algo_params['fitness_function'][0].__name__,
         "noise": algo_params['fitness_function'][1]['noise_intensity'],
         # "algo_class": algorithm_class.__name__,
@@ -250,21 +261,23 @@ def main(cfg: DictConfig):
     # Resolve dependencies in nested config structure
     cfg = resolve_config_dependencies(cfg)
     
-    # Initialise MLflow
-    mlflow.set_tracking_uri(cfg.mlflow.tracking_uri)
+    # Initialise MLflow (tracking URI set at module level)
+    # mlflow.set_tracking_uri(cfg.mlflow.tracking_uri)
     mlflow.set_experiment(cfg.experiment_name)
 
     # Problem metadata
     # Problem info is passed to algorithm class via run function
     prob_info = {
-        'name':       cfg.problem.prob_name,
-        'type':       cfg.problem.prob_type,
-        'goal':       cfg.problem.opt_goal,
-        'dimensions': cfg.problem.dimensions,
-        'opt_global': cfg.problem.opt_global,
-        'mean_value': cfg.problem.mean_value,
-        'mean_weight': cfg.problem.mean_weight,
-        'PID':        cfg.problem.PID,
+        'name':                   cfg.problem.prob_name,
+        'type':                   cfg.problem.prob_type,
+        'goal':                   cfg.problem.opt_goal,
+        'dimensions':             cfg.problem.dimensions,
+        'opt_global':             cfg.problem.opt_global,
+        'mean_value':             cfg.problem.mean_value,
+        'mean_weight':            cfg.problem.mean_weight,
+        'PID':                    cfg.problem.PID,
+        'experiment_name':        cfg.experiment_name,
+        'experiment_description': cfg.get('experiment_description', ''),
     }
 
     # Instantiate fitness
@@ -347,4 +360,27 @@ def main(cfg: DictConfig):
     print(compute_time)
 
 if __name__ == '__main__':
-    main()
+    import sys
+    from pathlib import Path
+
+    configs_root = Path(__file__).resolve().parent / "configs"
+    symlink = None
+
+    for i, arg in enumerate(sys.argv):
+        if arg.startswith("--config-name=") or arg.startswith("--config-name"):
+            val = arg.split("=", 1)[1] if "=" in arg else sys.argv[i + 1]
+            if "/" in val:
+                flat = val.replace("/", "__")
+                symlink = configs_root / f"{flat}.yaml"
+                symlink.symlink_to((configs_root / f"{val}.yaml").resolve())
+                if "=" in arg:
+                    sys.argv[i] = f"--config-name={flat}"
+                else:
+                    sys.argv[i + 1] = flat
+            break
+
+    try:
+        main()
+    finally:
+        if symlink and symlink.exists():
+            symlink.unlink()

@@ -28,7 +28,10 @@ def _compute_n_misjudgements(row) -> int:
     For minimisation: fits[i+1] > fits[i] is a misjudgement.
     """
     rep_fits = row.get('rep_fits') if hasattr(row, 'get') else row['rep_fits']
-    if not rep_fits or len(rep_fits) < 2:
+    # MO rows and old SO rows (pre-Logger rename) have rep_fits=NaN, not a list.
+    # NaN is truthy so `not rep_fits` doesn't catch it — guard with isinstance.
+    # TODO: compute MO equivalent from noisy_pf_true_hypervolumes (HV decreased steps)
+    if not isinstance(rep_fits, (list, np.ndarray)) or len(rep_fits) < 2:
         return 0
     problem_goal = row.get('problem_goal', 'maximise') if hasattr(row, 'get') else row['problem_goal']
     minimising = str(problem_goal)[:3].lower() == 'min'
@@ -51,6 +54,12 @@ def _compute_evals_to_best(row) -> object:
     sol_iters_evals = row['sol_iterations_evals']
     problem_goal = row.get('problem_goal', 'maximise')
 
+    # MO rows and old SO rows (pre-Logger rename) have rep_fits=NaN, not a list.
+    # NaN is truthy so `not rep_fits` doesn't catch it — guard with isinstance.
+    # TODO: compute MO equivalent from true_pf_hypervolumes + eval counts per PF snapshot
+    #       (requires recording evals alongside each HV measurement in run_mo.py)
+    if not isinstance(rep_fits, (list, np.ndarray)) or not isinstance(sol_iters_evals, (list, np.ndarray)):
+        return None
     if not rep_fits or not sol_iters_evals or len(rep_fits) != len(sol_iters_evals):
         return None
 
