@@ -108,6 +108,7 @@ def BinaryCoLON(pert_attempts, len_sol, weights,
     local_optima = []
     fitness_values = []
     edges = {}
+    visit_count = {}      # opt_tuple -> total times landed here this run
     prev_local_opt = None
     prev_fitness = None
 
@@ -191,8 +192,11 @@ def BinaryCoLON(pert_attempts, len_sol, weights,
                 opt_feas_map[current_local_opt] = 1 if is_feasible(individual) else 0
                 _ = compute_neighbour_feasibility_prop(current_local_opt)
 
-            # Edge from previous optimum to current (if changed)
-            if prev_local_opt is not None and prev_local_opt != current_local_opt:
+            # Count every landing, including revisits
+            visit_count[current_local_opt] = visit_count.get(current_local_opt, 0) + 1
+
+            # Edge from previous optimum to current (self-loops included)
+            if prev_local_opt is not None:
                 edges[(prev_local_opt, current_local_opt)] = edges.get((prev_local_opt, current_local_opt), 0) + 1
 
             prev_local_opt = current_local_opt
@@ -254,4 +258,5 @@ def BinaryCoLON(pert_attempts, len_sol, weights,
     neighbour_feasibility = [neigh_feas_prop_map[opt] for opt in local_optima]
 
     return (local_optima, fitness_values, edges_list,
-            optima_feasibility, edge_feasibility, neighbour_feasibility)
+            optima_feasibility, edge_feasibility, neighbour_feasibility,
+            visit_count)

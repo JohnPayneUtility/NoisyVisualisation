@@ -7,8 +7,7 @@ defaults:
 # EXPERIMENT SETTINGS
 experiment_name: "MO_test01"
 experiment_description: >
-  Basic MO test: SEMO and MoUMDA on kp10 with v1 and violation fitness functions,
-  noise levels 0, 1, 2. 3 runs per combination.
+  
 
 hydra:
   mode: MULTIRUN

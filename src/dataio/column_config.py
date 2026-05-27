@@ -20,6 +20,8 @@ LON_HIDDEN_COLUMNS = [
     'edges',
     'optima_feasibility',
     'neighbour_feasibility',
+    'visit_counts',
+    'visit_proportions',
 ]
 
 # Columns to hide in algorithm table (table 2)

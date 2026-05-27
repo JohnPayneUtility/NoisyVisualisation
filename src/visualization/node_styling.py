@@ -56,13 +56,14 @@ def apply_generation_coloring(G: nx.MultiDiGraph, colorscale: str = "Viridis") -
 def apply_node_sizes(
     G: nx.MultiDiGraph,
     config: PlotConfig,
-    optimum: Optional[float] = None
+    optimum: Optional[float] = None,
+    visit_prop_map: Optional[Dict] = None,
 ) -> None:
     """
     Calculate and assign sizes to all nodes in the graph.
 
     Node sizes are determined based on node type:
-    - LON nodes: sized by sum of incoming edge weights
+    - LON nodes: sized by visit proportion (if config.lon.visit_proportion_size) or sum of incoming edge weights
     - STN_MO nodes: sized by front size
     - STN nodes: sized by iteration count
     - Other nodes: default size of 1
@@ -71,6 +72,7 @@ def apply_node_sizes(
         G: NetworkX MultiDiGraph to modify
         config: PlotConfig object with size settings
         optimum: Optional optimum fitness value for highlighting
+        visit_prop_map: String-keyed map of solution -> visit proportion (0..1)
     """
     STN_node_min = config.node_size.stn_min
     STN_node_max = config.node_size.stn_max
@@ -99,11 +101,16 @@ def apply_node_sizes(
     # Assign node sizes
     for node, data in G.nodes(data=True):
         if "Local Optimum" in node:
-            # For LON nodes: weight is the sum of incoming edge weights
-            incoming_edges = G.in_edges(node, data=True)
-            node_weight = sum(edge_data.get('weight', 0) for _, _, edge_data in incoming_edges)
-            node_size = LON_node_min + node_weight * (LON_node_max - LON_node_min)
-            G.nodes[node]['weight'] = node_weight
+            if config.lon.visit_proportion_size and visit_prop_map:
+                solution = G.nodes[node].get('solution')
+                vp = lookup_map(visit_prop_map, solution) if solution is not None else 0.0
+                node_size = LON_node_min + float(vp) * (LON_node_max - LON_node_min)
+            else:
+                # Default: weight is the sum of incoming edge weights
+                incoming_edges = G.in_edges(node, data=True)
+                node_weight = sum(edge_data.get('weight', 0) for _, _, edge_data in incoming_edges)
+                node_size = LON_node_min + node_weight * (LON_node_max - LON_node_min)
+                G.nodes[node]['weight'] = node_weight
 
         elif "STN_MO" in data.get("type", ""):
             # Multiobjective STN nodes: use front size to scale node size
@@ -226,7 +233,8 @@ def style_nodes(
     G: nx.MultiDiGraph,
     config: PlotConfig,
     opt_feas_map: Optional[Dict] = None,
-    neigh_feas_map: Optional[Dict] = None
+    neigh_feas_map: Optional[Dict] = None,
+    visit_prop_map: Optional[Dict] = None,
 ) -> None:
     """
     Apply all node styling (sizes, colors, and generation coloring).
@@ -239,6 +247,7 @@ def style_nodes(
         config: PlotConfig object with all settings
         opt_feas_map: Optional mapping of solutions to feasibility values
         neigh_feas_map: Optional mapping of solutions to neighbor feasibility proportions
+        visit_prop_map: Optional mapping of solutions to visit proportions (0..1)
     """
     optimum = config.optimum
 
@@ -247,7 +256,7 @@ def style_nodes(
         apply_generation_coloring(G, config.colorscale)
 
     # Apply sizes
-    apply_node_sizes(G, config, optimum)
+    apply_node_sizes(G, config, optimum, visit_prop_map)
 
     # Apply colors
     apply_node_colors(G, config, opt_feas_map, neigh_feas_map, optimum)

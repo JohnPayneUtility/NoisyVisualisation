@@ -116,7 +116,8 @@ def _run_single_lon_worker(
       edges_dict,            # (src,dst) -> weight
       optima_feasibility,    # aligned with local_optima (1/0)
       edge_feas_map,         # (src,dst) -> 1/0 based on dst feasibility
-      neighbour_feasibility  # aligned with local_optima (0..1)
+      neighbour_feasibility, # aligned with local_optima (0..1)
+      visit_count            # opt -> total times landed here this run
     """
     # Seed per-process deterministically
     _rand.seed(seed)
@@ -158,7 +159,8 @@ def _run_single_lon_worker(
      edges_list,
      optima_feasibility,
      edge_feasibility,
-     neighbour_feasibility) = BinaryCoLON(**lon_kwargs)
+     neighbour_feasibility,
+     visit_count) = BinaryCoLON(**lon_kwargs)
 
     # Convert edges_list -> dict for consistent aggregation
     edges_dict: Dict[Tuple[Tuple[int, ...], Tuple[int, ...]], float] = {}
@@ -172,7 +174,8 @@ def _run_single_lon_worker(
         edge_feas_map[(src, dst)] = int(ef)
 
     return (local_optima, fitness_values, edges_dict,
-            optima_feasibility, edge_feas_map, neighbour_feasibility)
+            optima_feasibility, edge_feas_map, neighbour_feasibility,
+            visit_count)
 
 
 # -------------------------------
@@ -182,6 +185,7 @@ def _run_single_lon_worker(
 @hydra.main(version_base=None, config_path="configs", config_name="test_lon_kp")
 def main(cfg: DictConfig):
     start_time = time.perf_counter()
+    print(OmegaConf.to_yaml(cfg))  # DEBUG
 
     # Resolve nested deps
     cfg = resolve_config_dependencies(cfg)
@@ -247,10 +251,12 @@ def main(cfg: DictConfig):
             "opt_index": {},           # opt -> index
             "opt_feas_map": {},        # opt -> 1/0
             "neigh_feas_map": {},      # opt -> float (0..1)
+            "total_visit_count": {},   # opt -> total landings across all runs
         }
 
         def _merge(local_optima, fitness_values, edges_dict,
-                   optima_feasibility, edge_feas_map, neighbour_feasibility):
+                   optima_feasibility, edge_feas_map, neighbour_feasibility,
+                   visit_count):
             # Merge optima/fitness + per-optimum feasibility aligned by index
             for opt, fit, of, nf in zip(local_optima, fitness_values,
                                         optima_feasibility, neighbour_feasibility):
@@ -264,6 +270,12 @@ def main(cfg: DictConfig):
                 else:
                     # Deterministic problems -> should match; keep first-seen.
                     pass
+
+            # Accumulate visit counts across runs (counts repeats within a run)
+            for opt, count in visit_count.items():
+                aggregated["total_visit_count"][opt] = (
+                    aggregated["total_visit_count"].get(opt, 0) + count
+                )
 
             # Merge edges: accumulate weights
             for key, w in edges_dict.items():
@@ -300,9 +312,8 @@ def main(cfg: DictConfig):
                         )
                     for fut in concurrent.futures.as_completed(futures):
                         (loc, fitv, edges_dict,
-                        optf, edgef_map, neighf) = fut.result()
-                        # edgef_map is not needed during aggregation; we ignore it here
-                        _merge(loc, fitv, edges_dict, optf, edgef_map, neighf)
+                        optf, edgef_map, neighf, vc) = fut.result()
+                        _merge(loc, fitv, edges_dict, optf, edgef_map, neighf, vc)
 
                         done += 1
                         print(f"[{done}/{total}] Run completed")
@@ -314,7 +325,7 @@ def main(cfg: DictConfig):
             for i in range(total):
                 seed = base_seed + i
                 (loc, fitv, edges_dict,
-                 optf, edgef_map, neighf) = _run_single_lon_worker(
+                 optf, edgef_map, neighf, vc) = _run_single_lon_worker(
                     seed,
                     cfg.problem.dimensions,
                     weights,
@@ -328,7 +339,7 @@ def main(cfg: DictConfig):
                     violation_fn_dotted,  # OPTIONAL
                     viol_params,          # OPTIONAL
                 )
-                _merge(loc, fitv, edges_dict, optf, edgef_map, neighf)
+                _merge(loc, fitv, edges_dict, optf, edgef_map, neighf, vc)
 
                 done += 1
                 print(f"[{done}/{total}] Run completed")
@@ -365,6 +376,8 @@ def main(cfg: DictConfig):
             # per-optimum lists aligned with local_optima
             optima_feasibility = [int(opt_feas_lookup[opt]) for opt in L_local_optima]
             neighbour_feasibility = [float(neigh_feas_lookup[opt]) for opt in L_local_optima]
+            visit_counts = [aggregated["total_visit_count"].get(opt, 0) for opt in L_local_optima]
+            visit_proportions = [aggregated["total_visit_count"].get(opt, 0) / total for opt in L_local_optima]
 
             # per-edge feasibility dict (same keys as L_edges)
             edge_feas_map = _build_edge_feas_map(L_edges, opt_feas_lookup)
@@ -386,6 +399,8 @@ def main(cfg: DictConfig):
                 "edges": L_edges,                          # (src,dst) -> weight
                 "optima_feasibility": optima_feasibility,  # per-node (aligned)
                 "neighbour_feasibility": neighbour_feasibility,  # per-node (aligned)
+                "visit_counts": visit_counts,            # per-node total landings across all runs
+                "visit_proportions": visit_proportions,  # per-node visit_count / num_runs
                 # "edge_feas_map": edge_feas_map,            # (src,dst) -> 1/0 by target feasibility
             })
 

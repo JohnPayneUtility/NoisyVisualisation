@@ -946,7 +946,7 @@ def update_filtered_view(selected_rows, LON_table_data):
     # columns needed for plotting; feasibility may be absent for regular LONs
     LON_plotting_cols = [
         'local_optima', 'fitness_values', 'edges',
-        'optima_feasibility', 'neighbour_feasibility',
+        'optima_feasibility', 'neighbour_feasibility', 'visit_proportions',
     ]
 
     df_filtered = pd.DataFrame(selected_data)
@@ -969,8 +969,9 @@ def update_filtered_view(selected_rows, LON_table_data):
         "fitness_values": [],
         "edges": {},
         # feasibility maps (string-keyed for JSON)
-        "opt_feas_map": {},    # "1,0,1,..." -> 0/1
-        "neigh_feas_map": {},  # "1,0,1,..." -> float in [0,1]
+        "opt_feas_map": {},      # "1,0,1,..." -> 0/1
+        "neigh_feas_map": {},    # "1,0,1,..." -> float in [0,1]
+        "visit_prop_map": {},    # "1,0,1,..." -> float (visit_proportion)
     }
 
     def key_str_from_opt(opt):
@@ -984,6 +985,8 @@ def update_filtered_view(selected_rows, LON_table_data):
         feas_list = feas_raw if isinstance(feas_raw, list) else [0] * len(los)
         neigh_raw = row.get("neighbour_feasibility")
         neigh_list = neigh_raw if isinstance(neigh_raw, list) else [0.0] * len(los)
+        vp_raw = row.get("visit_proportions")
+        vp_list = vp_raw if isinstance(vp_raw, list) else [0.0] * len(los)
 
         combined["local_optima"].extend(los)
         combined["fitness_values"].extend(fvs)
@@ -994,11 +997,12 @@ def update_filtered_view(selected_rows, LON_table_data):
             target = tuple(target)
             combined["edges"][(source, target)] = combined["edges"].get((source, target), 0) + weight
 
-        # fill feasibility maps (string keys for JSON safety)
-        for opt, feas, neigh in zip(los, feas_list, neigh_list):
+        # fill feasibility and visit maps (string keys for JSON safety)
+        for opt, feas, neigh, vp in zip(los, feas_list, neigh_list, vp_list):
             k = key_str_from_opt(opt)
             combined["opt_feas_map"].setdefault(k, int(feas))
             combined["neigh_feas_map"].setdefault(k, float(neigh))
+            combined["visit_prop_map"].setdefault(k, float(vp))
 
     # your helper expects only core keys; convert & then attach the maps
     payload_for_split = {
@@ -1008,9 +1012,10 @@ def update_filtered_view(selected_rows, LON_table_data):
     }
     dict_result_SE = convert_to_split_edges_format(payload_for_split)
 
-    # attach JSON-safe feasibility maps
+    # attach JSON-safe feasibility and visit maps
     dict_result_SE["opt_feas_map"] = combined["opt_feas_map"]
     dict_result_SE["neigh_feas_map"] = combined["neigh_feas_map"]
+    dict_result_SE["visit_prop_map"] = combined["visit_prop_map"]
 
     return dict_result_SE
 
@@ -1649,12 +1654,14 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
     # ==========
     opt_feas_map = {}
     neigh_feas_map = {}
+    visit_prop_map = {}
 
     if local_optima:
         # Extract CoLON colour maps
         if isinstance(local_optima, dict):
             opt_feas_map = local_optima.get("opt_feas_map", {}) or {}
             neigh_feas_map = local_optima.get("neigh_feas_map", {}) or {}
+            visit_prop_map = local_optima.get("visit_prop_map", {}) or {}
 
         # Convert and filter local optima data
         local_optima_processed = convert_to_single_edges_format(local_optima)
@@ -1675,7 +1682,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
     # ==========
     # STEP 5: Apply node styling (sizes and colors)
     # ==========
-    style_nodes(G, config, opt_feas_map, neigh_feas_map)
+    style_nodes(G, config, opt_feas_map, neigh_feas_map, visit_prop_map)
 
     # ==========
     # STEP 6: Calculate statistics

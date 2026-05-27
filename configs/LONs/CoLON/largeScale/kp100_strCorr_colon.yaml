@@ -4,7 +4,7 @@ experiment_name: "test02_KP_LON"
 # Run Configuration
 # ==============================
 run:
-  num_runs: 50  # how many basin-hops (seeds) to aggregate
+  num_runs: 500  # how many basin-hops (seeds) to aggregate
   seed: 1
   parallel: true
   num_workers: 50
@@ -27,10 +27,11 @@ hydra:
 # ==============================
 lon:
   name: CoLON
-  pert_attempts: 3000
+  pert_attempts: 1500
   n_flips_mut: 1
   n_flips_pert: 2
-  compression_accs: ["None", 0, 1, 2, 5, 10]
+  compression_accs: ["None"]
+  # compression_accs: ["None", 0, 1, 2, 5, 10]
 
 # ==============================
 # Problem Configuration

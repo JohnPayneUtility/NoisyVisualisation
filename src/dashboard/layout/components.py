@@ -503,6 +503,7 @@ def create_lon_options_section():
                         {'label': 'Represent nodes as diamonds', 'value': 'LON-node-diamond'},
                         {'label': 'Display mesh', 'value': 'LON-display-mesh'},
                         {'label': 'Display surface', 'value': 'LON-display-surface'},
+                        {'label': 'Use visit proportion for size', 'value': 'LON-visit-size'},
                     ],
                     value=[],
                     labelStyle={'display': 'inline-block', 'margin-right': '10px'}

@@ -91,6 +91,7 @@ class LONConfig:
     edge_colour_feas: bool = False
     edge_size: float = 2.0
     lmds_multiplier: float = 1.0
+    visit_proportion_size: bool = False
 
 
 @dataclass
@@ -307,6 +308,7 @@ def parse_callback_inputs(
             edge_colour_feas='edge_feas' in (lon_edge_colour_feas or []),
             edge_size=lon_edge_size_slider,
             lmds_multiplier=lmds_multiplier if lmds_multiplier is not None else 1.0,
+            visit_proportion_size='LON-visit-size' in lon_options,
         ),
         noisy_lon=NoisyLONConfig(
             fit_func=nlon_fit_func,
