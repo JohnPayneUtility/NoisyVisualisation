@@ -737,6 +737,125 @@ def add_prior_noise_stn_v5(
             prev_base = node_base
 
 
+def add_prior_noise_stn_algo_pov(
+    G: nx.MultiDiGraph,
+    all_run_trajectories: List,
+    edge_color: str,
+    series_idx: int,
+    noisy_node_color: str = 'grey',
+    dedup: bool = False,
+    show_alt_rep: bool = False,
+    show_alt_rep_no_fit: bool = False,
+    stn_node_min: float = 5.0,
+    use_est_discarded_as_base: bool = False,
+) -> None:
+    """
+    Prior noise STN from the algorithm's point of view.
+
+    Base nodes use the noisy solution and noisy fitness (what the algorithm
+    evaluated and moved from). True nodes are satellites connected via grey
+    noise edges. The NoisyPath_SO chain runs between consecutive true nodes
+    and is gated by the 'show_noisy_path' toggle in the trace builder.
+
+    Entry format mirrors add_prior_noise_stn_v5 (8+ elements):
+        [rep_sols, rep_fits, rep_noisy_fits, sol_iterations,
+         sol_transitions, noisy_sol_variants, noisy_variant_fitnesses,
+         rep_noisy_sols, ...]
+    """
+    for run_idx, entry in enumerate(all_run_trajectories):
+        if len(entry) < 8:
+            print(f"[Prior noise algo POV] Skipping entry with {len(entry)} elements, expected 8")
+            continue
+
+        rep_sols, rep_fits, rep_noisy_fits, sol_iterations, transitions, \
+            _, fitness_boxplot_stats, rep_noisy_sols = entry[:8]
+        estimated_fits_adopted = entry[8] if len(entry) > 8 else []
+        estimated_fits_discarded = entry[9] if len(entry) > 9 else []
+        count_fits_adopted = entry[10] if len(entry) > 10 else []
+        count_fits_discarded = entry[11] if len(entry) > 11 else []
+        sol_evals = entry[12] if len(entry) > 12 else []
+        cumulative_evals = list(np.cumsum(sol_evals)) if sol_evals else []
+        alt_rep_sols = entry[13] if len(entry) > 13 else []
+        alt_rep_fits = entry[14] if len(entry) > 14 else []
+
+        if rep_sols is None:
+            continue
+
+        prev_base = None
+        prev_true = None
+
+        for i, noisy_sol in enumerate(rep_noisy_sols if rep_noisy_sols else []):
+            noisy_fit = rep_noisy_fits[i] if i < len(rep_noisy_fits) else None
+            true_sol = rep_sols[i] if i < len(rep_sols) else None
+            true_fit = rep_fits[i] if i < len(rep_fits) else None
+
+            if noisy_sol is None or noisy_fit is None:
+                continue
+
+            # -------- base node: noisy solution + noisy fitness --------
+            node_base = f"STN_S{series_idx}_R{run_idx}_Sol{i}_Noisy"
+            if node_base not in G.nodes:
+                G.add_node(
+                    node_base,
+                    type="STN_SO",
+                    is_noisy=False,
+                    solution=noisy_sol,
+                    fitness=noisy_fit,
+                    iterations=sol_iterations[i] if i < len(sol_iterations) else 1,
+                    evals=sol_evals[i] if i < len(sol_evals) else 0,
+                    sol_idx=i,
+                    run_idx=run_idx,
+                    series_idx=series_idx,
+                    color=edge_color,
+                    fitness_boxplot_stats=fitness_boxplot_stats[i] if i < len(fitness_boxplot_stats) else None,
+                    estimated_fitness_adopted=estimated_fits_adopted[i] if i < len(estimated_fits_adopted) else None,
+                    estimated_fitness_discarded=estimated_fits_discarded[i] if i < len(estimated_fits_discarded) else None,
+                    count_estimated_adopted=count_fits_adopted[i] if i < len(count_fits_adopted) else None,
+                    count_estimated_discarded=count_fits_discarded[i] if i < len(count_fits_discarded) else None,
+                    start_node=i == 0,
+                    end_node=i == len(rep_noisy_sols) - 1,
+                )
+
+            # -------- true satellite node: true solution + true fitness --------
+            if true_sol is not None and true_fit is not None:
+                node_true = f"STN_S{series_idx}_R{run_idx}_Sol{i}_True"
+                if node_true not in G.nodes:
+                    G.add_node(
+                        node_true,
+                        type="STN_SO_Noise",
+                        is_noisy=True,
+                        solution=true_sol,
+                        fitness=true_fit,
+                        sol_idx=i,
+                        run_idx=run_idx,
+                        series_idx=series_idx,
+                        color=edge_color,
+                    )
+                    G.add_edge(
+                        node_base, node_true,
+                        weight=0.5, color=noisy_node_color,
+                        edge_type="Noise_SO", is_noisy=True,
+                    )
+                # Chain between consecutive true nodes (gated by show_noisy_path in trace builder)
+                if prev_true is not None:
+                    G.add_edge(
+                        prev_true, node_true,
+                        weight=0.5, color=edge_color,
+                        edge_type="NoisyPath_SO", is_noisy=True,
+                    )
+                prev_true = node_true
+
+            # -------- temporal edge between base nodes --------
+            if prev_base is not None:
+                G.add_edge(
+                    prev_base, node_base,
+                    weight=0.5, color=edge_color,
+                    edge_type="STN_SO", is_noisy=False,
+                    evals=cumulative_evals[i] if i < len(cumulative_evals) else 0,
+                )
+            prev_base = node_base
+
+
 def add_lon_nodes(
     G: nx.MultiDiGraph,
     local_optima: Dict,

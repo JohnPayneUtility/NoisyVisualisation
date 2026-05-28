@@ -132,7 +132,7 @@ class PlotConfig:
     use_est_discarded_as_base: bool = False
 
     # Mode settings
-    stn_plot_type: str = 'posterior'  # 'posterior', 'prior', 'multiobjective'
+    stn_plot_type: str = 'posterior'  # 'posterior', 'posterior_algo_pov', 'prior_v4', 'prior_v5', 'prior_algo_pov', 'multiobjective'
     layout_type: str = 'mds'
     plot_type: str = 'RegLon'
     hover_info: str = 'fitness'

@@ -367,6 +367,7 @@ def create_multiobjective_options_section():
                     {'label': 'Posterior noise STN (algo POV)', 'value': 'posterior_algo_pov'},
                     {'label': 'Prior noise STN V4 plot', 'value': 'prior_v4'},
                     {'label': 'Prior noise STN V5 plot', 'value': 'prior_v5'},
+                    {'label': 'Prior noise STN (algo POV)', 'value': 'prior_algo_pov'},
                     {'label': 'Multiobjective STN plot', 'value': 'multiobjective'},
                 ],
                 value='posterior',

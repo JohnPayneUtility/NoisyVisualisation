@@ -29,6 +29,7 @@ from ..visualization import (
     add_mo_fronts,
     add_prior_noise_stn_v4,
     add_prior_noise_stn_v5,
+    add_prior_noise_stn_algo_pov,
     add_lon_nodes,
     add_lon_edges,
     debug_mo_counts,
@@ -1587,6 +1588,47 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                 selected_trajectories.extend(select_top_runs_by_fitness(all_run_trajectories, 1, anti_optimisation_goal))
 
             add_prior_noise_stn_v5(
+                G, selected_trajectories, edge_color, idx, config.noisy_node_color,
+                dedup=config.stn.dedup_prior_noise,
+                show_alt_rep=config.stn.show_alt_rep,
+                show_alt_rep_no_fit=config.stn.show_alt_rep_no_fit,
+                stn_node_min=config.node_size.stn_min,
+                use_est_discarded_as_base=config.use_est_discarded_as_base,
+            )
+
+            stn_algo_data.append((idx, selected_trajectories, all_run_trajectories))
+            summary_str = generate_run_summary_string(selected_trajectories)
+            debug_summaries.append((summary_str, edge_color))
+
+        summary_components = []
+        for summary_str, color in debug_summaries:
+            summary_components.append(
+                html.Div(summary_str, style={'color': color, 'whiteSpace': 'pre-wrap', 'marginBottom': '10px'})
+            )
+        debug_summary_component = html.Div(summary_components)
+
+    elif config.stn_plot_type == 'prior_algo_pov' and all_trajectories_list:
+        # Prior noise STN algo POV mode
+        print('ADDING NODES IN PRIOR NOISE STN ALGO POV MODE')
+        optimisation_goal = opt_goal[:3].lower() if opt_goal else 'max'
+
+        for idx, all_run_trajectories in enumerate(all_trajectories_list):
+            edge_color = config.algo_colors[idx % len(config.algo_colors)]
+
+            selected_trajectories = []
+            if config.n_runs_display > 0:
+                selected_trajectories.extend(all_run_trajectories[config.run_start_index:config.run_start_index + config.n_runs_display])
+            if config.show_best:
+                selected_trajectories.extend(select_top_runs_by_fitness(all_run_trajectories, 1, optimisation_goal))
+            if config.show_mean:
+                selected_trajectories.extend([get_mean_run(all_run_trajectories)])
+            if config.show_median:
+                selected_trajectories.extend([get_median_run(all_run_trajectories)])
+            if config.show_worst:
+                anti_optimisation_goal = 'min' if optimisation_goal == 'max' else 'max'
+                selected_trajectories.extend(select_top_runs_by_fitness(all_run_trajectories, 1, anti_optimisation_goal))
+
+            add_prior_noise_stn_algo_pov(
                 G, selected_trajectories, edge_color, idx, config.noisy_node_color,
                 dedup=config.stn.dedup_prior_noise,
                 show_alt_rep=config.stn.show_alt_rep,
