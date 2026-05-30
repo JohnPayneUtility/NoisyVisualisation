@@ -5,6 +5,7 @@ This module contains functions for calculating 2D positions of nodes
 using various layout algorithms (MDS, t-SNE, Kamada-Kawai, spring layout).
 """
 
+import re
 from typing import Dict, List, Tuple, Optional, Any
 import networkx as nx
 import numpy as np
@@ -324,6 +325,71 @@ def calculate_positions_so(
             sol = sol_key_fn(data.get('solution', []))
             if sol in solution_positions:
                 pos[node] = solution_positions[sol]
+
+    elif layout_type == 'hamming_delta_ref':
+        if continuous:
+            print('\033[31mHamming (delta, ref) is not defined for continuous solutions — falling back to spring layout\033[0m')
+            pos = nx.spring_layout(G, dim=2)
+        else:
+            print('\033[33mUsing Hamming (delta, ref) layout\033[0m')
+
+            # Build solution lookup for all nodes
+            node_sol = {}
+            for node, data in G.nodes(data=True):
+                sol_t = sol_tuple_ints(data.get('solution', []))
+                if sol_t:
+                    node_sol[node] = sol_t
+
+            if not node_sol:
+                print("ERROR: No solutions for Hamming (delta, ref) positioning")
+            else:
+                first_sol = next(iter(node_sol.values()))
+                reference = tuple(0 for _ in first_sol)
+
+                # --- New-format nodes: STN_S{s}_R{r}_Sol{i}_{suffix} ---
+                new_fmt_pattern = re.compile(
+                    r'^STN_S(\d+)_R(\d+)_Sol(\d+)_(True|FitNoisy|SolNoisy|Noisy)$'
+                )
+                new_fmt = {}  # (s, r, i, suffix) -> node
+                for node in node_sol:
+                    m = new_fmt_pattern.match(node)
+                    if m:
+                        key = (int(m.group(1)), int(m.group(2)), int(m.group(3)), m.group(4))
+                        new_fmt[key] = node
+
+                for (s, r, i, suffix), node in new_fmt.items():
+                    sol_t = node_sol[node]
+                    x = float(hamming_distance(sol_t, reference))
+                    if i == 0:
+                        y = 0.0
+                    else:
+                        prev_key = (s, r, i - 1, suffix)
+                        prev_node = new_fmt.get(prev_key)
+                        prev_sol = node_sol.get(prev_node) if prev_node else None
+                        y = float(hamming_distance(sol_t, prev_sol)) if prev_sol else 0.0
+                    pos[node] = (x, y)
+
+                # --- Old-format nodes: STN_{N} and Noisy_STN_{N} ---
+                # These merge solutions across runs; use graph in-edges to find predecessors.
+                new_fmt_node_set = set(new_fmt.values())
+                for node in node_sol:
+                    if node in new_fmt_node_set:
+                        continue
+                    sol_t = node_sol[node]
+                    x = float(hamming_distance(sol_t, reference))
+
+                    is_noisy = node.startswith('Noisy_')
+                    target_edge_type = 'NoisyPath_SO' if is_noisy else 'STN'
+
+                    pred_dists = []
+                    for pred, _, edata in G.in_edges(node, data=True):
+                        if edata.get('edge_type') == target_edge_type:
+                            pred_sol = node_sol.get(pred)
+                            if pred_sol:
+                                pred_dists.append(hamming_distance(sol_t, pred_sol))
+
+                    y = float(np.mean(pred_dists)) if pred_dists else 0.0
+                    pos[node] = (x, y)
 
     elif layout_type == 'raw':
         print('\033[33mUsing Raw Solution Values as positions\033[0m')

@@ -654,7 +654,8 @@ def create_plot_options_section():
                 {'label': 'Random Landmark MDS', 'value': 'r_lmds'},
                 {'label': 'FPS Landmark MDS', 'value': 'fps_lmds'},
                 {'label': 't-SNE dissimilarity', 'value': 'tsne'},
-                {'label': 'raw solution values', 'value': 'raw'}
+                {'label': 'raw solution values', 'value': 'raw'},
+                {'label': 'Hamming (delta, ref)', 'value': 'hamming_delta_ref'}
             ],
             value='mds',
             placeholder='Select a layout',
