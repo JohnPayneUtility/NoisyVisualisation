@@ -524,6 +524,19 @@ def create_2d_plot_tabs():
     ], style=SECTION_STYLE)
 
 
+def create_misjudgements_summary_table():
+    """
+    Create a placeholder div for the misjudgements summary table.
+
+    The table is populated by a callback and shows median ± std dev of
+    misjudgement counts per algorithm per noise level.
+
+    Returns:
+        html.Div: Container for the misjudgements summary table.
+    """
+    return html.Div(id='misjudgements-summary-table', style={'padding': '0 10px'})
+
+
 def create_performance_summary_table():
     """
     Create a placeholder div for the performance summary table.

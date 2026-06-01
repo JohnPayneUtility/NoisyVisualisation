@@ -11,6 +11,7 @@ from .components import (
     create_schematic_section,
     create_problem_selection_section,
     create_2d_plot_tabs,
+    create_misjudgements_summary_table,
     create_performance_summary_table,
     create_mann_whitney_table,
     create_evals_summary_table,
@@ -78,6 +79,9 @@ def create_layout(display2_df, display2_hidden_cols, display1_df, df_lon, lon_di
 
     # 2D performance plot tabs
     children.append(create_2d_plot_tabs())
+
+    # Misjudgements summary table (median ± std of misjudgement counts per noise level per algorithm)
+    children.append(create_misjudgements_summary_table())
 
     # Performance summary table (median ± std per noise level per algorithm)
     children.append(create_performance_summary_table())

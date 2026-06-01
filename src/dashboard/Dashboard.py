@@ -528,6 +528,70 @@ def display_box_misjudgements_so(data, fit_func, plot_theme, noise_cap, hidden_s
     plot_df = _hide_series(_cap_noise(pd.DataFrame(data), noise_cap), hidden_series)
     return plot2d_box_misjudgements_so(plot_df, xaxis_title=xaxis_label, colorscale=plot_theme or 'Viridis')
 
+# ---------- Misjudgements summary table ----------
+@app.callback(
+    Output('misjudgements-summary-table', 'children'),
+    Input('plot_2d_data', 'data'),
+    Input('fit_func_store', 'data'),
+)
+def update_misjudgements_summary_table(data, fit_func):
+    if not fit_func:
+        return html.P(
+            "Select a problem from the table above to see the misjudgements summary.",
+            style={'color': '#888', 'fontStyle': 'italic', 'padding': '8px 0'}
+        )
+    if not data:
+        return html.P("No data available.", style={'color': '#888', 'fontStyle': 'italic'})
+
+    plot_df = pd.DataFrame(data)
+
+    if 'n_misjudgements' not in plot_df.columns:
+        return html.P("No misjudgement data available.", style={'color': '#888', 'fontStyle': 'italic'})
+
+    df_sub = plot_df[['algo_name', 'noise', 'n_misjudgements']].dropna(subset=['n_misjudgements'])
+    if df_sub.empty:
+        return html.P("No misjudgement data available.", style={'color': '#888', 'fontStyle': 'italic'})
+
+    stats = df_sub.groupby(['noise', 'algo_name'])['n_misjudgements'].agg(['median', 'std']).reset_index()
+
+    algos = sorted(stats['algo_name'].unique())
+    noise_levels = sorted(stats['noise'].unique())
+
+    rows = []
+    for noise in noise_levels:
+        row = {'Noise Level': noise}
+        noise_stats = stats[stats['noise'] == noise]
+        for algo in algos:
+            algo_row = noise_stats[noise_stats['algo_name'] == algo]
+            if algo_row.empty:
+                row[algo] = '-'
+            else:
+                med = algo_row['median'].values[0]
+                std = algo_row['std'].values[0]
+                std_str = f'{std:.3f}' if pd.notna(std) else 'N/A'
+                row[algo] = f'{med:.3f} ± {std_str}'
+        rows.append(row)
+
+    columns = [{'name': 'Noise Level', 'id': 'Noise Level'}] + [{'name': a, 'id': a} for a in algos]
+
+    table = dash_table.DataTable(
+        data=rows,
+        columns=columns,
+        style_header={'fontWeight': 'bold', 'backgroundColor': '#f0f0f0', 'textAlign': 'center'},
+        style_cell={'textAlign': 'center', 'padding': '6px 12px', 'fontFamily': 'monospace'},
+        style_table={'marginBottom': '8px'},
+    )
+
+    return html.Div([
+        html.H5("Misjudgements Summary: Median ± Std Dev by Noise Level",
+                style={'marginTop': '16px', 'marginBottom': '4px'}),
+        html.P("Median number of misjudgements per run across all runs, by algorithm and noise level.",
+               style={'color': '#555', 'fontSize': '12px', 'marginBottom': '8px'}),
+        table,
+        html.Hr(),
+    ])
+
+
 # ---------- Performance summary table ----------
 @app.callback(
     Output('performance-summary-table', 'children'),
