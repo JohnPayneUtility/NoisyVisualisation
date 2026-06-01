@@ -656,6 +656,7 @@ def create_axis_settings(
         Tuple of (xaxis_settings, yaxis_settings, zaxis_settings)
     """
     # Calculate substitute values for when custom axis range is missing
+    axis_config = config.axis
     if len(G.nodes) > 0:
         x_values = [pos[node][0] for node in G.nodes() if node in pos]
         y_values = [pos[node][1] for node in G.nodes() if node in pos]
@@ -679,6 +680,33 @@ def create_axis_settings(
         if node_noise:
             z_max_sub = max(max(noisy_list) for noisy_list in node_noise.values()) + 1
             z_min_sub = min(min(noisy_list) for noisy_list in node_noise.values()) - 1
+
+        # When z is clamped but x/y are not explicitly set, derive x/y ranges from
+        # only the nodes whose fitness falls within the visible z window so that
+        # Plotly's auto-scaling reflects the actual visible content.
+        z_lo = axis_config.z_min
+        z_hi = axis_config.z_max
+        if (z_lo is not None or z_hi is not None) and axis_config.x_min is None and axis_config.x_max is None:
+            vis_x = [
+                pos[node][0]
+                for node, data in G.nodes(data=True)
+                if node in pos and 'fitness' in data
+                and (z_lo is None or data['fitness'] >= z_lo)
+                and (z_hi is None or data['fitness'] <= z_hi)
+            ]
+            if vis_x:
+                x_min_sub, x_max_sub = min(vis_x) - 1, max(vis_x) + 1
+
+        if (z_lo is not None or z_hi is not None) and axis_config.y_min is None and axis_config.y_max is None:
+            vis_y = [
+                pos[node][1]
+                for node, data in G.nodes(data=True)
+                if node in pos and 'fitness' in data
+                and (z_lo is None or data['fitness'] >= z_lo)
+                and (z_hi is None or data['fitness'] <= z_hi)
+            ]
+            if vis_y:
+                y_min_sub, y_max_sub = min(vis_y) - 1, max(vis_y) + 1
     else:
         x_min_sub = x_max_sub = y_min_sub = y_max_sub = z_min_sub = z_max_sub = 1
 
@@ -707,18 +735,24 @@ def create_axis_settings(
     )
 
     # Apply custom axis options
-    axis_config = config.axis
+    z_clamped = axis_config.z_min is not None or axis_config.z_max is not None
+
     if axis_config.x_min is not None or axis_config.x_max is not None:
         custom_x_min = axis_config.x_min if axis_config.x_min is not None else x_min_sub
         custom_x_max = axis_config.x_max if axis_config.x_max is not None else x_max_sub
         xaxis_settings["range"] = [custom_x_min, custom_x_max]
+    elif z_clamped:
+        # Explicitly set so Plotly clips to the z-filtered node range instead of all trace data
+        xaxis_settings["range"] = [x_min_sub, x_max_sub]
 
     if axis_config.y_min is not None or axis_config.y_max is not None:
         custom_y_min = axis_config.y_min if axis_config.y_min is not None else y_min_sub
         custom_y_max = axis_config.y_max if axis_config.y_max is not None else y_max_sub
         yaxis_settings["range"] = [custom_y_min, custom_y_max]
+    elif z_clamped:
+        yaxis_settings["range"] = [y_min_sub, y_max_sub]
 
-    if axis_config.z_min is not None or axis_config.z_max is not None:
+    if z_clamped:
         custom_z_min = axis_config.z_min if axis_config.z_min is not None else z_min_sub
         custom_z_max = axis_config.z_max if axis_config.z_max is not None else z_max_sub
         zaxis_settings["range"] = [custom_z_min, custom_z_max]
