@@ -161,11 +161,34 @@ FIT_FUNC_XAXIS_LABELS = {
     'birastrigin_eval': 'sigma (s.d. of gaussian Noise N(0, sigma))',
 }
 
+# ---------- Fit function -> short noise parameter name (for series labels) ----------
+FIT_FUNC_NOISE_PARAM_LABEL = {
+    'OneMax_fitness': 'sigma',
+    'OneMax_prior_bitflip_fitness': 'p',
+    'OneMax_prior_mult_bitflip_fitness': 'k',
+    'OneMax_prior_pq_bitwise_fitness': 'q',
+    'OneMax_prior_1q_bitwise_fitness': 'q',
+    'eval_noisy_kp_v1': 'd',
+    'eval_noisy_kp_v2': 'd',
+    'eval_noisy_kp_prior_bitflip': 'p',
+    'eval_noisy_kp_prior_mult_bitflip': 'k',
+    'eval_noisy_kp_pq_prior_bitwise': 'q',
+    'eval_noisy_kp_1q_prior_bitwise': 'q',
+    'rastrigin_eval': 'sigma',
+    'birastrigin_eval': 'sigma',
+}
+
 def _get_so_xaxis_label(fit_func):
     """Return the x-axis label for the given fit_func, or None if unset."""
     if not fit_func:
         return None
     return FIT_FUNC_XAXIS_LABELS.get(fit_func, fit_func)
+
+def _get_noise_param_label(fit_func):
+    """Return the short noise parameter name for series labels (e.g. 'sigma', 'd'), defaulting to 'noise'."""
+    if not fit_func:
+        return 'noise'
+    return FIT_FUNC_NOISE_PARAM_LABEL.get(fit_func, 'noise')
 
 
 def _get_problem_goal(opt_goal):
@@ -1280,7 +1303,7 @@ def clean_axis_values(custom_x_min, custom_x_max, custom_y_min, custom_y_max, cu
         "log_z": 'log_z' in (log_z or []),
     }
 
-def _build_stn_stats_table(stn_algo_data, stn_labels, problem_goal='maximise'):
+def _build_stn_stats_table(stn_algo_data, stn_labels, problem_goal='maximise', noise_param_label='noise'):
     """Build the STN stats DataTable from per-algorithm trajectory data."""
     if not stn_algo_data:
         return html.Div()
@@ -1305,7 +1328,7 @@ def _build_stn_stats_table(stn_algo_data, stn_labels, problem_goal='maximise'):
         label = stn_labels[idx] if stn_labels and idx < len(stn_labels) else [f'Algo {idx}']
         algo_name = label[0] if len(label) > 0 else f'Algo {idx}'
         noise = label[1] if len(label) > 1 else '?'
-        algo_name = f'{algo_name} noise={noise}'
+        algo_name = f'{algo_name} {noise_param_label}={noise}'
 
         nodes_per_run = [
             len(entry[0]) for entry in selected_trajectories
@@ -1527,6 +1550,14 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                     for i, lbl in enumerate(labels)
                 ]
 
+    # Resolve noise parameter label once (used in info panel and stats table)
+    annotation_opts_early = annotation_options or []
+    noise_param = (
+        _get_noise_param_label(fit_func)
+        if 'problem-specific-noise-label' in annotation_opts_early
+        else 'noise'
+    )
+
     # ==========
     # STEP 2: Initialize graph and node mappings
     # ==========
@@ -1723,7 +1754,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
     else:
         debug_summary_component = html.Div("No trajectory data available.")
 
-    stn_stats_table = _build_stn_stats_table(stn_algo_data, STN_labels, problem_goal=opt_goal)
+    stn_stats_table = _build_stn_stats_table(stn_algo_data, STN_labels, problem_goal=opt_goal, noise_param_label=noise_param)
 
     print('STN TRAJECTORIES ADDED')
     debug_mo_counts(G, by="run_idx", label="[MO]", list_fronts=True, max_list=50)
@@ -1930,11 +1961,11 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                     noise = label[1] if len(label) > 1 else '?'
                     color = config.algo_colors[idx % len(config.algo_colors)]
                     if condense and all_same_algo:
-                        label_text = f'noise={noise}'
+                        label_text = f'{noise_param}={noise}'
                     elif condense and all_same_noise:
                         label_text = f'<b>{algo_name}</b>'
                     else:
-                        label_text = f'<b>{algo_name}</b> noise={noise}'
+                        label_text = f'<b>{algo_name}</b> {noise_param}={noise}'
                     lines.append(f'<span style="color:{color}">{label_text}</span>')
             if lines:
                 annotation_kwargs = dict(

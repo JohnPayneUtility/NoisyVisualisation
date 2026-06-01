@@ -1245,6 +1245,7 @@ def create_annotation_options_section():
                 {'label': ' Print mode', 'value': 'print-mode'},
                 {'label': ' Condense names in print mode', 'value': 'condense-print-names'},
                 {'label': ' Show guides', 'value': 'show-guides'},
+                {'label': ' Problem specific noise label', 'value': 'problem-specific-noise-label'},
             ],
             value=['annotate-start-nodes', 'annotate-optimum', 'annotate-end-nodes', 'annotate-mistakes', 'annotate-info-panel'],
             inline=True,
