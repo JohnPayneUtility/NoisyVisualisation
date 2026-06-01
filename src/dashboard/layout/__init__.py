@@ -6,6 +6,7 @@ The main entry point is the create_layout function.
 """
 
 from .main_layout import create_layout
+from .components import _build_schematic_figure, _build_schematic_legend
 
 # Export style constants that may be needed by callbacks
 from .styles import (
@@ -41,6 +42,9 @@ from .stores import (
 __all__ = [
     # Main layout function
     'create_layout',
+    # Schematic helpers (used by callbacks)
+    '_build_schematic_figure',
+    '_build_schematic_legend',
     # Style constants
     'TAB_STYLE',
     'TAB_SELECTED_STYLE',

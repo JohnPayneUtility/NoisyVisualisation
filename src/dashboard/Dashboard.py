@@ -17,7 +17,7 @@ from .DashboardHelpers import *
 from ..problems.FitnessFunctions import *
 from ..problems.ProblemScripts import load_problem_KP
 from .DimensionalityReduction import *
-from .layout import create_layout, TAB_STYLE, TAB_SELECTED_STYLE
+from .layout import create_layout, TAB_STYLE, TAB_SELECTED_STYLE, _build_schematic_figure, _build_schematic_legend
 from .layout.stores import LON_TABLE_SELECTED_PID_STORE
 
 # Visualization module imports
@@ -171,6 +171,25 @@ def _get_so_xaxis_label(fit_func):
 def _get_problem_goal(opt_goal):
     """Return the problem_goal ('maximise' or 'minimise') from the opt_goal store."""
     return opt_goal or 'maximise'
+
+# ------------------------------
+# Callbacks: Schematic
+# ------------------------------
+
+@app.callback(
+    Output('schematic-graph', 'figure'),
+    Output('schematic-legend', 'children'),
+    Input('schematic-misjudgements', 'value'),
+    Input('schematic-simple-annotations', 'value'),
+)
+def update_schematic(misjudgement_values, simple_values):
+    simple = bool(simple_values and 'simple' in simple_values)
+    misjudgements = bool(misjudgement_values and 'misjudgements' in misjudgement_values)
+    return (
+        _build_schematic_figure(simple_mode=simple, show_misjudgements=misjudgements),
+        _build_schematic_legend(simple_mode=simple, show_misjudgements=misjudgements),
+    )
+
 
 # ------------------------------
 # Callbacks: Update Selection Stores
@@ -1419,7 +1438,8 @@ def handle_print_mode(annotation_options):
      Input('info-panel-y', 'value'),
      Input('axes-text-scale', 'value'),
      Input('annotation-text-scale', 'value'),
-     Input('plot-theme', 'value')]
+     Input('plot-theme', 'value'),
+     Input('plot_2d_data', 'data')]
 )
 def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limit,
                 LO_fit_percent, LON_options, LON_node_colour_mode, LON_surface_colour, LON_edge_colour_feas,
@@ -1431,7 +1451,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                 LON_edge_size_slider, STN_edge_size_slider, noisy_fitnesses_list,
                 stn_plot_type, STN_MO_data, STN_MO_series_labels, stn_node_size_metric,
                 annotation_options, fit_func, info_panel_x, info_panel_y,
-                axes_text_scale, annotation_text_scale, plot_theme):
+                axes_text_scale, annotation_text_scale, plot_theme, plot_2d_data):
     """
     Main visualization callback - orchestrates the visualization pipeline.
 
@@ -1489,6 +1509,23 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
         if n_series > 0:
             positions = [i / max(n_series - 1, 1) for i in range(n_series)]
             config.algo_colors = [px.colors.sample_colorscale(config.colorscale, p)[0] for p in positions]
+
+    # Lock colours by algorithm name (matching the 2D performance plot color mapping)
+    if 'lock-algo-colours' in (run_options or []) and plot_2d_data:
+        all_algo_df = pd.DataFrame(plot_2d_data)
+        if 'algo_name' in all_algo_df.columns:
+            all_algos = sorted(all_algo_df['algo_name'].dropna().unique().tolist())
+            n_all = len(all_algos)
+            if n_all > 0:
+                positions = [i / max(n_all - 1, 1) for i in range(n_all)] if n_all > 1 else [0.5]
+                all_colors = px.colors.sample_colorscale(config.colorscale, positions)
+                algo_color_map = dict(zip(all_algos, all_colors))
+                labels = STN_labels or STN_MO_series_labels or []
+                config.algo_colors = [
+                    algo_color_map.get(lbl[0] if isinstance(lbl, (list, tuple)) else lbl,
+                                       config.algo_colors[i % len(config.algo_colors)])
+                    for i, lbl in enumerate(labels)
+                ]
 
     # ==========
     # STEP 2: Initialize graph and node mappings

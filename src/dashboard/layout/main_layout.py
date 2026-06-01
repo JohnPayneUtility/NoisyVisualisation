@@ -8,6 +8,7 @@ from dash import html, dcc
 
 from .stores import create_all_stores
 from .components import (
+    create_schematic_section,
     create_problem_selection_section,
     create_2d_plot_tabs,
     create_performance_summary_table,
@@ -65,6 +66,9 @@ def create_layout(display2_df, display2_hidden_cols, display1_df, df_lon, lon_di
             style={'width': '200px', 'display': 'inline-block', 'verticalAlign': 'middle'},
         ),
     ], style={'textAlign': 'center', 'marginBottom': '10px'}))
+
+    # Schematic: static illustrative plot explaining STN plot elements
+    children.append(create_schematic_section())
 
     # Hidden stores for state management
     children.extend(create_all_stores())

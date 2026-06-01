@@ -4,6 +4,7 @@ Reusable UI component functions for Dashboard layout.
 Each function returns a Dash component or group of components
 that can be assembled in the main layout.
 """
+import plotly.graph_objects as go
 from dash import html, dcc, dash_table
 
 from .styles import (
@@ -24,6 +25,341 @@ from .styles import (
     FULL_WIDTH_INLINE_STYLE,
     MONOSPACE_STYLE,
 )
+
+
+_SCHEMATIC_SERIES_COLOR = '#21918c'
+_SCHEMATIC_SAT_COLOR = '#9e9e9e'
+
+
+def _build_schematic_figure(simple_mode: bool = False, show_misjudgements: bool = False) -> go.Figure:
+    """Build a Plotly 3D figure illustrating STN plot elements.
+
+    simple_mode: label elements A/B/C/D/E inline instead of verbose annotations.
+    show_misjudgements: add a 3rd base node + satellite showing a misjudgement.
+    """
+    series_color = _SCHEMATIC_SERIES_COLOR
+    sat_color = _SCHEMATIC_SAT_COLOR
+    noise_color = 'grey'
+    label_size = 16 if simple_mode else 13  # larger inline labels when simple mode is on
+
+    # Node positions: (x, y, z=fitness)
+    # Base nodes carry the noisy (evaluated) position; satellites carry the true position.
+    bx_a, by_a, bz_a = 0.0, 0.0, 6.8   # base node 1 — noisy fitness
+    bx_b, by_b, bz_b = 3.2, 1.5, 9.8   # base node 2 — noisy fitness, slight y offset
+    sx_a, sy_a, sz_a = 0.0, 0.0, 5.0   # C1: posterior noise satellite — same x-y, lower true fitness
+    sx_b, sy_b, sz_b = 4.0, 0.7, 8.0   # C2: prior noise satellite — offset x-y, lower true fitness
+
+    # Base node 3: noisy fitness above node 2 (looks attractive), true fitness much lower → misjudgement
+    bx_c, by_c, bz_c = 8.2, 1.5, 10.5
+    sx_c, sy_c, sz_c = 7.5, 0.4, 6.5   # satellite 3 — true fitness, much lower than noisy
+
+    traces = []
+
+    # STN transition edges: 1→2 (always), 2→3 (misjudgement only)
+    stn_xs = [bx_a, bx_b]
+    stn_ys = [by_a, by_b]
+    stn_zs = [bz_a, bz_b]
+    if show_misjudgements:
+        stn_xs += [None, bx_b, bx_c]
+        stn_ys += [None, by_b, by_c]
+        stn_zs += [None, bz_b, bz_c]
+    traces.append(go.Scatter3d(
+        x=stn_xs, y=stn_ys, z=stn_zs,
+        mode='lines',
+        line=dict(width=5, color=series_color),
+        hoverinfo='none', showlegend=False,
+    ))
+
+    # Noise edges (grey solid): base → satellite
+    noise_pairs = [
+        ((bx_a, by_a, bz_a), (sx_a, sy_a, sz_a)),
+        ((bx_b, by_b, bz_b), (sx_b, sy_b, sz_b)),
+    ]
+    if show_misjudgements:
+        noise_pairs.append(((bx_c, by_c, bz_c), (sx_c, sy_c, sz_c)))
+    for (x0, y0, z0), (x1, y1, z1) in noise_pairs:
+        traces.append(go.Scatter3d(
+            x=[x0, x1], y=[y0, y1], z=[z0, z1],
+            mode='lines',
+            line=dict(width=3, color=noise_color),
+            hoverinfo='none', showlegend=False,
+        ))
+
+    # Base nodes (circles) — label A in simple mode
+    base_xs = [bx_a, bx_b]
+    base_ys = [by_a, by_b]
+    base_zs = [bz_a, bz_b]
+    base_labels = ['A', 'A']
+    if show_misjudgements:
+        base_xs.append(bx_c)
+        base_ys.append(by_c)
+        base_zs.append(bz_c)
+        base_labels.append('A')
+    traces.append(go.Scatter3d(
+        x=base_xs, y=base_ys, z=base_zs,
+        mode='markers+text' if simple_mode else 'markers',
+        marker=dict(size=14, color=series_color, symbol='circle'),
+        text=base_labels if simple_mode else None,
+        textposition='top center',
+        textfont=dict(size=label_size, color='black'),
+        hoverinfo='none', showlegend=False,
+    ))
+
+    # True satellite nodes (squares, grey) — C1/C2(/C3) in simple mode
+    sat_xs = [sx_a, sx_b]
+    sat_ys = [sy_a, sy_b]
+    sat_zs = [sz_a, sz_b]
+    sat_labels = ['C1', 'C2']
+    if show_misjudgements:
+        sat_xs.append(sx_c)
+        sat_ys.append(sy_c)
+        sat_zs.append(sz_c)
+        sat_labels.append('C2')
+    traces.append(go.Scatter3d(
+        x=sat_xs, y=sat_ys, z=sat_zs,
+        mode='markers+text' if simple_mode else 'markers',
+        marker=dict(size=10, color=sat_color, symbol='square'),
+        text=sat_labels if simple_mode else None,
+        textposition='top center',
+        textfont=dict(size=13, color='black'),
+        hoverinfo='none', showlegend=False,
+    ))
+
+    # Build scene annotations
+    if simple_mode:
+        # B label at STN edge 1→2 midpoint; D labels at noise edge midpoints
+        traces.append(go.Scatter3d(
+            x=[(bx_a + bx_b) / 2], y=[(by_a + by_b) / 2], z=[(bz_a + bz_b) / 2],
+            mode='text', text=['B'],
+            textfont=dict(size=label_size, color=series_color),
+            hoverinfo='none', showlegend=False,
+        ))
+        d_xs = [(bx_a + sx_a) / 2, (bx_b + sx_b) / 2]
+        d_ys = [(by_a + sy_a) / 2, (by_b + sy_b) / 2]
+        d_zs = [(bz_a + sz_a) / 2, (bz_b + sz_b) / 2]
+        d_text = ['D', 'D']
+        if show_misjudgements:
+            d_xs.append((bx_c + sx_c) / 2)
+            d_ys.append((by_c + sy_c) / 2)
+            d_zs.append((bz_c + sz_c) / 2)
+            d_text.append('D')
+        traces.append(go.Scatter3d(
+            x=d_xs, y=d_ys, z=d_zs,
+            mode='text', text=d_text,
+            textfont=dict(size=label_size, color='grey'),
+            hoverinfo='none', showlegend=False,
+        ))
+        if show_misjudgements:
+            # B label at STN edge 2→3 midpoint
+            traces.append(go.Scatter3d(
+                x=[(bx_b + bx_c) / 2], y=[(by_b + by_c) / 2], z=[(bz_b + bz_c) / 2],
+                mode='text', text=['B'],
+                textfont=dict(size=label_size, color=series_color),
+                hoverinfo='none', showlegend=False,
+            ))
+        scene_annotations = []
+    else:
+        scene_annotations = [
+            dict(
+                x=bx_a, y=by_a, z=bz_a,
+                text='Base node<br>(noisy sol, noisy fit)',
+                showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5,
+                arrowcolor='black', ax=-90, ay=0,
+                font=dict(size=11, color='black'),
+            ),
+            dict(
+                x=bx_b, y=by_b, z=bz_b,
+                text='Base node<br>(noisy sol, noisy fit)',
+                showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5,
+                arrowcolor='black', ax=90, ay=0,
+                font=dict(size=11, color='black'),
+            ),
+            dict(
+                x=sx_a, y=sy_a, z=sz_a,
+                text='C1: Posterior noise satellite<br>(same x-y, different fitness)',
+                showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5,
+                arrowcolor='black', ax=-110, ay=30,
+                font=dict(size=11, color='black'),
+            ),
+            dict(
+                x=sx_b, y=sy_b, z=sz_b,
+                text='C2: Prior noise satellite<br>(offset x-y and different fitness)',
+                showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5,
+                arrowcolor='black', ax=110, ay=30,
+                font=dict(size=11, color='black'),
+            ),
+            dict(
+                x=(bx_a + bx_b) / 2, y=(by_a + by_b) / 2, z=(bz_a + bz_b) / 2,
+                text='STN transition edge<br>(algorithm movement)',
+                showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5,
+                arrowcolor=series_color, ax=0, ay=60,
+                font=dict(size=11, color=series_color),
+            ),
+            dict(
+                x=(bx_a + sx_a) / 2, y=(by_a + sy_a) / 2, z=(bz_a + sz_a) / 2,
+                text='Noise edge<br>(noisy vs true sol)',
+                showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5,
+                arrowcolor='grey', ax=-90, ay=0,
+                font=dict(size=11, color='grey'),
+            ),
+            dict(
+                x=(bx_b + sx_b) / 2, y=(by_b + sy_b) / 2, z=(bz_b + sz_b) / 2,
+                text='Noise edge<br>(noisy vs true sol)',
+                showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5,
+                arrowcolor='grey', ax=90, ay=0,
+                font=dict(size=11, color='grey'),
+            ),
+        ]
+        if show_misjudgements:
+            scene_annotations.append(dict(
+                x=(bx_c + sx_c) / 2, y=(by_c + sy_c) / 2, z=(bz_c + sz_c) / 2,
+                text='Noise edge<br>(noisy vs true sol)',
+                showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5,
+                arrowcolor='grey', ax=90, ay=0,
+                font=dict(size=11, color='grey'),
+            ))
+
+    # Misjudgement annotation (red arrow) — added in both modes when enabled
+    if show_misjudgements:
+        mj_text = 'E' if simple_mode else 'Misjudgement<br>(moved to worse true fitness)'
+        # verbose mode uses a long ax offset so the arrow is clearly visible
+        mj_ax = 20 if simple_mode else 90
+        scene_annotations.append(dict(
+            x=bx_c, y=by_c, z=bz_c,
+            text=mj_text,
+            showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5,
+            arrowcolor='red', ax=mj_ax, ay=0,
+            font=dict(size=label_size, color='red'),
+        ))
+
+    import math
+    az_rad = math.radians(35)
+    el_rad = math.radians(60)
+    r = 2.0
+    cam = dict(
+        x=r * math.cos(el_rad) * math.cos(az_rad),
+        y=r * math.cos(el_rad) * math.sin(az_rad),
+        z=r * math.sin(el_rad),
+    )
+
+    axis_title_size = 24 if simple_mode else 14
+    axis_tick_size = 16 if simple_mode else 12
+
+    scene_dict = dict(
+        camera=dict(eye=cam),
+        xaxis=dict(
+            title='Dimension 1',
+            titlefont=dict(size=axis_title_size, color='black'),
+            tickfont=dict(size=axis_tick_size, color='black'),
+            showticklabels=False,
+        ),
+        yaxis=dict(
+            title='Dimension 2',
+            titlefont=dict(size=axis_title_size, color='black'),
+            tickfont=dict(size=axis_tick_size, color='black'),
+            showticklabels=False,
+        ),
+        zaxis=dict(
+            title='Fitness',
+            titlefont=dict(size=axis_title_size, color='black'),
+            tickfont=dict(size=axis_tick_size, color='black'),
+        ),
+    )
+    if scene_annotations:
+        scene_dict['annotations'] = scene_annotations
+
+    fig = go.Figure(data=traces)
+    fig.update_layout(
+        width=820, height=550,
+        margin=dict(l=0, r=0, t=0, b=0),
+        template='plotly_white',
+        showlegend=False,
+        scene=scene_dict,
+    )
+    return fig
+
+
+def _build_schematic_legend(simple_mode: bool = False, show_misjudgements: bool = False) -> list:
+    """Return the children list for the schematic legend div."""
+    series_color = _SCHEMATIC_SERIES_COLOR
+    sat_color = _SCHEMATIC_SAT_COLOR
+
+    item_style = {'display': 'flex', 'alignItems': 'center', 'marginBottom': '6px', 'fontSize': '13px'}
+    sym_base = {
+        'width': '20px', 'height': '20px', 'borderRadius': '50%',
+        'backgroundColor': series_color, 'marginRight': '10px', 'flexShrink': '0',
+    }
+    sym_sat = {
+        'width': '16px', 'height': '16px',
+        'backgroundColor': sat_color, 'marginRight': '10px', 'flexShrink': '0',
+    }
+    line_stn = {
+        'width': '30px', 'height': '4px',
+        'backgroundColor': series_color, 'marginRight': '10px', 'flexShrink': '0',
+    }
+    line_noise = {
+        'width': '30px', 'height': '3px',
+        'backgroundColor': '#888', 'marginRight': '10px', 'flexShrink': '0',
+    }
+    arrow_mj = {
+        'width': '30px', 'height': '3px',
+        'backgroundColor': 'red', 'marginRight': '10px', 'flexShrink': '0',
+    }
+
+    prefix_a  = 'A: '  if simple_mode else ''
+    prefix_b  = 'B: '  if simple_mode else ''
+    prefix_c1 = 'C1: ' if simple_mode else ''
+    prefix_c2 = 'C2: ' if simple_mode else ''
+    prefix_d  = 'D: '  if simple_mode else ''
+    prefix_e  = 'E: '  if simple_mode else ''
+
+    items = [
+        html.B("Legend", style={'display': 'block', 'marginBottom': '8px'}),
+        html.Div([html.Div(style=sym_base),  html.Span(f"{prefix_a}Base node — the solution the algorithm evaluated and moved from (noisy solution, noisy fitness)")], style=item_style),
+        html.Div([html.Div(style=line_stn),  html.Span(f"{prefix_b}STN transition edge — the algorithm accepted this solution and moved from one base node to another")], style=item_style),
+        html.Div([html.Div(style=sym_sat),   html.Span(f"{prefix_c1}Posterior noise satellite — true solution shares the same x-y position as its base node, only fitness differs")], style=item_style),
+        html.Div([html.Div(style=sym_sat),   html.Span(f"{prefix_c2}Prior noise satellite — true solution is offset in both x-y position and fitness from its base node")], style=item_style),
+        html.Div([html.Div(style=line_noise),html.Span(f"{prefix_d}Noise edge — connects each base node to its true satellite (offset = difference between noisy and true solution)")], style=item_style),
+    ]
+    if show_misjudgements:
+        items.append(
+            html.Div([html.Div(style=arrow_mj), html.Span(f"{prefix_e}Misjudgement — the algorithm moved to a node with lower true fitness because the noisy evaluation made it appear better")], style=item_style)
+        )
+    return items
+
+
+def create_schematic_section() -> html.Div:
+    """
+    Create the schematic section: a 3D plot illustrating STN plot elements,
+    with checkboxes to toggle simple annotations and misjudgement illustration.
+    """
+    return html.Div([
+        html.H2("Schematic", style={'textAlign': 'center', 'marginBottom': '4px'}),
+        html.Div([
+            dcc.Checklist(
+                id='schematic-misjudgements',
+                options=[{'label': ' Misjudgements', 'value': 'misjudgements'}],
+                value=[],
+                style={'display': 'inline-block', 'marginRight': '20px'},
+            ),
+            dcc.Checklist(
+                id='schematic-simple-annotations',
+                options=[{'label': ' Simple annotations', 'value': 'simple'}],
+                value=[],
+                style={'display': 'inline-block'},
+            ),
+        ], style={'textAlign': 'center', 'marginBottom': '8px'}),
+        dcc.Graph(
+            id='schematic-graph',
+            figure=_build_schematic_figure(simple_mode=False, show_misjudgements=False),
+            config={'displayModeBar': False},
+        ),
+        html.Div(
+            id='schematic-legend',
+            children=_build_schematic_legend(simple_mode=False, show_misjudgements=False),
+            style={'padding': '10px 20px 14px'},
+        ),
+    ], style={'borderBottom': '2px solid #ddd', 'marginBottom': '10px', 'paddingBottom': '10px'})
 
 
 def create_problem_selection_section(display1_df, df_lon, lon_display_columns, experiment_names, experiment_descriptions=None):
@@ -456,6 +792,7 @@ def create_stn_options_section():
                 {'label': 'Show noisy nodes as squares', 'value': 'noisy-nodes-square'},
                 {'label': 'Show noisy path', 'value': 'show_noisy_path'},
                 {'label': 'Use viridis for series', 'value': 'use-viridis'},
+                {'label': 'Lock algo colours', 'value': 'lock-algo-colours'},
             ],
             value=['noisy-nodes-square', 'use-viridis'],
             labelStyle={'display': 'inline-block', 'margin-right': '10px'}
