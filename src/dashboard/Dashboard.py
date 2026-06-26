@@ -396,6 +396,28 @@ def _hide_series(plot_df, hidden):
         plot_df = plot_df[~plot_df['algo_name'].isin(hidden)]
     return plot_df
 
+def _resolve_evals_column(fitness_mode, plot_df):
+    """Pick the evals column and label matching the so-fitness-mode dropdown."""
+    if fitness_mode == 'best' and 'evals_to_best' in plot_df.columns:
+        return 'evals_to_best', 'Evaluations to Best Found Fitness'
+    if fitness_mode == 'final' and 'evals_to_final' in plot_df.columns:
+        return 'evals_to_final', 'Evaluations to Final Found Fitness'
+    if fitness_mode == 'best_noisy' and 'evals_to_best_noisy' in plot_df.columns:
+        return 'evals_to_best_noisy', 'Evaluations to Best Found Noisy Fitness'
+    if fitness_mode == 'final_noisy' and 'evals_to_final_noisy' in plot_df.columns:
+        return 'evals_to_final_noisy', 'Evaluations to Final Found Noisy Fitness'
+    return 'n_evals', 'Runtime (n_evals)'
+
+def _resolve_fit_column(fitness_mode, minimising):
+    """Pick the fitness column and label matching the so-fitness-mode dropdown."""
+    if fitness_mode == 'final':
+        return 'final_fit', 'Final Fitness'
+    if fitness_mode == 'final_noisy':
+        return 'final_fit_noisy', 'Final Fitness (Noisy)'
+    if fitness_mode == 'best_noisy':
+        return ('min_fit_noisy' if minimising else 'max_fit_noisy'), 'Best Fitness (Noisy)'
+    return ('min_fit' if minimising else 'max_fit'), 'Best Fitness'
+
 @app.callback(
     Output('hide-series-dropdown', 'options'),
     Input('plot_2d_data', 'data'),
@@ -615,15 +637,7 @@ def update_performance_summary_table(data, fitness_mode, fit_func, opt_goal):
     minimising = problem_goal == 'minimise'
 
     plot_df = pd.DataFrame(data)
-    if fitness_mode == 'final':
-        fit_col = 'final_fit'
-        label = 'Final Fitness'
-    elif minimising:
-        fit_col = 'min_fit'
-        label = 'Best Fitness'
-    else:
-        fit_col = 'max_fit'
-        label = 'Best Fitness'
+    fit_col, label = _resolve_fit_column(fitness_mode, minimising)
 
     required_cols = {'algo_name', 'noise', fit_col}
     if not required_cols.issubset(plot_df.columns):
@@ -718,15 +732,7 @@ def update_mann_whitney_table(data, fitness_mode, fit_func, opt_goal):
 
     problem_goal = _get_problem_goal(opt_goal)
     plot_df = pd.DataFrame(data)
-    if fitness_mode == 'final':
-        fit_col = 'final_fit'
-        label = 'Final Fitness'
-    elif problem_goal == 'minimise':
-        fit_col = 'min_fit'
-        label = 'Best Fitness'
-    else:
-        fit_col = 'max_fit'
-        label = 'Best Fitness'
+    fit_col, label = _resolve_fit_column(fitness_mode, problem_goal == 'minimise')
 
     required_cols = {'algo_name', 'noise', fit_col}
     if not required_cols.issubset(plot_df.columns):
@@ -812,8 +818,7 @@ def update_evals_summary_table(data, fit_func, fitness_mode):
 
     plot_df = pd.DataFrame(data)
 
-    use_best = fitness_mode == 'best' and 'evals_to_best' in plot_df.columns
-    eval_col = 'evals_to_best' if use_best else 'n_evals'
+    eval_col, evals_label = _resolve_evals_column(fitness_mode, plot_df)
 
     if not {'algo_name', 'noise', eval_col}.issubset(plot_df.columns):
         return html.P("Required columns not available for evaluations summary.", style={'color': '#888'})
@@ -870,7 +875,6 @@ def update_evals_summary_table(data, fit_func, fitness_mode):
         style_table={'marginBottom': '8px'},
     )
 
-    evals_label = 'Evaluations to Best Found Fitness' if use_best else 'Runtime (n_evals)'
     return html.Div([
         html.H5(f"Evaluations Summary: Median {evals_label} ± Std Dev by Noise Level",
                 style={'marginTop': '16px', 'marginBottom': '4px'}),
@@ -901,8 +905,7 @@ def update_evals_mann_whitney_table(data, fit_func, fitness_mode):
 
     plot_df = pd.DataFrame(data)
 
-    use_best = fitness_mode == 'best' and 'evals_to_best' in plot_df.columns
-    eval_col = 'evals_to_best' if use_best else 'n_evals'
+    eval_col, evals_label = _resolve_evals_column(fitness_mode, plot_df)
 
     if not {'algo_name', 'noise', eval_col}.issubset(plot_df.columns):
         return html.P("Required columns not available for evaluations Mann-Whitney tests.", style={'color': '#888'})
@@ -959,7 +962,6 @@ def update_evals_mann_whitney_table(data, fit_func, fitness_mode):
         ]
     )
 
-    evals_label = 'Evaluations to Best Found Fitness' if use_best else 'Runtime n_evals'
     return html.Div([
         html.H5(f"Mann-Whitney U-Test: Pairwise p-values ({evals_label}, two-sided)",
                 style={'marginTop': '16px', 'marginBottom': '4px'}),

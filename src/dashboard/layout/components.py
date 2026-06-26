@@ -519,6 +519,8 @@ def create_2d_plot_tabs():
                 options=[
                     {'label': 'Best fitness', 'value': 'best'},
                     {'label': 'Final fitness', 'value': 'final'},
+                    {'label': 'Best fitness (noisy)', 'value': 'best_noisy'},
+                    {'label': 'Final fitness (noisy)', 'value': 'final_noisy'},
                 ],
                 value='best',
                 clearable=False,

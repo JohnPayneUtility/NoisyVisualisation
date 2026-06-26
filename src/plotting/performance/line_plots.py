@@ -31,7 +31,9 @@ def plot_line(dataframe, fitness_mode='best', problem_goal='maximise', xaxis_tit
             - max_fit: Best fitness value recorded across the run (maximisation)
             - min_fit: Best fitness value recorded across the run (minimisation)
             - final_fit: Final fitness value at end of run
-        fitness_mode: 'best' to plot best fit, 'final' to plot final_fit
+            - max_fit_noisy / min_fit_noisy / final_fit_noisy: noisy counterparts
+        fitness_mode: 'best'/'final' to plot true fitness, 'best_noisy'/'final_noisy'
+            to plot noisy fitness
         problem_goal: 'maximise' or 'minimise' — determines which column is 'best'
 
     Returns:
@@ -42,6 +44,12 @@ def plot_line(dataframe, fitness_mode='best', problem_goal='maximise', xaxis_tit
     if fitness_mode == 'final':
         fit_col = 'final_fit'
         yaxis_label = 'Final solution found'
+    elif fitness_mode == 'final_noisy':
+        fit_col = 'final_fit_noisy'
+        yaxis_label = 'Final noisy solution found'
+    elif fitness_mode == 'best_noisy':
+        fit_col = 'min_fit_noisy' if problem_goal == 'minimise' else 'max_fit_noisy'
+        yaxis_label = 'Best noisy solution found'
     elif problem_goal == 'minimise':
         fit_col = 'min_fit'
         yaxis_label = 'Best solution found'
@@ -97,7 +105,10 @@ def plot_line_evals(dataframe, fitness_mode='final', show_std=True, xaxis_title=
             - noise: Noise level
             - n_evals: Total fitness evaluations used by the algorithm
             - evals_to_best: Evaluations consumed until best fitness was found (optional)
-        fitness_mode: 'best' to plot evals_to_best, 'final' to plot n_evals
+            - evals_to_final: Evaluations consumed until final fitness was found (optional)
+            - evals_to_best_noisy / evals_to_final_noisy: noisy counterparts (optional)
+        fitness_mode: 'best'/'final' to plot true-fitness evals, 'best_noisy'/'final_noisy'
+            to plot noisy-fitness evals
         show_std: Whether to show symmetric std error bars (default True)
 
     Returns:
@@ -108,6 +119,15 @@ def plot_line_evals(dataframe, fitness_mode='final', show_std=True, xaxis_title=
     if fitness_mode == 'best' and 'evals_to_best' in df.columns:
         eval_col = 'evals_to_best'
         yaxis_label = 'Evaluations to best found fitness'
+    elif fitness_mode == 'final' and 'evals_to_final' in df.columns:
+        eval_col = 'evals_to_final'
+        yaxis_label = 'Evaluations to final found fitness'
+    elif fitness_mode == 'best_noisy' and 'evals_to_best_noisy' in df.columns:
+        eval_col = 'evals_to_best_noisy'
+        yaxis_label = 'Evaluations to best found noisy fitness'
+    elif fitness_mode == 'final_noisy' and 'evals_to_final_noisy' in df.columns:
+        eval_col = 'evals_to_final_noisy'
+        yaxis_label = 'Evaluations to final found noisy fitness'
     else:
         eval_col = 'n_evals'
         yaxis_label = 'Evaluations to final fitness'

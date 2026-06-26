@@ -40,20 +40,15 @@ def _compute_n_misjudgements(row) -> int:
     return sum(1 for i in range(len(rep_fits) - 1) if rep_fits[i + 1] < rep_fits[i])
 
 
-def _compute_evals_to_best(row) -> object:
+def _evals_to_visit(rep_fits, sol_iters_evals, idx) -> object:
     """
-    Compute cumulative evaluations at the visit where the best fitness was first achieved.
+    Compute cumulative evaluations consumed up to and including a given visit index.
 
     Uses rep_fits (true fitness per visit) and sol_iterations_evals (evals consumed
-    per visit). The best visit is the one with the highest fitness for maximisation
-    problems and the lowest for minimisation problems.
+    per visit) to validate the data, then sums evals through idx.
 
     Returns None if required data is missing or mismatched in length.
     """
-    rep_fits = row['rep_fits']
-    sol_iters_evals = row['sol_iterations_evals']
-    problem_goal = row.get('problem_goal', 'maximise')
-
     # MO rows and old SO rows (pre-Logger rename) have rep_fits=NaN, not a list.
     # NaN is truthy so `not rep_fits` doesn't catch it — guard with isinstance.
     # TODO: compute MO equivalent from true_pf_hypervolumes + eval counts per PF snapshot
@@ -63,9 +58,43 @@ def _compute_evals_to_best(row) -> object:
     if not rep_fits or not sol_iters_evals or len(rep_fits) != len(sol_iters_evals):
         return None
 
+    return int(sum(sol_iters_evals[:idx + 1]))
+
+
+def _compute_evals_to_best(row, fits_col='rep_fits') -> object:
+    """
+    Compute cumulative evaluations at the visit where the best fitness was first achieved.
+
+    The best visit is the one with the highest fitness for maximisation problems
+    and the lowest for minimisation problems. fits_col selects which per-visit
+    fitness signal to use ('rep_fits' for true fitness, 'rep_noisy_fits' for noisy).
+    """
+    fits = row[fits_col]
+    sol_iters_evals = row['sol_iterations_evals']
+    problem_goal = row.get('problem_goal', 'maximise')
+
+    if not isinstance(fits, (list, np.ndarray)) or not fits:
+        return None
+
     goal = str(problem_goal)[:3].lower() if problem_goal else 'max'
-    best_idx = int(np.argmin(rep_fits)) if goal == 'min' else int(np.argmax(rep_fits))
-    return int(sum(sol_iters_evals[:best_idx + 1]))
+    best_idx = int(np.argmin(fits)) if goal == 'min' else int(np.argmax(fits))
+    return _evals_to_visit(fits, sol_iters_evals, best_idx)
+
+
+def _compute_evals_to_final(row, fits_col='rep_fits') -> object:
+    """
+    Compute cumulative evaluations at the visit representing the final solution found.
+
+    The final visit is always the last entry in fits_col, so this is equivalent
+    to the total evaluations consumed across all recorded visits.
+    """
+    fits = row[fits_col]
+    sol_iters_evals = row['sol_iterations_evals']
+
+    if not isinstance(fits, (list, np.ndarray)) or not fits:
+        return None
+
+    return _evals_to_visit(fits, sol_iters_evals, len(fits) - 1)
 
 
 def create_df_no_lists(df: pd.DataFrame) -> pd.DataFrame:
@@ -75,7 +104,8 @@ def create_df_no_lists(df: pd.DataFrame) -> pd.DataFrame:
     Used for 2D performance plots where list/trajectory data is not needed,
     only summary statistics like final_fit, max_fit, etc.
 
-    Computes the scalar evals_to_best column before dropping list columns.
+    Computes the scalar evals_to_best/evals_to_final columns (and their noisy
+    counterparts) before dropping list columns.
 
     Args:
         df: Raw algorithm results DataFrame
@@ -83,13 +113,27 @@ def create_df_no_lists(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         DataFrame with list columns removed (unique_sols, unique_fits,
         noisy_fits, sol_iterations, sol_transitions, pareto_* columns, etc.)
-        plus a new scalar column evals_to_best.
+        plus new scalar columns evals_to_best, evals_to_final, evals_to_best_noisy,
+        evals_to_final_noisy, final_fit_noisy, max_fit_noisy, min_fit_noisy.
     """
     df_no_lists = df.copy()
 
     # Compute scalar metrics from list columns before they are dropped
     if 'rep_fits' in df_no_lists.columns and 'sol_iterations_evals' in df_no_lists.columns:
         df_no_lists['evals_to_best'] = df_no_lists.apply(_compute_evals_to_best, axis=1)
+        df_no_lists['evals_to_final'] = df_no_lists.apply(_compute_evals_to_final, axis=1)
+    if 'rep_noisy_fits' in df_no_lists.columns and 'sol_iterations_evals' in df_no_lists.columns:
+        df_no_lists['evals_to_best_noisy'] = df_no_lists.apply(
+            lambda row: _compute_evals_to_best(row, fits_col='rep_noisy_fits'), axis=1)
+        df_no_lists['evals_to_final_noisy'] = df_no_lists.apply(
+            lambda row: _compute_evals_to_final(row, fits_col='rep_noisy_fits'), axis=1)
+    if 'rep_noisy_fits' in df_no_lists.columns:
+        df_no_lists['final_fit_noisy'] = df_no_lists['rep_noisy_fits'].apply(
+            lambda fits: fits[-1] if isinstance(fits, (list, np.ndarray)) and len(fits) else None)
+        df_no_lists['max_fit_noisy'] = df_no_lists['rep_noisy_fits'].apply(
+            lambda fits: max(fits) if isinstance(fits, (list, np.ndarray)) and len(fits) else None)
+        df_no_lists['min_fit_noisy'] = df_no_lists['rep_noisy_fits'].apply(
+            lambda fits: min(fits) if isinstance(fits, (list, np.ndarray)) and len(fits) else None)
     if 'rep_fits' in df_no_lists.columns:
         df_no_lists['n_misjudgements'] = df_no_lists.apply(_compute_n_misjudgements, axis=1)
 
