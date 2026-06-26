@@ -1,0 +1,29 @@
+# @package _global_
+# BASE SETTINGS
+defaults:
+  - /defaults/mlflow
+  - _self_   # ensures overrides below take precedence
+
+# OVERRIDES
+# none
+
+# EXPERIMENT SETTINGS
+experiment_name: "1p1ea coping methods - 02"
+# experiment_description: >
+#   experiment considers 2 variants of (1+1)EA, 1p1ea_estimated and 1p1ea_forgetful. 
+#   1p1ea_forgetful simply resets the fitness value of the current solution if 
+#   no improvement has been made in a certain number of generations, and 1p1ea_estimated 
+#   attempts to estimate fitness values implicity by taking the median of fitness values 
+#   where solutions happen to be reevaluated by revisiting.
+
+hydra:
+  mode: MULTIRUN
+  sweeper: # sweep through various combinations of parameters
+    params:
+      +defaults/run: run_budget_onemax
+      +defaults/problems: onemax100, onemax100_1qbitwise
+      +defaults/algos: 1p1ea_forgetful
+      # +defaults/algos: 1p1ea_estimated, 1p1ea_forgetful
+      problem.fitness_params.noise_intensity: 0,1,2,3
+  sweep:
+    dir: data/outputs

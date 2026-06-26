@@ -710,17 +710,24 @@ def create_axis_settings(
     else:
         x_min_sub = x_max_sub = y_min_sub = y_max_sub = z_min_sub = z_max_sub = 1
 
-    show_xy_labels = config.layout_type == 'raw'
+    layout_type = config.layout_type
+    show_xy_labels = layout_type in ('raw', 'hamming_delta_ref')
+    if layout_type == 'hamming_delta_ref':
+        x_title = 'H.D. from ref (N 0\'s)'
+        y_title = 'H.D. from prev.'
+    else:
+        x_title = 'dim. 1'
+        y_title = 'dim. 2'
     title_size = round(24 * axes_text_scale)
     tick_size = round(16 * axes_text_scale)
     xaxis_settings = dict(
-        title='x1' if show_xy_labels else '',
+        title=x_title if show_xy_labels else '',
         titlefont=dict(size=title_size, color='black'),
         tickfont=dict(size=tick_size, color='black'),
         showticklabels=show_xy_labels
     )
     yaxis_settings = dict(
-        title='x2' if show_xy_labels else '',
+        title=y_title if show_xy_labels else '',
         titlefont=dict(size=title_size, color='black'),
         tickfont=dict(size=tick_size, color='black'),
         showticklabels=show_xy_labels

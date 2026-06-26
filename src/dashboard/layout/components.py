@@ -31,11 +31,12 @@ _SCHEMATIC_SERIES_COLOR = '#21918c'
 _SCHEMATIC_SAT_COLOR = '#9e9e9e'
 
 
-def _build_schematic_figure(simple_mode: bool = False, show_misjudgements: bool = False) -> go.Figure:
+def _build_schematic_figure(simple_mode: bool = False, show_misjudgements: bool = False, show_box_plots: bool = False) -> go.Figure:
     """Build a Plotly 3D figure illustrating STN plot elements.
 
     simple_mode: label elements A/B/C/D/E inline instead of verbose annotations.
     show_misjudgements: add a 3rd base node + satellite showing a misjudgement.
+    show_box_plots: render a fitness distribution box plot at each base node.
     """
     series_color = _SCHEMATIC_SERIES_COLOR
     sat_color = _SCHEMATIC_SAT_COLOR
@@ -124,6 +125,64 @@ def _build_schematic_figure(simple_mode: bool = False, show_misjudgements: bool 
         textfont=dict(size=13, color='black'),
         hoverinfo='none', showlegend=False,
     ))
+
+    # Box plot traces at base node positions
+    # Median = satellite (true) fitness; upper whisker tip = base node (noisy) fitness,
+    # so the noisy evaluation always sits within the distribution range.
+    if show_box_plots:
+        # (base_x, base_y, satellite_z=median, base_z=noisy_fitness)
+        box_nodes = [(bx_a, by_a, sz_a, bz_a), (bx_b, by_b, sz_b, bz_b)]
+        if show_misjudgements:
+            box_nodes.append((bx_c, by_c, sz_c, bz_c))
+
+        box_dx = 0.45  # half-width for caps; full half-width for median crosshair
+        bw = 5         # IQR box line width
+        ww = 3         # whisker/cap line width
+        mw = 4         # median line width
+
+        for xb, yb, z_med, z_noisy in box_nodes:
+            # IQR spans 55% of the gap between true and noisy fitness on each side
+            iqr_half = (z_noisy - z_med) * 0.55
+            z_q1  = z_med - iqr_half
+            z_q3  = z_med + iqr_half
+            z_max = z_noisy                    # noisy fitness is the upper whisker tip
+            z_min = z_q1 - (z_max - z_q3)     # symmetric whisker length below IQR
+
+            traces.append(go.Scatter3d(
+                x=[xb, xb], y=[yb, yb], z=[z_q3, z_max],
+                mode='lines', line=dict(color='grey', width=ww),
+                hoverinfo='none', showlegend=False,
+            ))
+            traces.append(go.Scatter3d(
+                x=[xb, xb], y=[yb, yb], z=[z_q1, z_min],
+                mode='lines', line=dict(color='grey', width=ww),
+                hoverinfo='none', showlegend=False,
+            ))
+            traces.append(go.Scatter3d(
+                x=[xb - box_dx / 2, xb + box_dx / 2], y=[yb, yb], z=[z_max, z_max],
+                mode='lines', line=dict(color='grey', width=ww),
+                hoverinfo='none', showlegend=False,
+            ))
+            traces.append(go.Scatter3d(
+                x=[xb - box_dx / 2, xb + box_dx / 2], y=[yb, yb], z=[z_min, z_min],
+                mode='lines', line=dict(color='grey', width=ww),
+                hoverinfo='none', showlegend=False,
+            ))
+            traces.append(go.Scatter3d(
+                x=[xb, xb], y=[yb, yb], z=[z_q1, z_q3],
+                mode='lines', line=dict(color='black', width=bw),
+                hoverinfo='none', showlegend=False,
+            ))
+            traces.append(go.Scatter3d(
+                x=[xb - box_dx, xb + box_dx], y=[yb, yb], z=[z_med, z_med],
+                mode='lines', line=dict(color='red', width=mw),
+                hoverinfo='none', showlegend=False,
+            ))
+            traces.append(go.Scatter3d(
+                x=[xb, xb], y=[yb - box_dx, yb + box_dx], z=[z_med, z_med],
+                mode='lines', line=dict(color='red', width=mw),
+                hoverinfo='none', showlegend=False,
+            ))
 
     # Build scene annotations
     if simple_mode:
@@ -279,7 +338,7 @@ def _build_schematic_figure(simple_mode: bool = False, show_misjudgements: bool 
     return fig
 
 
-def _build_schematic_legend(simple_mode: bool = False, show_misjudgements: bool = False) -> list:
+def _build_schematic_legend(simple_mode: bool = False, show_misjudgements: bool = False, show_box_plots: bool = False) -> list:
     """Return the children list for the schematic legend div."""
     series_color = _SCHEMATIC_SERIES_COLOR
     sat_color = _SCHEMATIC_SAT_COLOR
@@ -325,6 +384,14 @@ def _build_schematic_legend(simple_mode: bool = False, show_misjudgements: bool 
         items.append(
             html.Div([html.Div(style=arrow_mj), html.Span(f"{prefix_e}Misjudgement — the algorithm moved to a node with lower true fitness because the noisy evaluation made it appear better")], style=item_style)
         )
+    if show_box_plots:
+        sym_box = {
+            'width': '30px', 'height': '3px',
+            'backgroundColor': 'black', 'marginRight': '10px', 'flexShrink': '0',
+        }
+        items.append(
+            html.Div([html.Div(style=sym_box), html.Span("Box plot — distribution of noisy fitness evaluations at this node (red line = median, aligned with the true satellite fitness)")], style=item_style)
+        )
     return items
 
 
@@ -346,17 +413,23 @@ def create_schematic_section() -> html.Div:
                 id='schematic-simple-annotations',
                 options=[{'label': ' Simple annotations', 'value': 'simple'}],
                 value=[],
+                style={'display': 'inline-block', 'marginRight': '20px'},
+            ),
+            dcc.Checklist(
+                id='schematic-boxplots',
+                options=[{'label': ' Box plots', 'value': 'boxplots'}],
+                value=[],
                 style={'display': 'inline-block'},
             ),
         ], style={'textAlign': 'center', 'marginBottom': '8px'}),
         dcc.Graph(
             id='schematic-graph',
-            figure=_build_schematic_figure(simple_mode=False, show_misjudgements=False),
+            figure=_build_schematic_figure(simple_mode=False, show_misjudgements=False, show_box_plots=False),
             config={'displayModeBar': False},
         ),
         html.Div(
             id='schematic-legend',
-            children=_build_schematic_legend(simple_mode=False, show_misjudgements=False),
+            children=_build_schematic_legend(simple_mode=False, show_misjudgements=False, show_box_plots=False),
             style={'padding': '10px 20px 14px'},
         ),
     ], style={'borderBottom': '2px solid #ddd', 'marginBottom': '10px', 'paddingBottom': '10px'})
@@ -737,6 +810,7 @@ def create_multiobjective_options_section():
                     {'label': 'true pareto true hv', 'value': 'tpthv'},
                     {'label': 'noisy pareto both hv', 'value': 'npbhv'},
                     {'label': 'both pareto', 'value': 'bpbhv'},
+                    {'label': 'both pareto (algo pov)', 'value': 'bpbhv_algo_pov'},
                 ],
                 value='npnhv',
                 placeholder='multiobjective plot type',
@@ -806,8 +880,9 @@ def create_stn_options_section():
                 {'label': 'Show noisy path', 'value': 'show_noisy_path'},
                 {'label': 'Use viridis for series', 'value': 'use-viridis'},
                 {'label': 'Lock algo colours', 'value': 'lock-algo-colours'},
+                {'label': 'Curved edges', 'value': 'curved-edges'},
             ],
-            value=['noisy-nodes-square', 'use-viridis'],
+            value=['noisy-nodes-square', 'use-viridis', 'curved-edges'],
             labelStyle={'display': 'inline-block', 'margin-right': '10px'}
         ),
         dcc.Dropdown(

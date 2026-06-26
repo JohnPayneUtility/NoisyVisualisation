@@ -3,8 +3,9 @@
 run:
   max_gens: 1e6
   eval_limit: 1e6
-  target_stop: true
-  no_improve_limit: 1e6
+  target_stop: false
+  no_improve_limit_fraction: null
+  noisy_no_improve_limit_fraction: 0.1
   use_noise_dependent_eval_limit: true
   eval_limit_for_noise:
     "0": 38392
@@ -34,7 +35,7 @@ run:
     "24": 304260
     "25": 313480
   seed: 1
-  num_runs: 30
+  num_runs: 50
   parallel: true
   override_max_workers: null
   progress_print_interval: 10000

@@ -127,7 +127,15 @@ def resolve_config_dependencies(cfg: DictConfig) -> DictConfig:
             if hasattr(resolved_cfg.run, 'eval_limit_for_noise'):
                 mapping = {k: int(v) for k, v in resolved_cfg.run.eval_limit_for_noise.items()}
                 resolved_cfg.run.eval_limit = mapping.get(f"{noise_val}", resolved_cfg.run.eval_limit)
-    
+
+    # Step 6: Resolve fraction-based no-improve limits from eval_limit
+    no_improve_fraction = getattr(resolved_cfg.run, 'no_improve_limit_fraction', None)
+    if no_improve_fraction is not None:
+        resolved_cfg.run.no_improve_limit = int(resolved_cfg.run.eval_limit * no_improve_fraction)
+    noisy_fraction = getattr(resolved_cfg.run, 'noisy_no_improve_limit_fraction', None)
+    if noisy_fraction is not None:
+        resolved_cfg.run.noisy_no_improve_limit = int(resolved_cfg.run.eval_limit * noisy_fraction)
+
     # Resolve problem ID
     resolved_cfg.problem.PID = determine_pid_from_cfg(resolved_cfg)
 
@@ -442,6 +450,7 @@ def main(cfg: DictConfig):
         'starting_solution':         None,
         'target_stop':               cfg.problem.opt_global if getattr(cfg.run, 'target_stop', False) else None,
         'no_improve_limit':          getattr(cfg.run, 'no_improve_limit', None),
+        'noisy_no_improve_limit':    getattr(cfg.run, 'noisy_no_improve_limit', None),
         'gen_limit':                 None,
         'fitness_function':          (fitness_fn, fit_params),
         'progress_print_interval':   getattr(cfg.run, 'progress_print_interval', None),

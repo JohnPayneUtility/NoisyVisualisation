@@ -204,13 +204,15 @@ def _get_problem_goal(opt_goal):
     Output('schematic-legend', 'children'),
     Input('schematic-misjudgements', 'value'),
     Input('schematic-simple-annotations', 'value'),
+    Input('schematic-boxplots', 'value'),
 )
-def update_schematic(misjudgement_values, simple_values):
+def update_schematic(misjudgement_values, simple_values, boxplot_values):
     simple = bool(simple_values and 'simple' in simple_values)
     misjudgements = bool(misjudgement_values and 'misjudgements' in misjudgement_values)
+    box_plots = bool(boxplot_values and 'boxplots' in boxplot_values)
     return (
-        _build_schematic_figure(simple_mode=simple, show_misjudgements=misjudgements),
-        _build_schematic_legend(simple_mode=simple, show_misjudgements=misjudgements),
+        _build_schematic_figure(simple_mode=simple, show_misjudgements=misjudgements, show_box_plots=box_plots),
+        _build_schematic_legend(simple_mode=simple, show_misjudgements=misjudgements, show_box_plots=box_plots),
     )
 
 
@@ -1250,6 +1252,14 @@ def process_STN_data(df, mo_plot_type, group_cols=['algo_name', 'noise']):
                         'metric2':  nps_hv_noisy[g],
                         'gen_idx':  g,
                     })
+                elif mode == 'bpbhv_algo_pov': # Both pareto front sets & both metrics (algo POV)
+                    fronts.append({
+                        'front1':   pareto_solutions[g],
+                        'front2':   true_pareto_solutions[g],
+                        'metric1':  nps_hv_noisy[g],
+                        'metric2':  tps_hv_true[g],
+                        'gen_idx':  g,
+                    })
                 elif mode == 'tpthv':
                     fronts.append({
                         'front1':   true_pareto_solutions[g],
@@ -1946,19 +1956,29 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
         if 'annotate-mistakes' in (annotation_options or []):
             seen_positions = set()
             maximizing = (config.opt_goal or 'max')[:3].lower() == 'max'
+            algo_pov = config.stn_plot_type == 'prior_algo_pov'
             for u, v, edge_attr in G.edges(data=True):
                 if not edge_attr.get('edge_type', '').startswith('STN'):
                     continue
-                if v not in pos or 'Noisy' in v or G.nodes[v].get('type') == 'STN_ALT':
-                    continue
-                fit_u = G.nodes[u].get('fitness')
-                fit_v = G.nodes[v].get('fitness')
+                if algo_pov:
+                    # Base nodes are named _Noisy; compare satellite (_True) fitness
+                    if v not in pos or G.nodes[v].get('type') == 'STN_ALT':
+                        continue
+                    u_true = u.replace('_Noisy', '_True')
+                    v_true = v.replace('_Noisy', '_True')
+                    fit_u = G.nodes[u_true].get('fitness') if u_true in G.nodes else None
+                    fit_v = G.nodes[v_true].get('fitness') if v_true in G.nodes else None
+                else:
+                    if v not in pos or 'Noisy' in v or G.nodes[v].get('type') == 'STN_ALT':
+                        continue
+                    fit_u = G.nodes[u].get('fitness')
+                    fit_v = G.nodes[v].get('fitness')
                 if fit_u is None or fit_v is None:
                     continue
                 is_decline = fit_v < fit_u if maximizing else fit_v > fit_u
                 if is_decline:
                     x, y = pos[v][:2]
-                    z = fit_v
+                    z = G.nodes[v].get('fitness') if algo_pov else fit_v
                     pos_key = (round(x, 6), round(y, 6), round(z, 6))
                     if pos_key not in seen_positions:
                         seen_positions.add(pos_key)

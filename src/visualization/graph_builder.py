@@ -752,10 +752,11 @@ def add_prior_noise_stn_algo_pov(
     """
     Prior noise STN from the algorithm's point of view.
 
-    Base nodes use the noisy solution and noisy fitness (what the algorithm
-    evaluated and moved from). True nodes are satellites connected via grey
-    noise edges. The NoisyPath_SO chain runs between consecutive true nodes
-    and is gated by the 'show_noisy_path' toggle in the trace builder.
+    Base nodes use the true solution and noisy fitness (the solution the
+    algorithm submitted, with the fitness it received back). Satellite nodes
+    use the noisy solution and true fitness. Connected via grey noise edges.
+    The NoisyPath_SO chain runs between consecutive satellite nodes and is
+    gated by the 'show_noisy_path' toggle in the trace builder.
 
     Entry format mirrors add_prior_noise_stn_v5 (8+ elements):
         [rep_sols, rep_fits, rep_noisy_fits, sol_iterations,
@@ -792,14 +793,14 @@ def add_prior_noise_stn_algo_pov(
             if noisy_sol is None or noisy_fit is None:
                 continue
 
-            # -------- base node: noisy solution + noisy fitness --------
+            # -------- base node: true solution + noisy fitness --------
             node_base = f"STN_S{series_idx}_R{run_idx}_Sol{i}_Noisy"
             if node_base not in G.nodes:
                 G.add_node(
                     node_base,
                     type="STN_SO",
                     is_noisy=False,
-                    solution=noisy_sol,
+                    solution=true_sol,
                     fitness=noisy_fit,
                     iterations=sol_iterations[i] if i < len(sol_iterations) else 1,
                     evals=sol_evals[i] if i < len(sol_evals) else 0,
@@ -816,7 +817,7 @@ def add_prior_noise_stn_algo_pov(
                     end_node=i == len(rep_noisy_sols) - 1,
                 )
 
-            # -------- true satellite node: true solution + true fitness --------
+            # -------- noisy satellite node: noisy solution + true fitness --------
             if true_sol is not None and true_fit is not None:
                 node_true = f"STN_S{series_idx}_R{run_idx}_Sol{i}_True"
                 if node_true not in G.nodes:
@@ -824,7 +825,7 @@ def add_prior_noise_stn_algo_pov(
                         node_true,
                         type="STN_SO_Noise",
                         is_noisy=True,
-                        solution=true_sol,
+                        solution=noisy_sol,
                         fitness=true_fit,
                         sol_idx=i,
                         run_idx=run_idx,

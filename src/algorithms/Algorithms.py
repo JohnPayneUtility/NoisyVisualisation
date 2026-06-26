@@ -120,7 +120,8 @@ class OptimisationAlgorithm:
     gen_limit: Optional[int] = int(10e6)
     eval_limit: Optional[int] = None
     target_stop: Optional[float] = None
-    no_improve_limit: Optional[int] = None  # stop after this many evals with no improvement
+    no_improve_limit: Optional[int] = None        # stop after this many evals with no improvement in true fitness
+    noisy_no_improve_limit: Optional[int] = None  # stop after this many evals with no improvement in noisy fitness
     attr_function: Optional[Callable] = None
     fitness_function: Optional[Tuple[Callable, dict]] = None
     starting_solution: Optional[List[Any]] = None
@@ -136,6 +137,8 @@ class OptimisationAlgorithm:
         self.seed_signature = random.randint(0, 10**6)
         self._best_fitness_seen: Optional[float] = None
         self._evals_at_last_improvement: int = 0
+        self._best_noisy_fitness_seen: Optional[float] = None
+        self._evals_at_last_noisy_improvement: int = 0
 
         # Maps id(ind) -> eval_id for the most recent evaluation of each individual object
         self._eval_id_for_ind: dict = {}
@@ -231,6 +234,19 @@ class OptimisationAlgorithm:
                     self._evals_at_last_improvement = self.evals
                 elif (self.evals - self._evals_at_last_improvement) >= self.no_improve_limit:
                     self.stop_trigger = 'no_improvement'
+                    return True
+        if self.noisy_no_improve_limit is not None and self.logger._last_noisy_fitness is not None:
+            current = self.logger._last_noisy_fitness
+            if self._best_noisy_fitness_seen is None:
+                self._best_noisy_fitness_seen = current
+                self._evals_at_last_noisy_improvement = self.evals
+            else:
+                improved = (current > self._best_noisy_fitness_seen) if self.opt_weights[0] > 0 else (current < self._best_noisy_fitness_seen)
+                if improved:
+                    self._best_noisy_fitness_seen = current
+                    self._evals_at_last_noisy_improvement = self.evals
+                elif (self.evals - self._evals_at_last_noisy_improvement) >= self.noisy_no_improve_limit:
+                    self.stop_trigger = 'noisy_no_improvement'
                     return True
         return False
 
@@ -358,6 +374,7 @@ class MuPlusLamdaEA_forgetful(MuPlusLamdaEA):
             del ind.fitness.values
             ind.fitness.values = self._evaluate_and_track(ind)
             self.evals += 1
+        self._best_fitness_for_stuck = None  # reset high-water mark to post-forget baseline
 
     def _should_forget(self) -> bool:
         if self.forget_every_n_gen is not None and self.gens % self.forget_every_n_gen == 0:
@@ -424,7 +441,11 @@ class MuPlusLamdaEA_estimated(MuPlusLamdaEA):
 
         if self.mu == 1 and self.lam == 1:
             parent, offspring = self.population[0], self.population[1]
-            self.population = [offspring if offspring.fitness >= parent.fitness else parent]
+            if list(parent) == list(offspring):
+                # Identical genotype: offspring carries the updated median estimate, always adopt it
+                self.population = [offspring]
+            else:
+                self.population = [offspring if offspring.fitness >= parent.fitness else parent]
         else:
             self.population = tools.selBest(self.population, self.mu)
 

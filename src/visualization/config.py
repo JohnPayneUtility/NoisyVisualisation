@@ -228,7 +228,7 @@ def parse_callback_inputs(
         node_size_metric=node_size_metric or 'generations',
         lon_node_strength='LON_node_strength' in options,
         local_optima_color='local_optima_color' in options,
-        curve_edges=True,
+        curve_edges='curved-edges' in run_options,
 
         # Run selection options
         show_best='show_best' in run_options,

@@ -267,6 +267,7 @@ class ExperimentLogger:
 
     # --- State for stop_condition / progress printing ---
     _last_true_fitness: Optional[float] = field(default=None, init=False, repr=False)
+    _last_noisy_fitness: Optional[float] = field(default=None, init=False, repr=False)
     _last_generation: int = field(default=0, init=False, repr=False)
 
     # --- Rolling visit state ---
@@ -338,6 +339,7 @@ class ExperimentLogger:
             # First call — start the first visit
             true_fitness, noisy_sol = self._get_eval_info(best_eval_id)
             self._last_true_fitness = true_fitness
+            self._last_noisy_fitness = best_fitness
             self._open_visit(
                 sol_tuple, best_solution, best_fitness, true_fitness, noisy_sol,
                 generation, evals,
@@ -354,6 +356,7 @@ class ExperimentLogger:
             )
             true_fitness, noisy_sol = self._get_eval_info(best_eval_id)
             self._last_true_fitness = true_fitness
+            self._last_noisy_fitness = best_fitness
             self._open_visit(
                 sol_tuple, best_solution, best_fitness, true_fitness, noisy_sol,
                 generation, evals,
@@ -364,6 +367,7 @@ class ExperimentLogger:
             # Same solution — continue the current visit
             self._cur_count += 1
             self._last_true_fitness = self._cur_true_fitness
+            self._last_noisy_fitness = best_fitness
 
         # Snapshot end-of-generation state for use when this visit eventually closes
         self._cur_sol_n_at_gen_end = self._fit_history.get_len(self._cur_sol)
@@ -685,6 +689,7 @@ class ExperimentLogger:
         self._trajectory_cache = None
         self.current_generation = 0
         self._last_true_fitness = None
+        self._last_noisy_fitness = None
         self._last_generation = 0
         self._cur_sol = None
         self._cur_solution = None
