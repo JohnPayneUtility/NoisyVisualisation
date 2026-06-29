@@ -544,6 +544,14 @@ def create_2d_plot_tabs():
                 placeholder='Select series to hide...',
                 style={'width': '320px'},
             ),
+            html.Label("Adanced misjudement algo:"),
+            dcc.Dropdown(
+                id='advanced-misjudgement-algo-dropdown',
+                options=[],
+                value=None,
+                clearable=False,
+                style={'width': '260px'},
+            ),
         ], style={'display': 'flex', 'alignItems': 'center', 'gap': '12px', 'marginBottom': '8px'}),
         dcc.Tabs(id='2DPlotTabSelection', value='p1', children=[
             dcc.Tab(
@@ -573,6 +581,12 @@ def create_2d_plot_tabs():
             dcc.Tab(
                 label='Box plot misjudgements (SO)',
                 value='p8',
+                style=TAB_STYLE,
+                selected_style=TAB_SELECTED_STYLE
+            ),
+            dcc.Tab(
+                label='Advanced misjudgements (SO)',
+                value='p9',
                 style=TAB_STYLE,
                 selected_style=TAB_SELECTED_STYLE
             ),

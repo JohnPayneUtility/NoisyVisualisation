@@ -5,6 +5,7 @@ This module provides box plots for comparing algorithm performance
 distributions across different noise levels.
 """
 
+import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 
@@ -218,6 +219,99 @@ def plot_box_misjudgements_so(dataframe, xaxis_title=None, colorscale='Viridis')
         y='n_misjudgements',
         color='algo_name',
         category_orders={'noise': noise_levels, 'algo_name': algos},
+        color_discrete_sequence=colors,
+        points=False,
+    )
+
+    fig.update_layout(
+        xaxis=dict(
+            title=dict(
+                text=xaxis_title or 'Noise level',
+                font=dict(size=24, color='black'),
+            ),
+            tickfont=dict(size=20, color='black'),
+        ),
+        yaxis=dict(
+            title=dict(
+                text='No. misjudgements',
+                font=dict(size=24, color='black'),
+            ),
+            tickfont=dict(size=20, color='black'),
+        ),
+        legend=dict(
+            title=dict(font=dict(size=24, color='black')),
+            font=dict(size=20, color='black'),
+        ),
+        boxmode='group',
+        template=DEFAULT_TEMPLATE,
+    )
+
+    return fig
+
+
+def plot_box_advanced_misjudgements_so(dataframe, algo_name, xaxis_title=None, colorscale='Viridis'):
+    """
+    Create a box plot breaking down misjudgement types for a single algorithm
+    (single-objective problems only).
+
+    Unlike plot_box_misjudgements_so (one series per algorithm), this plot
+    fixes the algorithm and shows one series per mistake type:
+        - 'increasing noise': steps where the noise magnitude
+          |true_fit - noisy_fit| grew relative to the previous step.
+        - 'comparison': steps where the true fitness got worse but the noisy
+          fitness got better relative to the previous step (the noisy signal
+          would have favoured a solution that was actually worse).
+        - 'constraint': visits where the true fitness is negative (a constraint
+          violation).
+
+    Args:
+        dataframe: DataFrame with columns:
+            - algo_name: Algorithm identifier
+            - noise: Noise level
+            - n_increasing_noise: Count of increasing-noise steps for this run
+            - n_comparison_misjudgements: Count of comparison-misjudgement steps for this run
+            - n_constraint_misjudgements: Count of constraint-violation visits for this run
+        algo_name: The single algorithm to show on this plot
+        xaxis_title: Label for the x axis (noise parameter description)
+
+    Returns:
+        go.Figure: Grouped box plot, one series per mistake type
+    """
+    df = dataframe.copy()
+
+    mistake_columns = {
+        'n_increasing_noise': 'increasing noise',
+        'n_comparison_misjudgements': 'comparison',
+        'n_constraint_misjudgements': 'constraint',
+    }
+    available_columns = {col: label for col, label in mistake_columns.items() if col in df.columns}
+
+    if not available_columns or 'algo_name' not in df.columns:
+        return create_empty_figure('No misjudgement data available')
+
+    df = df[df['algo_name'] == algo_name]
+
+    if df.empty:
+        return create_empty_figure('No misjudgement data available')
+
+    df = pd.concat([
+        df[['noise', col]].rename(columns={col: 'count'}).assign(mistake_type=label).dropna(subset=['count'])
+        for col, label in available_columns.items()
+    ], ignore_index=True)
+
+    if df.empty:
+        return create_empty_figure('No misjudgement data available')
+
+    noise_levels = sorted(df['noise'].unique())
+    mistake_types = sorted(df['mistake_type'].unique())
+    colors = _viridis_colors(len(mistake_types), colorscale)
+
+    fig = px.box(
+        df,
+        x='noise',
+        y='count',
+        color='mistake_type',
+        category_orders={'noise': noise_levels, 'mistake_type': mistake_types},
         color_discrete_sequence=colors,
         points=False,
     )

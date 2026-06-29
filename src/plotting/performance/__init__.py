@@ -21,6 +21,7 @@ from .box_plots import (
     plot_box_mo,
     plot_box_evals,
     plot_box_misjudgements_so,
+    plot_box_advanced_misjudgements_so,
 )
 
 # Backward-compatible aliases (original function names from DashboardHelpers)
@@ -31,6 +32,7 @@ plot2d_box_mo = plot_box_mo
 plot2d_line_evals = plot_line_evals
 plot2d_box_evals = plot_box_evals
 plot2d_box_misjudgements_so = plot_box_misjudgements_so
+plot2d_box_advanced_misjudgements_so = plot_box_advanced_misjudgements_so
 
 __all__ = [
     # New consistent names
@@ -41,6 +43,7 @@ __all__ = [
     'plot_box_mo',
     'plot_box_evals',
     'plot_box_misjudgements_so',
+    'plot_box_advanced_misjudgements_so',
     # Backward-compatible aliases
     'plot2d_line',
     'plot2d_box',
@@ -49,4 +52,5 @@ __all__ = [
     'plot2d_line_evals',
     'plot2d_box_evals',
     'plot2d_box_misjudgements_so',
+    'plot2d_box_advanced_misjudgements_so',
 ]

@@ -45,7 +45,7 @@ from ..common import is_continuous_solution
 
 # Plotting module imports - using registry for dynamic dispatch
 from ..plotting import get_pareto_plot
-from ..plotting.performance import plot2d_line, plot2d_box, plot2d_line_mo, plot2d_box_mo, plot2d_line_evals, plot2d_box_evals, plot2d_box_misjudgements_so
+from ..plotting.performance import plot2d_line, plot2d_box, plot2d_line_mo, plot2d_box_mo, plot2d_line_evals, plot2d_box_evals, plot2d_box_misjudgements_so, plot2d_box_advanced_misjudgements_so
 
 # ==========
 # Data Loading
@@ -428,6 +428,19 @@ def update_hide_series_options(data):
     algo_names = pd.DataFrame(data)['algo_name'].dropna().unique()
     return [{'label': name, 'value': name} for name in sorted(algo_names)]
 
+@app.callback(
+    Output('advanced-misjudgement-algo-dropdown', 'options'),
+    Output('advanced-misjudgement-algo-dropdown', 'value'),
+    Input('plot_2d_data', 'data'),
+)
+def update_advanced_misjudgement_algo_options(data):
+    if not data:
+        return [], None
+    algo_names = sorted(pd.DataFrame(data)['algo_name'].dropna().unique())
+    options = [{'label': name, 'value': name} for name in algo_names]
+    default_value = algo_names[0] if algo_names else None
+    return options, default_value
+
 # ---------- 2D plot callbacks ----------
 # Plot data table
 @app.callback(
@@ -551,6 +564,22 @@ def display_box_misjudgements_so(data, fit_func, plot_theme, noise_cap, hidden_s
         return go.Figure()
     plot_df = _hide_series(_cap_noise(pd.DataFrame(data), noise_cap), hidden_series)
     return plot2d_box_misjudgements_so(plot_df, xaxis_title=xaxis_label, colorscale=plot_theme or 'Viridis')
+
+# 2D box plot (advanced misjudgements, single-objective)
+@app.callback(
+    Output('2DBoxAdvancedMisjudgementsSO', 'figure'),
+    Input('plot_2d_data', 'data'),
+    Input('fit_func_store', 'data'),
+    Input('plot-theme', 'value'),
+    Input('noise-cap-input', 'value'),
+    Input('advanced-misjudgement-algo-dropdown', 'value'),
+)
+def display_box_advanced_misjudgements_so(data, fit_func, plot_theme, noise_cap, selected_algo):
+    xaxis_label = _get_so_xaxis_label(fit_func)
+    if xaxis_label is None or not selected_algo:
+        return go.Figure()
+    plot_df = _cap_noise(pd.DataFrame(data), noise_cap)
+    return plot2d_box_advanced_misjudgements_so(plot_df, algo_name=selected_algo, xaxis_title=xaxis_label, colorscale=plot_theme or 'Viridis')
 
 # ---------- Misjudgements summary table ----------
 @app.callback(
@@ -1011,6 +1040,10 @@ def render_content_2DPlot_tab(tab):
     elif tab == 'p8':
         return html.Div([
             dcc.Graph(id='2DBoxPlotMisjudgementsSO', style={'width': '800px', 'height': '600px'}),
+        ])
+    elif tab == 'p9':
+        return html.Div([
+            dcc.Graph(id='2DBoxAdvancedMisjudgementsSO', style={'width': '800px', 'height': '600px'}),
         ])
     elif tab == 'p5':
         return html.Div([
