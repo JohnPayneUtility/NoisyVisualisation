@@ -26,6 +26,7 @@ def BinaryCoLON(pert_attempts, len_sol, weights,
       edge_feasibility: List[int]     (1 if edge target is feasible, else 0) aligned with edges_list
       neighbour_feasibility: List[float] (proportion 0..1 of feasible neighbours at n_flips_mut), aligned with local_optima
     """
+    target_stop=None # Target stop override
     if violation_function is None:
         raise ValueError("violation_function is required (returns scalar v(x); <=0 means feasible).")
 

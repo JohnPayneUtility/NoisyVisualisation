@@ -1345,6 +1345,7 @@ def create_annotation_options_section():
                 {'label': ' Optimum', 'value': 'annotate-optimum'},
                 {'label': ' End nodes', 'value': 'annotate-end-nodes'},
                 {'label': ' Misjudgements', 'value': 'annotate-mistakes'},
+                {'label': ' Advanced misjudgements', 'value': 'annotate-advanced-mistakes'},
                 {'label': ' Info panel', 'value': 'annotate-info-panel'},
                 {'label': ' Print mode', 'value': 'print-mode'},
                 {'label': ' Condense names in print mode', 'value': 'condense-print-names'},

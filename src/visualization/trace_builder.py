@@ -935,6 +935,9 @@ def create_lon_surface_trace(
     colour_values: Optional[List[float]] = None,
     opacity: float = 0.4,
     grid_resolution: int = 50,
+    colorscale: str = 'Viridis',
+    cmin: Optional[float] = None,
+    cmax: Optional[float] = None,
 ) -> Optional[go.Surface]:
     """
     Create a Surface trace over LON nodes by interpolating onto a regular grid.
@@ -945,6 +948,10 @@ def create_lon_surface_trace(
     If colour_values is provided it is interpolated onto the same grid and passed as
     surfacecolor, decoupling colour from the z (fitness) geometry. Otherwise colour
     defaults to z-value (Plotly default behaviour).
+
+    cmin/cmax pin the colour scale's data range explicitly (e.g. to match the range
+    used for LON node colouring) instead of Plotly auto-scaling to the interpolated
+    grid's own min/max, which can differ from the underlying node value range.
 
     Returns None if fewer than 3 nodes are available.
     """
@@ -974,7 +981,10 @@ def create_lon_surface_trace(
     if colour_values is not None:
         ci_grid = griddata(points=points, values=colour_values, xi=(xi_grid, yi_grid), method='linear')
         surface_kwargs['surfacecolor'] = ci_grid
-        surface_kwargs['colorscale'] = 'Viridis'
+        surface_kwargs['colorscale'] = colorscale
+        if cmin is not None and cmax is not None:
+            surface_kwargs['cmin'] = cmin
+            surface_kwargs['cmax'] = cmax
 
     return go.Surface(**surface_kwargs)
 
@@ -1080,13 +1090,20 @@ def build_all_traces(
         lon_y = [pos[n][1] for n in lon_nodes]
         lon_z = [G.nodes[n].get('fitness', 0) for n in lon_nodes]
 
-        # Resolve per-node colour values for the selected surface colour mode
+        # Resolve per-node colour values for the selected surface colour mode (mesh keeps
+        # its own unchanged behaviour — flat colour unless neigh_feas is selected). Missing
+        # neigh_feas lookups default to 0.0 for the colour value itself, but are excluded from
+        # valid_neigh_vals so the surface's cmin/cmax range matches apply_node_colors, which
+        # also excludes unmapped nodes from its min/max calculation.
         colour_values = None
+        valid_neigh_vals = []
         if config.lon.surface_colour == 'neigh_feas' and neigh_feas_map:
             resolved = []
             for n in lon_nodes:
                 sol = sol_tuple_ints(G.nodes[n].get('solution', []))
                 val = lookup_map(neigh_feas_map, sol)
+                if val is not None:
+                    valid_neigh_vals.append(float(val))
                 resolved.append(float(val) if val is not None else 0.0)
             colour_values = resolved
 
@@ -1095,7 +1112,21 @@ def build_all_traces(
             if mesh_trace is not None:
                 traces.append(mesh_trace)
         if config.lon.display_surface:
-            surface_trace = create_lon_surface_trace(lon_x, lon_y, lon_z, colour_values)
+            # cmin/cmax mirror the range used for LON node colouring (node_styling.py's
+            # apply_node_colors) so the surface's colourscale lines up with the node colours,
+            # instead of Plotly auto-scaling to the interpolated grid's own min/max.
+            surf_colour_values = colour_values
+            surf_cmin = surf_cmax = None
+            if config.lon.surface_colour == 'neigh_feas' and colour_values is not None:
+                surf_cmin, surf_cmax = (min(valid_neigh_vals), max(valid_neigh_vals)) if valid_neigh_vals else (0.0, 1.0)
+            elif config.lon.surface_colour == 'fitness' and lon_z:
+                surf_colour_values = lon_z
+                surf_cmin, surf_cmax = min(lon_z), max(lon_z)
+
+            surface_trace = create_lon_surface_trace(
+                lon_x, lon_y, lon_z, surf_colour_values,
+                colorscale=config.colorscale, cmin=surf_cmin, cmax=surf_cmax,
+            )
             if surface_trace is not None:
                 traces.append(surface_trace)
 

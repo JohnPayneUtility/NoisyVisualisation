@@ -288,6 +288,43 @@ def eval_noisy_kp_v2(individual, items_dict, capacity, noise_intensity=0, penalt
 
     return (noisy_fitness,)
 
+def eval_noisy_kp_v3(individual, items_dict, capacity, noise_intensity=0, penalty=1):
+    """
+    Noise only added to the weight
+    """
+    n_items = len(individual)
+    weight = sum(items_dict[i][1] * individual[i] for i in range(n_items))
+    value = sum(items_dict[i][0] * individual[i] for i in range(n_items))
+
+    # Calculate true fitness (no noise)
+    if weight > capacity:
+        if penalty == 1:
+            true_fitness = capacity - weight
+        else:
+            true_fitness = 0
+    else:
+        true_fitness = value
+
+    # Calculate noisy fitness
+    noise = random.gauss(0, noise_intensity * mean_weight(items_dict))
+    noisy_value = value
+    
+    if (weight + noise) > capacity:
+        if penalty == 1:
+            noisy_fitness = capacity - (weight + noise)
+        else:
+            noisy_fitness = 0
+    else:
+        noisy_fitness = noisy_value
+
+    # Log the evaluation if logger is active
+    # For posterior noise: same solution, different fitnesses
+    logger = get_active_logger()
+    if logger is not None:
+        logger.log_noisy_eval(individual, individual, true_fitness, noisy_fitness)
+
+    return (noisy_fitness,)
+
 def eval_noisy_kp_prior_bitflip(individual, items_dict, capacity, noise_intensity=0, penalty=1):
     """
     Calculates fitness for knapsack problem with prior noise.

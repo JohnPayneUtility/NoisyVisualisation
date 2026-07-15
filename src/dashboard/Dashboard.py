@@ -51,7 +51,12 @@ from ..plotting.performance import plot2d_line, plot2d_box, plot2d_line_mo, plot
 # Data Loading
 # ==========
 from ..dataio import DashboardData, DISPLAY2_HIDDEN_COLUMNS, LON_HIDDEN_COLUMNS
-from ..dataio.transformers import create_display2_df
+from ..dataio.transformers import (
+    create_display2_df,
+    increasing_noise_step_indices,
+    comparison_misjudgement_step_indices,
+    constraint_misjudgement_step_indices,
+)
 from ..dataio.column_config import DISPLAY1_COLUMNS
 
 # Load all dashboard data using the data module
@@ -2028,6 +2033,73 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                             ax=20, ay=0,
                             font=dict(size=ann_font_size, color='red'),
                         ))
+
+        if 'annotate-advanced-mistakes' in (annotation_options or []):
+            minimising = (config.opt_goal or 'max')[:3].lower() == 'min'
+            MISTAKE_TYPES = [
+                ('increasing_noise', 'blue', 1),
+                ('comparison', 'red', 2),
+                ('constraint', 'magenta', 3),
+            ]
+            hits = {key: set() for key, _, _ in MISTAKE_TYPES}  # dedup by node_label per type
+
+            # Node naming differs by STN plot type. 'prior_v4'/'prior_v5' dedicate one
+            # deterministically-named node per (algo, run, step) with the _True suffix
+            # holding true fitness; 'prior_algo_pov' uses the same scheme but the base
+            # node (_Noisy suffix) holds the noisy fitness (matches the convention the
+            # existing 'annotate-mistakes' arrows already use for this view). Other
+            # modes (default 'posterior', 'posterior_algo_pov') dedupe nodes by solution
+            # via stn_node_mapping (built in add_stn_trajectories).
+            stn_plot_type = config.stn_plot_type
+
+            for algo_idx, selected_trajectories_adv, _ in stn_algo_data:
+                for run_idx, entry in enumerate(selected_trajectories_adv):
+                    if not entry or len(entry) < 3 or entry[0] is None:
+                        continue
+                    unique_solutions, true_fits, noisy_fits = entry[0], entry[1], entry[2]
+
+                    def node_for(step_idx):
+                        if stn_plot_type in ('prior_v4', 'prior_v5'):
+                            label = f"STN_S{algo_idx}_R{run_idx}_Sol{step_idx}_True"
+                        elif stn_plot_type == 'prior_algo_pov':
+                            label = f"STN_S{algo_idx}_R{run_idx}_Sol{step_idx}_Noisy"
+                        else:
+                            label = stn_node_mapping.get((tuple(unique_solutions[step_idx]), "STN"))
+                        return label if label and label in pos else None
+
+                    for step_idx in increasing_noise_step_indices(true_fits, noisy_fits):
+                        node = node_for(step_idx)
+                        if node:
+                            hits['increasing_noise'].add(node)
+                    for step_idx in comparison_misjudgement_step_indices(true_fits, noisy_fits, minimising):
+                        node = node_for(step_idx)
+                        if node:
+                            hits['comparison'].add(node)
+                    for step_idx in constraint_misjudgement_step_indices(true_fits):
+                        node = node_for(step_idx)
+                        if node:
+                            hits['constraint'].add(node)
+
+            # Scale the stacking offset to the plot's actual fitness range so dots
+            # are visible and proportionate regardless of the problem's fitness scale.
+            all_z = [ann_z(attr.get('fitness')) for _, attr in G.nodes(data=True) if attr.get('fitness') is not None]
+            z_span = (max(all_z) - min(all_z)) if len(all_z) >= 2 else 1.0
+            offset_unit = (z_span or 1.0) * 0.03
+
+            for key, color, slot in MISTAKE_TYPES:
+                xs, ys, zs = [], [], []
+                for node in hits[key]:
+                    x, y = pos[node][:2]
+                    z = ann_z(G.nodes[node].get('fitness', 0))
+                    xs.append(x); ys.append(y); zs.append(z + slot * offset_unit)
+                if xs:
+                    traces.append(go.Scatter3d(
+                        x=xs, y=ys, z=zs,
+                        mode='markers',
+                        marker=dict(size=4, color=color, symbol='circle'),
+                        name=f'Advanced misjudgement: {key.replace("_", " ")}',
+                        showlegend=True,
+                    ))
 
         if 'annotate-optimum' in (annotation_options or []) and config.optimum is not None:
             for node, attr in G.nodes(data=True):
