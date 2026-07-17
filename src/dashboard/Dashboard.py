@@ -158,6 +158,7 @@ FIT_FUNC_XAXIS_LABELS = {
     'OneMax_prior_1q_bitwise_fitness': 'q (bitwise flip probability q/n)',
     'eval_noisy_kp_v1': 'd, where d x mean(W) is s.d. of noise',
     'eval_noisy_kp_v2': 'd, where d x mean(W) is s.d. of noise',
+    'eval_noisy_kp_v3': 'd, where d x mean(W) is s.d. of noise',
     'eval_noisy_kp_prior_bitflip': 'p (probability of single bit flip (p/n))',
     'eval_noisy_kp_prior_mult_bitflip': 'k (number of bit flips)',
     'eval_noisy_kp_pq_prior_bitwise': 'q (bitwise flip probability q/n), probability of applying noise 1/n',
@@ -175,6 +176,7 @@ FIT_FUNC_NOISE_PARAM_LABEL = {
     'OneMax_prior_1q_bitwise_fitness': 'q',
     'eval_noisy_kp_v1': 'd',
     'eval_noisy_kp_v2': 'd',
+    'eval_noisy_kp_v3': 'd',
     'eval_noisy_kp_prior_bitflip': 'p',
     'eval_noisy_kp_prior_mult_bitflip': 'k',
     'eval_noisy_kp_pq_prior_bitwise': 'q',
@@ -1950,14 +1952,11 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
             return z
         scene_annotations = []
         if 'annotate-start-nodes' in (annotation_options or []):
-            seen_positions = set()
-            for node, attr in G.nodes(data=True):
-                if attr.get('start_node') and node in pos:
-                    x, y = pos[node][:2]
-                    z = attr.get('fitness', 0)
-                    pos_key = (round(x, 6), round(y, 6), round(z, 6))
-                    if pos_key not in seen_positions:
-                        seen_positions.add(pos_key)
+            if 'single-start-node' in (annotation_options or []):
+                for node, attr in G.nodes(data=True):
+                    if attr.get('start_node') and attr.get('series_idx', 0) == 0 and node in pos:
+                        x, y = pos[node][:2]
+                        z = attr.get('fitness', 0)
                         scene_annotations.append(dict(
                             x=x, y=y, z=ann_z(z),
                             text='Start node',
@@ -1969,6 +1968,27 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                             ax=80, ay=0,
                             font=dict(size=ann_font_size, color='black'),
                         ))
+                        break
+            else:
+                seen_positions = set()
+                for node, attr in G.nodes(data=True):
+                    if attr.get('start_node') and node in pos:
+                        x, y = pos[node][:2]
+                        z = attr.get('fitness', 0)
+                        pos_key = (round(x, 6), round(y, 6), round(z, 6))
+                        if pos_key not in seen_positions:
+                            seen_positions.add(pos_key)
+                            scene_annotations.append(dict(
+                                x=x, y=y, z=ann_z(z),
+                                text='Start node',
+                                showarrow=True,
+                                arrowhead=2,
+                                arrowsize=1,
+                                arrowwidth=1.5,
+                                arrowcolor='black',
+                                ax=80, ay=0,
+                                font=dict(size=ann_font_size, color='black'),
+                            ))
 
         if 'annotate-end-nodes' in (annotation_options or []):
             seen_positions = set()

@@ -977,6 +977,7 @@ def create_lon_options_section():
                             {'label': 'KP V2 simple', 'value': 'kpv2s'},
                             {'label': 'KP V1 mean(w)', 'value': 'kpv1mw'},
                             {'label': 'KP V2 mean(w)', 'value': 'kpv2mw'},
+                            {'label': 'KP V3 mean(w)', 'value': 'kpv3'},
                             {'label': 'KP Prior (Bit Flip)', 'value': 'kppbf'},
                             {'label': 'KP Prior (Mult Bit Flip)', 'value': 'kppmbf'},
                             {'label': 'KP Prior (p,q) bitwise', 'value': 'kpppqbw'},
@@ -1342,6 +1343,7 @@ def create_annotation_options_section():
             id='annotation-options',
             options=[
                 {'label': ' Start nodes', 'value': 'annotate-start-nodes'},
+                {'label': ' Single start node', 'value': 'single-start-node'},
                 {'label': ' Optimum', 'value': 'annotate-optimum'},
                 {'label': ' End nodes', 'value': 'annotate-end-nodes'},
                 {'label': ' Misjudgements', 'value': 'annotate-mistakes'},

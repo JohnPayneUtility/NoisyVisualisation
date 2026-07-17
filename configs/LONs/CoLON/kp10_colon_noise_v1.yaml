@@ -65,7 +65,7 @@ problem:
     items_dict: null   # set after loader
     capacity: null     # set after loader
     # penalty: 1
-    noise_intensity: 1
+    noise_intensity: 3
 
   # Attribute generator and fitness direction
   attr_function: binary_attribute
