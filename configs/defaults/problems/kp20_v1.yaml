@@ -17,11 +17,12 @@ problem:
     filename: f10_l-d_kp_20_879
   
   # Fitness function
-  fitness_fn: eval_noisy_kp_v1
+  fitness_fn: eval_noisy_kp_v1_penalty
   fitness_params:
     items_dict: null  # Will be set after problem loading
     capacity: null    # Will be set after problem loading
     noise_intensity: 0
+    penalty: 10
   
   # Attributes and weights
   attr_function: binary_attribute

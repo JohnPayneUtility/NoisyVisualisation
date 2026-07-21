@@ -1,10 +1,10 @@
-experiment_name: "test02_KP_LON"
+experiment_name: "KP_LON_penalty"
 
 # ==============================
 # Run Configuration
 # ==============================
 run:
-  num_runs: 1000  # how many basin-hops (seeds) to aggregate
+  num_runs: 500  # how many basin-hops (seeds) to aggregate
   seed: 1
   parallel: true
   num_workers: 50
@@ -26,7 +26,8 @@ hydra:
 # LON Configuration
 # ==============================
 lon:
-  name: CoLON_noisy_v1_1
+  name: CoLON_penalty_noisy_v1_1
+  # name: CoLON_penalty
   pert_attempts: 1500
   n_flips_mut: 1
   n_flips_pert: 2
@@ -60,7 +61,7 @@ problem:
     filename: f10_l-d_kp_20_879
 
   # Fitness function used for LONs (deterministic KP by default)
-  fitness_fn: eval_noisy_kp_v1
+  fitness_fn: eval_noisy_kp_v1_penalty
   fitness_params:
     items_dict: null   # set after loader
     capacity: null     # set after loader

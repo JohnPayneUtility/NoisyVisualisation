@@ -11,7 +11,8 @@ def load_problem_KP(filename, verbose=False):
         problem_path = 'instances_01_KP/large_scale/'+filename
         solution_path = 'instances_01_KP/large_scale-optimum/'+filename
 
-    else: print('problem not found')
+    else:
+        raise FileNotFoundError(f"No knapsack instance found for PID: {filename}")
 
     data = np.loadtxt(problem_path, dtype=int, usecols=(0, 1))
     col_1 = data[:, 0]
@@ -22,7 +23,7 @@ def load_problem_KP(filename, verbose=False):
     values = data[1:, 0]
     weights = data[1:, 1]
 
-    optimal = np.loadtxt(solution_path, dtype=int)
+    optimal = np.loadtxt(solution_path, dtype=float)
 
     items_dict = {}
     for i in range(n_items):
@@ -46,3 +47,42 @@ def load_problem_KP(filename, verbose=False):
 
     # Return problem data
     return n_items, capacity, optimal, values, weights, items_dict, problem_info
+
+
+def get_knapsack_problem_stats(pid):
+    """
+    Returns a dict of summary statistics for a knapsack PID, or None if the
+    PID does not correspond to a known knapsack instance.
+    """
+    import numpy as np
+    import os
+
+    if not (os.path.exists('instances_01_KP/low-dimensional/' + pid)
+            or os.path.exists('instances_01_KP/large_scale/' + pid)):
+        return None
+
+    n_items, capacity, optimal, values, weights, items_dict, problem_info = load_problem_KP(pid)
+    values = np.asarray(values, dtype=float)
+    weights = np.asarray(weights, dtype=float)
+
+    # The instance's optimum file stores the optimal fitness value directly
+    # (not a solution vector), e.g. `295` for f1_l-d_kp_10_269.
+    global_optimum = float(optimal)
+    correlation = float(np.corrcoef(values, weights)[0, 1]) if n_items > 1 else float('nan')
+
+    return {
+        'n_items': int(n_items),
+        'capacity': int(capacity),
+        'max_value': float(values.max()),
+        'min_value': float(values.min()),
+        'avg_value': float(values.mean()),
+        'std_value': float(values.std()),
+        'max_weight': float(weights.max()),
+        'min_weight': float(weights.min()),
+        'avg_weight': float(weights.mean()),
+        'std_weight': float(weights.std()),
+        'value_weight_correlation': correlation,
+        'global_optimum': global_optimum,
+        'sum_values': float(values.sum()),
+        'sum_weights': float(weights.sum()),
+    }

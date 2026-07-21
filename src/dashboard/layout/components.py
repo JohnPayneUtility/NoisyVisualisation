@@ -489,6 +489,10 @@ def create_problem_selection_section(display1_df, df_lon, lon_display_columns, e
                 style_table={"overflowX": "auto"},
             )
         ]),
+        html.Div(
+            id='knapsack-info-display',
+            style={'padding': '10px', 'fontSize': '13px', 'color': '#444'},
+        ),
         html.B("LON selection table", style={"padding": "10px 10px 0px", "display": "block"}),
         html.Div(style=table_wrapper_style, children=[
             dash_table.DataTable(
@@ -978,6 +982,8 @@ def create_lon_options_section():
                             {'label': 'KP V1 mean(w)', 'value': 'kpv1mw'},
                             {'label': 'KP V2 mean(w)', 'value': 'kpv2mw'},
                             {'label': 'KP V3 mean(w)', 'value': 'kpv3'},
+                            {'label': 'KP V1 penalty', 'value': 'kpv1p'},
+                            {'label': 'KP V2 penalty', 'value': 'kpv2p'},
                             {'label': 'KP Prior (Bit Flip)', 'value': 'kppbf'},
                             {'label': 'KP Prior (Mult Bit Flip)', 'value': 'kppmbf'},
                             {'label': 'KP Prior (p,q) bitwise', 'value': 'kpppqbw'},

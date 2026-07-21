@@ -15,7 +15,7 @@ import os
 
 from .DashboardHelpers import *
 from ..problems.FitnessFunctions import *
-from ..problems.ProblemScripts import load_problem_KP
+from ..problems.ProblemScripts import load_problem_KP, get_knapsack_problem_stats
 from .DimensionalityReduction import *
 from .layout import create_layout, TAB_STYLE, TAB_SELECTED_STYLE, _build_schematic_figure, _build_schematic_legend
 from .layout.stores import LON_TABLE_SELECTED_PID_STORE
@@ -157,7 +157,9 @@ FIT_FUNC_XAXIS_LABELS = {
     'OneMax_prior_pq_bitwise_fitness': 'q (bitwise flip probability q/n), probability of applying noise 1/n',
     'OneMax_prior_1q_bitwise_fitness': 'q (bitwise flip probability q/n)',
     'eval_noisy_kp_v1': 'd, where d x mean(W) is s.d. of noise',
+    'eval_noisy_kp_v1_penalty': 'd, where d x mean(W) is s.d. of noise',
     'eval_noisy_kp_v2': 'd, where d x mean(W) is s.d. of noise',
+    'eval_noisy_kp_v2_penalty': 'd, where d x mean(W) is s.d. of noise',
     'eval_noisy_kp_v3': 'd, where d x mean(W) is s.d. of noise',
     'eval_noisy_kp_prior_bitflip': 'p (probability of single bit flip (p/n))',
     'eval_noisy_kp_prior_mult_bitflip': 'k (number of bit flips)',
@@ -175,7 +177,9 @@ FIT_FUNC_NOISE_PARAM_LABEL = {
     'OneMax_prior_pq_bitwise_fitness': 'q',
     'OneMax_prior_1q_bitwise_fitness': 'q',
     'eval_noisy_kp_v1': 'd',
+    'eval_noisy_kp_v1_penalty': 'd',
     'eval_noisy_kp_v2': 'd',
+    'eval_noisy_kp_v2_penalty': 'd',
     'eval_noisy_kp_v3': 'd',
     'eval_noisy_kp_prior_bitflip': 'p',
     'eval_noisy_kp_prior_mult_bitflip': 'k',
@@ -246,6 +250,53 @@ def update_experiment_description(selected):
                 html.Span(f": {desc}", style={'marginLeft': '4px'}),
             ], style={'marginBottom': '4px'}))
     return items or ""
+
+
+@app.callback(
+    Output('knapsack-info-display', 'children'),
+    Input('PID', 'data'),
+)
+def update_knapsack_info(pid):
+    if not pid:
+        return ""
+    stats = get_knapsack_problem_stats(pid)
+    if stats is None:
+        return html.Div("Not a knapsack problem — no additional information.", style={'fontStyle': 'italic'})
+
+    def row(label, value):
+        formatted = f"{value:.3g}" if isinstance(value, float) else str(value)
+        return html.Div([
+            html.Span(f"{label}: ", style={'fontWeight': 'bold'}),
+            html.Span(formatted),
+        ])
+
+    summary_col = [
+        row("Items", stats['n_items']),
+        row("Capacity", stats['capacity']),
+        row("Global optimum", stats['global_optimum']),
+        row("Sum of values", stats['sum_values']),
+        row("Sum of weights", stats['sum_weights']),
+        row("Value/weight correlation", stats['value_weight_correlation']),
+    ]
+    values_col = [
+        row("Max value", stats['max_value']),
+        row("Min value", stats['min_value']),
+        row("Avg value", stats['avg_value']),
+        row("Std value", stats['std_value']),
+    ]
+    weights_col = [
+        row("Max weight", stats['max_weight']),
+        row("Min weight", stats['min_weight']),
+        row("Avg weight", stats['avg_weight']),
+        row("Std weight", stats['std_weight']),
+    ]
+    return html.Div([
+        html.Div(summary_col, style={'marginBottom': '6px'}),
+        html.Div([
+            html.Div(values_col, style={'marginRight': '30px'}),
+            html.Div(weights_col),
+        ], style={'display': 'flex'}),
+    ])
 
 
 @app.callback(
