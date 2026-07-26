@@ -996,6 +996,20 @@ def create_lon_options_section():
                     style=INLINE_DROPDOWN_WRAPPER_STYLE
                 ),
                 html.Div(
+                    html.Label(" Penalty: "),
+                    style=INLINE_VERTICAL_ALIGN_STYLE
+                ),
+                html.Div(
+                    dcc.Input(
+                        id='NLON_penalty',
+                        type='number',
+                        min=1,
+                        step=1,
+                        value=10
+                    ),
+                    style=INLINE_VERTICAL_ALIGN_NO_MARGIN_STYLE
+                ),
+                html.Div(
                     html.Label(" Noise intensity: "),
                     style=INLINE_VERTICAL_ALIGN_STYLE
                 ),

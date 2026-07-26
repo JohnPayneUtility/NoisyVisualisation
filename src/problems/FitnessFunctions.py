@@ -343,14 +343,14 @@ def eval_noisy_kp_v2_penalty(individual, items_dict, capacity, noise_intensity=0
     weight = sum(items_dict[i][1] * individual[i] for i in range(n_items))
     value = sum(items_dict[i][0] * individual[i] for i in range(n_items))
 
-    # Calculate true fitness (no noise)
+    # Calculate true fitness
     if weight > capacity:
         if penalty >= 1:
             true_fitness = value - penalty * (weight - capacity)
         else:
             true_fitness = capacity - weight
     else:
-        true_fitness = value
+        true_fitness = value # return violation
 
     # Calculate noisy fitness
     noise = random.gauss(0, noise_intensity * mean_weight(items_dict))
@@ -362,7 +362,7 @@ def eval_noisy_kp_v2_penalty(individual, items_dict, capacity, noise_intensity=0
         if penalty >= 1:
             noisy_fitness = noisy_value - penalty * (noisy_weight - capacity)
         else:
-            noisy_fitness = capacity - noisy_weight
+            noisy_fitness = capacity - noisy_weight # return violation
     else:
         noisy_fitness = noisy_value
 
@@ -552,7 +552,7 @@ def eval_noisy_kp_pq_prior_bitwise(individual, items_dict, capacity, noise_inten
 
     return (noisy_fitness,)
 
-def eval_noisy_kp_1q_prior_bitwise(individual, items_dict, capacity, noise_intensity=0, penalty=1):
+def eval_noisy_kp_1q_prior_bitwise(individual, items_dict, capacity, noise_intensity=0, penalty=10):
     """
     Calculates fitness for knapsack problem with prior noise.
 
@@ -571,11 +571,12 @@ def eval_noisy_kp_1q_prior_bitwise(individual, items_dict, capacity, noise_inten
     orig_weight = sum(items_dict[i][1] * individual[i] for i in range(n_items))
     orig_value = sum(items_dict[i][0] * individual[i] for i in range(n_items))
 
+    # Calculate true fitness (no noise)
     if orig_weight > capacity:
-        if penalty == 1:
-            true_fitness = capacity - orig_weight
+        if penalty >= 1:
+            true_fitness = orig_value - penalty * (orig_weight - capacity)
         else:
-            true_fitness = 0
+            true_fitness = capacity - orig_weight
     else:
         true_fitness = orig_value
 
@@ -584,11 +585,13 @@ def eval_noisy_kp_1q_prior_bitwise(individual, items_dict, capacity, noise_inten
     noisy_weight = sum(items_dict[i][1] * noisy_individual[i] for i in range(n_items))
     noisy_value = sum(items_dict[i][0] * noisy_individual[i] for i in range(n_items))
 
+    # Calculate noisy fitness
     if noisy_weight > capacity:
-        if penalty == 1:
-            noisy_fitness = capacity - noisy_weight
+        if penalty >= 1:
+            noisy_fitness = noisy_value - penalty * (noisy_weight - capacity)
         else:
-            noisy_fitness = 0
+            # return violation
+            noisy_fitness = capacity - noisy_weight
     else:
         noisy_fitness = noisy_value
 

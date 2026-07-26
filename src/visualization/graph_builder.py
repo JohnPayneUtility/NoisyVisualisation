@@ -922,9 +922,9 @@ def add_lon_nodes(
             elif nlon_config.fit_func == 'kpv3':
                 noisy_fitness = eval_noisy_kp_v3(opt, items_dict=items_dict, capacity=capacity, noise_intensity=nlon_config.intensity)[0]
             elif nlon_config.fit_func == 'kpv1p':
-                noisy_fitness = eval_noisy_kp_v1_penalty(opt, items_dict=items_dict, capacity=capacity, noise_intensity=nlon_config.intensity)[0]
+                noisy_fitness = eval_noisy_kp_v1_penalty(opt, items_dict=items_dict, capacity=capacity, noise_intensity=nlon_config.intensity, penalty=nlon_config.penalty)[0]
             elif nlon_config.fit_func == 'kpv2p':
-                noisy_fitness = eval_noisy_kp_v2_penalty(opt, items_dict=items_dict, capacity=capacity, noise_intensity=nlon_config.intensity)[0]
+                noisy_fitness = eval_noisy_kp_v2_penalty(opt, items_dict=items_dict, capacity=capacity, noise_intensity=nlon_config.intensity, penalty=nlon_config.penalty)[0]
             elif nlon_config.fit_func == 'kppbf':
                 noisy_fitness = eval_noisy_kp_prior_bitflip(opt, items_dict=items_dict, capacity=capacity, noise_intensity=nlon_config.intensity)[0]
             elif nlon_config.fit_func == 'kppmbf':
@@ -932,7 +932,7 @@ def add_lon_nodes(
             elif nlon_config.fit_func == 'kpppqbw':
                 noisy_fitness = eval_noisy_kp_pq_prior_bitwise(opt, items_dict=items_dict, capacity=capacity, noise_intensity=nlon_config.intensity)[0]
             elif nlon_config.fit_func == 'kpp1qbw':
-                noisy_fitness = eval_noisy_kp_1q_prior_bitwise(opt, items_dict=items_dict, capacity=capacity, noise_intensity=nlon_config.intensity)[0]
+                noisy_fitness = eval_noisy_kp_1q_prior_bitwise(opt, items_dict=items_dict, capacity=capacity, noise_intensity=nlon_config.intensity, penalty=nlon_config.penalty)[0]
             else:
                 print('NO NOISY FITNESS FUNCTION PROVIDED')
                 noisy_fitness = 0

@@ -15,7 +15,7 @@ import os
 
 from .DashboardHelpers import *
 from ..problems.FitnessFunctions import *
-from ..problems.ProblemScripts import load_problem_KP, get_knapsack_problem_stats
+from ..problems.ProblemScripts import load_problem_KP, get_knapsack_problem_stats, interpret_correlation
 from .DimensionalityReduction import *
 from .layout import create_layout, TAB_STYLE, TAB_SELECTED_STYLE, _build_schematic_figure, _build_schematic_legend
 from .layout.stores import LON_TABLE_SELECTED_PID_STORE
@@ -263,12 +263,18 @@ def update_knapsack_info(pid):
     if stats is None:
         return html.Div("Not a knapsack problem — no additional information.", style={'fontStyle': 'italic'})
 
-    def row(label, value):
+    def row(label, value, suffix=""):
         formatted = f"{value:.3g}" if isinstance(value, float) else str(value)
         return html.Div([
             html.Span(f"{label}: ", style={'fontWeight': 'bold'}),
-            html.Span(formatted),
+            html.Span(formatted + suffix),
         ])
+
+    correlation = stats['value_weight_correlation']
+    ratio_text = (
+        f"{stats['max_ratio_value']:.3g} / {stats['max_ratio_weight']:.3g} "
+        f"({stats['max_ratio']:.3g})"
+    )
 
     summary_col = [
         row("Items", stats['n_items']),
@@ -276,7 +282,8 @@ def update_knapsack_info(pid):
         row("Global optimum", stats['global_optimum']),
         row("Sum of values", stats['sum_values']),
         row("Sum of weights", stats['sum_weights']),
-        row("Value/weight correlation", stats['value_weight_correlation']),
+        row("Value/weight correlation", correlation, suffix=f" ({interpret_correlation(correlation)})"),
+        row("Largest value/weight", ratio_text),
     ]
     values_col = [
         row("Max value", stats['max_value']),
@@ -1595,6 +1602,7 @@ def handle_print_mode(annotation_options):
      Input('NLON_fit_func', 'value'),
      Input('NLON_intensity', 'value'),
      Input('NLON_samples', 'value'),
+     Input('NLON_penalty', 'value'),
      Input('layout', 'value'),
      Input('plotType', 'value'),
      Input('hover-info', 'value'),
@@ -1633,7 +1641,7 @@ def handle_print_mode(annotation_options):
 )
 def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limit,
                 LO_fit_percent, LON_options, LON_node_colour_mode, LON_surface_colour, LON_edge_colour_feas,
-                lmds_multiplier, NLON_fit_func, NLON_intensity, NLON_samples, layout_value, plot_type,
+                lmds_multiplier, NLON_fit_func, NLON_intensity, NLON_samples, NLON_penalty, layout_value, plot_type,
                 hover_info_value, azimuth_deg, elevation_deg, all_trajectories_list, STN_labels,
                 run_start_index, n_runs_display, local_optima, axis_values,
                 opacity_noise_bar, LON_node_opacity, LON_edge_opacity, STN_node_opacity, STN_edge_opacity,
@@ -1669,6 +1677,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
         nlon_fit_func=NLON_fit_func,
         nlon_intensity=NLON_intensity,
         nlon_samples=NLON_samples,
+        nlon_penalty=NLON_penalty,
         layout_value=layout_value,
         plot_type=plot_type,
         hover_info_value=hover_info_value,

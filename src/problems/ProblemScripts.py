@@ -70,6 +70,9 @@ def get_knapsack_problem_stats(pid):
     global_optimum = float(optimal)
     correlation = float(np.corrcoef(values, weights)[0, 1]) if n_items > 1 else float('nan')
 
+    ratios = np.divide(values, weights, out=np.full_like(values, np.inf), where=weights > 0)
+    best_idx = int(np.argmax(ratios))
+
     return {
         'n_items': int(n_items),
         'capacity': int(capacity),
@@ -85,4 +88,18 @@ def get_knapsack_problem_stats(pid):
         'global_optimum': global_optimum,
         'sum_values': float(values.sum()),
         'sum_weights': float(weights.sum()),
+        'max_ratio_value': float(values[best_idx]),
+        'max_ratio_weight': float(weights[best_idx]),
+        'max_ratio': float(ratios[best_idx]),
     }
+
+
+def interpret_correlation(r, neutral_threshold=0.1):
+    """Classify a value/weight correlation coefficient as positive/neutral/negative."""
+    if r != r:  # NaN check
+        return 'n/a'
+    if r >= neutral_threshold:
+        return 'positive'
+    if r <= -neutral_threshold:
+        return 'negative'
+    return 'neutral'

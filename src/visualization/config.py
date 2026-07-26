@@ -100,6 +100,7 @@ class NoisyLONConfig:
     fit_func: str = 'kpv1s'
     intensity: float = 1.0
     samples: int = 10
+    penalty: float = 10.0
 
 
 @dataclass
@@ -178,6 +179,7 @@ def parse_callback_inputs(
     nlon_fit_func: str,
     nlon_intensity: float,
     nlon_samples: int,
+    nlon_penalty: float,
     layout_value: str,
     plot_type: str,
     hover_info_value: str,
@@ -314,6 +316,7 @@ def parse_callback_inputs(
             fit_func=nlon_fit_func,
             intensity=nlon_intensity,
             samples=nlon_samples,
+            penalty=nlon_penalty,
         ),
         colorscale=colorscale,
     )
