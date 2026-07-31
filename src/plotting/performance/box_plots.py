@@ -101,6 +101,92 @@ def plot_box(dataframe, fitness_mode='best', problem_goal='maximise', xaxis_titl
     return fig
 
 
+def plot_box_penalty(dataframe, fitness_mode='best', problem_goal='maximise', xaxis_title=None, colorscale='Viridis'):
+    """
+    Create a box plot comparing algorithm performance across penalty (lambda) values.
+
+    Identical to plot_box, except the x-axis is the penalty coefficient used by
+    the fitness function rather than the noise level.
+
+    Args:
+        dataframe: DataFrame with columns:
+            - algo_name: Algorithm identifier
+            - penalty: Penalty coefficient (lambda) used by the fitness function
+            - max_fit / min_fit / final_fit / *_noisy: fitness columns (see plot_box)
+        fitness_mode: 'best'/'final' to plot true fitness, 'best_noisy'/'final_noisy'
+            to plot noisy fitness
+        problem_goal: 'maximise' or 'minimise' — determines which column is 'best'
+
+    Returns:
+        go.Figure: Box plot comparing algorithms, or an empty figure if no
+            penalty data is available.
+    """
+    df = dataframe.copy()
+
+    if 'penalty' not in df.columns:
+        return create_empty_figure('No penalty data available')
+
+    if fitness_mode == 'final':
+        fit_col = 'final_fit'
+        yaxis_label = 'Final solution found'
+    elif fitness_mode == 'final_noisy':
+        fit_col = 'final_fit_noisy'
+        yaxis_label = 'Final noisy solution found'
+    elif fitness_mode == 'best_noisy':
+        fit_col = 'min_fit_noisy' if problem_goal == 'minimise' else 'max_fit_noisy'
+        yaxis_label = 'Best noisy solution found'
+    elif problem_goal == 'minimise':
+        fit_col = 'min_fit'
+        yaxis_label = 'Best solution found'
+    else:
+        fit_col = 'max_fit'
+        yaxis_label = 'Best solution found'
+
+    df = df[['algo_name', 'penalty', fit_col]].dropna(subset=['penalty'])
+
+    if df.empty:
+        return create_empty_figure('No penalty data available')
+
+    penalty_levels = sorted(df['penalty'].unique())
+    algos = sorted(df['algo_name'].unique())
+    colors = _viridis_colors(len(algos), colorscale)
+
+    fig = px.box(
+        df,
+        x="penalty",
+        y=fit_col,
+        color="algo_name",
+        category_orders={"penalty": penalty_levels, "algo_name": algos},
+        color_discrete_sequence=colors,
+        points=False
+    )
+
+    fig.update_layout(
+        xaxis=dict(
+            title=dict(
+                text=xaxis_title or "penalty (lambda)",
+                font=dict(size=24, color="black")
+            ),
+            tickfont=dict(size=20, color="black")
+        ),
+        yaxis=dict(
+            title=dict(
+                text=yaxis_label,
+                font=dict(size=24, color="black")
+            ),
+            tickfont=dict(size=20, color="black")
+        ),
+        legend=dict(
+            title=dict(font=dict(size=24, color="black")),
+            font=dict(size=20, color="black")
+        ),
+        boxmode="group",
+        template=DEFAULT_TEMPLATE
+    )
+
+    return fig
+
+
 def plot_box_evals(dataframe, fitness_mode='final', xaxis_title=None, colorscale='Viridis'):
     """
     Create a box plot comparing algorithm runtime (evaluations) across noise levels.

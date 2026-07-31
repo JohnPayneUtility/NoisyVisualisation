@@ -45,7 +45,7 @@ from ..common import is_continuous_solution
 
 # Plotting module imports - using registry for dynamic dispatch
 from ..plotting import get_pareto_plot
-from ..plotting.performance import plot2d_line, plot2d_box, plot2d_line_mo, plot2d_box_mo, plot2d_line_evals, plot2d_box_evals, plot2d_box_misjudgements_so, plot2d_box_advanced_misjudgements_so
+from ..plotting.performance import plot2d_line, plot2d_box, plot2d_line_mo, plot2d_box_mo, plot2d_line_evals, plot2d_box_evals, plot2d_box_penalty, plot2d_box_misjudgements_so, plot2d_box_advanced_misjudgements_so
 
 # ==========
 # Data Loading
@@ -614,6 +614,24 @@ def display_box_evals_so(data, fitness_mode, fit_func, plot_theme, noise_cap, hi
     plot_df = _hide_series(_cap_noise(pd.DataFrame(data), noise_cap), hidden_series)
     return plot2d_box_evals(plot_df, fitness_mode=fitness_mode or 'final', xaxis_title=xaxis_label, colorscale=plot_theme or 'Viridis')
 
+# 2D box plot (penalty, single-objective)
+@app.callback(
+    Output('2DBoxPlotPenaltySO', 'figure'),
+    Input('plot_2d_data', 'data'),
+    Input('so-fitness-mode', 'value'),
+    Input('fit_func_store', 'data'),
+    Input('opt_goal', 'data'),
+    Input('plot-theme', 'value'),
+    Input('noise-cap-input', 'value'),
+    Input('hide-series-dropdown', 'value'),
+)
+def display_box_penalty_so(data, fitness_mode, fit_func, opt_goal, plot_theme, noise_cap, hidden_series):
+    if not fit_func:
+        return go.Figure()
+    problem_goal = _get_problem_goal(opt_goal)
+    plot_df = _hide_series(_cap_noise(pd.DataFrame(data), noise_cap), hidden_series)
+    return plot2d_box_penalty(plot_df, fitness_mode=fitness_mode or 'best', problem_goal=problem_goal, colorscale=plot_theme or 'Viridis')
+
 # 2D box plot (misjudgements, single-objective)
 @app.callback(
     Output('2DBoxPlotMisjudgementsSO', 'figure'),
@@ -1101,6 +1119,10 @@ def render_content_2DPlot_tab(tab):
     elif tab == 'p7':
         return html.Div([
             dcc.Graph(id='2DBoxPlotEvalsSO', style={'width': '800px', 'height': '600px'}),
+        ])
+    elif tab == 'p10':
+        return html.Div([
+            dcc.Graph(id='2DBoxPlotPenaltySO', style={'width': '800px', 'height': '600px'}),
         ])
     elif tab == 'p8':
         return html.Div([

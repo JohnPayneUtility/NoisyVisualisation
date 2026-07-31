@@ -21,8 +21,12 @@ hydra:
   sweeper: # sweep through various combinations of parameters
     params:
       +defaults/run: run_budget_onemax
-      +defaults/problems: kp20_1qbitwise
+      # +defaults/problems/knapsackPenalty: kp5_v1, kp5_v2, kp5_1q, kp10_v1, kp10_v2, kp10_1q, kp20_v1, kp20_v2, kp20_1q, kp100_uc_v1, kp100_uc_v2, kp100_uc_1q
+      +defaults/problems/knapsackPenalty: kp100_sc_v1, kp100_sc_v2, kp100_sc_1q
       +defaults/algos: 1p1ea, umda, pcea, mup1ea
+      # +defaults/algos: 1p1ea
       problem.fitness_params.noise_intensity: 0,1,2,3,4,5,6,7,8,9,10
+      # problem.fitness_params.noise_intensity: 4,5,6,7,8,9,10
+      # problem.fitness_params.penalty: 0,1,2,3,4,5,6,7,8,9,10
   sweep:
     dir: data/outputs

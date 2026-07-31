@@ -8,7 +8,7 @@ defaults:
 # none
 
 # EXPERIMENT SETTINGS
-experiment_name: "performance_OneMaxBudget_penalty_test_2"
+experiment_name: "performance_OneMaxBudget_penalty_test"
 experiment_description: >
   Performance of 1p1ea, mup1ea, UMDA, and PCEA on onemax and knapsack problems
   for various noise models, eval budget is 2x evals required for PCEA to converge on onemax,
@@ -21,8 +21,12 @@ hydra:
   sweeper: # sweep through various combinations of parameters
     params:
       +defaults/run: run_budget_onemax
-      +defaults/problems: kp20_v2_2
-      +defaults/algos: 1p1ea, umda, pcea, mup1ea
+      # +defaults/problems/knapsackPenalty: kp100_uc_v1, kp100_wc_v1, kp100_sc_v1
+      +defaults/problems/knapsackPenalty: kp100_uc_v1
+      # +defaults/algos: 1p1ea, umda, pcea, mup1ea
+      +defaults/algos: 1p1ea, umda
       problem.fitness_params.noise_intensity: 0
+      # problem.fitness_params.penalty: 0,1,2,3,4,5,6,7,8,9,10
+      problem.fitness_params.penalty: 11,12,13,14,15
   sweep:
     dir: data/outputs

@@ -120,6 +120,7 @@ DISPLAY2_DROP_COLUMNS = [
     'parent_run_id',
     'payload_path',
     'peak_ram_mb',
+    'penalty',
 ]
 
 # Keys used for deduplication in display2_df

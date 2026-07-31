@@ -220,6 +220,7 @@ def hydra_algo_data_single(prob_info: Dict[str, Any],
 
         "fit_func": algo_params["fitness_function"][0].__name__,
         "noise": algo_params["fitness_function"][1]["noise_intensity"],
+        "penalty": algo_params["fitness_function"][1].get("penalty"),
         "algo_type": algo_instance.type,
         "algo_name": algo_instance.name,
 

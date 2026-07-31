@@ -1,6 +1,6 @@
 # @package _global_
 problem:
-  PID: f10_l-d_kp_20_879
+  PID: f9_l-d_kp_5_80
   prob_name: knapsack
   prob_type: discrete
   opt_goal: maximise
@@ -14,14 +14,15 @@ problem:
   # Problem loading
   loader:
     _target_: src.problems.ProblemScripts.load_problem_KP
-    filename: f10_l-d_kp_20_879
+    filename: f9_l-d_kp_5_80
   
   # Fitness function
-  fitness_fn: eval_noisy_kp_v2
+  fitness_fn: eval_noisy_kp_v1_penalty
   fitness_params:
     items_dict: null  # Will be set after problem loading
     capacity: null    # Will be set after problem loading
     noise_intensity: 0
+    penalty: 2
   
   # Attributes and weights
   attr_function: binary_attribute
