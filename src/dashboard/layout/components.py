@@ -1107,7 +1107,7 @@ def create_plot_options_section():
             options=[
                 {'label': 'RegLon', 'value': 'RegLon'},
                 {'label': 'NLon_box', 'value': 'NLon_box'},
-                {'label': 'STN', 'value': 'STN'},
+                {'label': 'NLon_IQR', 'value': 'NLon_IQR'},
             ],
             value='RegLon',
             placeholder='Select plot type',

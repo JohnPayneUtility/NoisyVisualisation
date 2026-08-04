@@ -510,7 +510,8 @@ def create_boxplot_traces(
     pos: Dict[str, Tuple[float, float]],
     node_noise: Dict[str, List[float]],
     fitness_dict: Dict[str, float],
-    config: PlotConfig
+    config: PlotConfig,
+    iqr_only: bool = False
 ) -> List[go.Scatter3d]:
     """
     Create mini boxplot traces for noisy fitness visualization.
@@ -520,6 +521,8 @@ def create_boxplot_traces(
         node_noise: Dictionary mapping node names to lists of noisy fitness values
         fitness_dict: Dictionary mapping node names to base fitness values
         config: PlotConfig object with settings
+        iqr_only: If True, omit the min/max whiskers and caps, leaving only the
+            Q1-Q3 box and median markers
 
     Returns:
         List of Scatter3d traces for boxplot elements
@@ -562,48 +565,54 @@ def create_boxplot_traces(
             x_box = x
 
             # Create traces for each component of the boxplot
-            trace_whisker_top = go.Scatter3d(
-                x=[x_box, x_box],
-                y=[y, y],
-                z=[z_q3, z_max],
-                mode='lines',
-                line=dict(color='grey', width=2),
-                opacity=opacity_noise_bar,
-                showlegend=False
-            )
-            trace_whisker_bottom = go.Scatter3d(
-                x=[x_box, x_box],
-                y=[y, y],
-                z=[z_q1, z_min],
-                mode='lines',
-                line=dict(color='grey', width=2),
-                opacity=opacity_noise_bar,
-                showlegend=False
-            )
-            trace_cap_top = go.Scatter3d(
-                x=[x_box - dx / 2, x_box + dx / 2],
-                y=[y, y],
-                z=[z_max, z_max],
-                mode='lines',
-                line=dict(color='grey', width=2),
-                opacity=opacity_noise_bar,
-                showlegend=False
-            )
-            trace_cap_bottom = go.Scatter3d(
-                x=[x_box - dx / 2, x_box + dx / 2],
-                y=[y, y],
-                z=[z_min, z_min],
-                mode='lines',
-                line=dict(color='grey', width=2),
-                opacity=opacity_noise_bar,
-                showlegend=False
-            )
+            traces_this_node = []
+            if not iqr_only:
+                trace_whisker_top = go.Scatter3d(
+                    x=[x_box, x_box],
+                    y=[y, y],
+                    z=[z_q3, z_max],
+                    mode='lines',
+                    line=dict(color='grey', width=2),
+                    opacity=opacity_noise_bar,
+                    showlegend=False
+                )
+                trace_whisker_bottom = go.Scatter3d(
+                    x=[x_box, x_box],
+                    y=[y, y],
+                    z=[z_q1, z_min],
+                    mode='lines',
+                    line=dict(color='grey', width=2),
+                    opacity=opacity_noise_bar,
+                    showlegend=False
+                )
+                trace_cap_top = go.Scatter3d(
+                    x=[x_box - dx / 2, x_box + dx / 2],
+                    y=[y, y],
+                    z=[z_max, z_max],
+                    mode='lines',
+                    line=dict(color='grey', width=2),
+                    opacity=opacity_noise_bar,
+                    showlegend=False
+                )
+                trace_cap_bottom = go.Scatter3d(
+                    x=[x_box - dx / 2, x_box + dx / 2],
+                    y=[y, y],
+                    z=[z_min, z_min],
+                    mode='lines',
+                    line=dict(color='grey', width=2),
+                    opacity=opacity_noise_bar,
+                    showlegend=False
+                )
+                traces_this_node.extend([
+                    trace_whisker_top, trace_whisker_bottom,
+                    trace_cap_top, trace_cap_bottom,
+                ])
             trace_box = go.Scatter3d(
                 x=[x_box, x_box],
                 y=[y, y],
                 z=[z_q1, z_q3],
                 mode='lines',
-                line=dict(color='black', width=4),
+                line=dict(color='black', width=2 if iqr_only else 4),
                 opacity=opacity_noise_bar,
                 showlegend=False
             )
@@ -626,12 +635,8 @@ def create_boxplot_traces(
                 showlegend=False
             )
 
-            traces.extend([
-                trace_whisker_top, trace_whisker_bottom,
-                trace_cap_top, trace_cap_bottom,
-                trace_box,
-                trace_medianx, trace_mediany
-            ])
+            traces_this_node.extend([trace_box, trace_medianx, trace_mediany])
+            traces.extend(traces_this_node)
 
     return traces
 
@@ -1153,8 +1158,11 @@ def build_all_traces(
             traces.append(create_lon_colorbar_trace(cmin, cmax, title, x_pos, colorscale=config.colorscale))
 
     # Add boxplot traces if needed
-    if config.plot_type == 'NLon_box' and node_noise and fitness_dict:
-        boxplot_traces = create_boxplot_traces(pos, node_noise, fitness_dict, config)
+    if config.plot_type in ('NLon_box', 'NLon_IQR') and node_noise and fitness_dict:
+        boxplot_traces = create_boxplot_traces(
+            pos, node_noise, fitness_dict, config,
+            iqr_only=(config.plot_type == 'NLon_IQR')
+        )
         traces.extend(boxplot_traces)
 
     # Add STN fitness boxplots if enabled

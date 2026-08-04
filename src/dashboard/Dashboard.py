@@ -2011,7 +2011,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
     # ==========
     # STEP 8: Build visualization traces
     # ==========
-    if config.plot_type in ('RegLon', 'NLon_box'):
+    if config.plot_type in ('RegLon', 'NLon_box', 'NLon_IQR'):
         print('CREATING PLOT...')
         traces = build_all_traces(G, pos, config, node_noise, fitness_dict, neigh_feas_map)
 
