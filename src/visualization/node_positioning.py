@@ -173,7 +173,31 @@ def calculate_positions_so(
 
     pos = {}
 
-    if layout_type in ('lmds', 'r_lmds'):
+    if layout_type == 'lon_lmds':
+        lon_solutions = {
+            sol_key_fn(data.get('solution', []))
+            for _, data in G.nodes(data=True)
+            if data.get('type') == 'LON' and data.get('solution')
+        }
+        sol_to_idx = {sol: i for i, sol in enumerate(solutions_list)}
+        lon_indices = [sol_to_idx[sol] for sol in lon_solutions if sol in sol_to_idx]
+
+        if len(lon_indices) < 4:
+            print(f'\033[31mWARNING: only {len(lon_indices)} LON landmarks found — LON Landmark MDS embedding may be unstable\033[0m')
+
+        print(f'\033[33mUsing LON Landmark MDS with {len(lon_indices)} LON landmarks from {K} solutions\033[0m')
+        positions_2d = landmark_mds(dist_fn, solutions_list, landmark_indices=lon_indices, random_state=42)
+
+        solution_positions = {}
+        for i, sol in enumerate(solutions_list):
+            solution_positions[sol] = positions_2d[i]
+
+        for node, data in G.nodes(data=True):
+            sol = sol_key_fn(data.get('solution', []))
+            if sol in solution_positions:
+                pos[node] = solution_positions[sol]
+
+    elif layout_type in ('lmds', 'r_lmds'):
         n_landmarks = min(max(20, int(np.sqrt(n))), n)
         n_landmarks = min(int(n_landmarks * lmds_multiplier), n)
         print(f'\033[33mUsing Landmark MDS with {n_landmarks} landmarks from {K} solutions (multiplier={lmds_multiplier})\033[0m')

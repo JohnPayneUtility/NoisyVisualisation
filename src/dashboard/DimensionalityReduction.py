@@ -124,7 +124,7 @@ def _select_landmarks_fps(n, n_landmarks, distance_fn, items, rng, r=1):
 
 
 def landmark_mds(distance_fn, items, n_landmarks=None, landmark_method='random',
-                 fps_candidates=1, random_state=42):
+                 fps_candidates=1, random_state=42, landmark_indices=None):
     """
     Landmark MDS: Efficient MDS approximation for large datasets.
 
@@ -132,29 +132,38 @@ def landmark_mds(distance_fn, items, n_landmarks=None, landmark_method='random',
         distance_fn: Function that computes distance between two items
         items: List of items to embed
         n_landmarks: Number of landmarks to use (default: sqrt(n))
-        landmark_method: Method for selecting landmarks ('random' or 'fps')
+        landmark_method: Method for selecting landmarks ('random' or 'fps').
+            Ignored if landmark_indices is provided.
         fps_candidates: For FPS method, number of candidates to consider at each step
         random_state: Random seed for reproducibility
+        landmark_indices: Optional explicit array-like of landmark indices into
+            `items`. When provided, this bypasses landmark_method/n_landmarks
+            selection entirely and uses these indices as the landmark set.
 
     Returns:
         XY: numpy array of shape (n, 2) with 2D coordinates
     """
     n = len(items)
-    if n_landmarks is None:
-        n_landmarks = min(max(20, int(np.sqrt(n))), n)
 
-    # Ensure we don't have more landmarks than items
-    n_landmarks = min(n_landmarks, n)
-
-    # Select landmarks based on method
-    rng = np.random.default_rng(random_state)
-    if landmark_method == 'random':
-        landmark_indices = _select_landmarks_random(n, n_landmarks, distance_fn, items, rng)
-    elif landmark_method == 'fps':
-        landmark_indices = _select_landmarks_fps(n, n_landmarks, distance_fn, items, rng,
-                                                  r=fps_candidates)
+    if landmark_indices is not None:
+        landmark_indices = np.asarray(landmark_indices)
+        n_landmarks = len(landmark_indices)
     else:
-        raise ValueError(f"Unknown landmark_method: {landmark_method}. Use 'random' or 'fps'.")
+        if n_landmarks is None:
+            n_landmarks = min(max(20, int(np.sqrt(n))), n)
+
+        # Ensure we don't have more landmarks than items
+        n_landmarks = min(n_landmarks, n)
+
+        # Select landmarks based on method
+        rng = np.random.default_rng(random_state)
+        if landmark_method == 'random':
+            landmark_indices = _select_landmarks_random(n, n_landmarks, distance_fn, items, rng)
+        elif landmark_method == 'fps':
+            landmark_indices = _select_landmarks_fps(n, n_landmarks, distance_fn, items, rng,
+                                                      r=fps_candidates)
+        else:
+            raise ValueError(f"Unknown landmark_method: {landmark_method}. Use 'random' or 'fps'.")
 
     # Compute n×k distance matrix (all points to landmarks)
     D_to_landmarks = np.zeros((n, n_landmarks))
