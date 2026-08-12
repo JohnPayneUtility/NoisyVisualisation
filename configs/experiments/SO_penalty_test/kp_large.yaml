@@ -22,11 +22,11 @@ hydra:
     params:
       +defaults/run: run_budget_onemax
       # +defaults/problems/knapsackPenalty: kp100_uc_v1, kp100_wc_v1, kp100_sc_v1
-      +defaults/problems/knapsackPenalty: kp100_uc_v1
+      +defaults/problems/knapsackPenalty: kp100_wc_v1
       # +defaults/algos: 1p1ea, umda, pcea, mup1ea
-      +defaults/algos: 1p1ea, umda
+      +defaults/algos: 1p1ea, umda, pcea, mup1ea
       problem.fitness_params.noise_intensity: 0
-      # problem.fitness_params.penalty: 0,1,2,3,4,5,6,7,8,9,10
-      problem.fitness_params.penalty: 11,12,13,14,15
+      # problem.fitness_params.penalty: 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
+      problem.fitness_params.penalty: 26,27,28,29,30
   sweep:
     dir: data/outputs

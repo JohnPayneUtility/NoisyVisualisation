@@ -25,6 +25,13 @@ from .styles import (
     FULL_WIDTH_INLINE_STYLE,
     MONOSPACE_STYLE,
 )
+from ...visualization import (
+    LON_SCATTER_AXIS_OPTIONS,
+    LON_SCATTER_DEFAULT_X_AXIS,
+    LON_SCATTER_DEFAULT_Y_AXIS,
+    LON_SCATTER_PLOT_STYLE_OPTIONS,
+    LON_SCATTER_DEFAULT_PLOT_STYLE,
+)
 
 
 _SCHEMATIC_SERIES_COLOR = '#21918c'
@@ -1039,7 +1046,6 @@ def create_lon_options_section():
                         id='NLON_samples',
                         type='number',
                         min=1,
-                        max=500,
                         step=1,
                         value=100
                     ),
@@ -1439,6 +1445,56 @@ def create_main_plot_section():
         html.Div(id='stn-stats-table'),
         html.H3("LON Stats"),
         html.Div(id='lon-stats-table'),
+        html.H4("LON Node Scatter"),
+        html.Div([
+            html.Div(
+                html.Label(" Plot type: "),
+                style=INLINE_VERTICAL_ALIGN_STYLE
+            ),
+            html.Div(
+                dcc.Dropdown(
+                    id='lon-scatter-plot-style',
+                    options=[{'label': label, 'value': value} for value, label in LON_SCATTER_PLOT_STYLE_OPTIONS],
+                    value=LON_SCATTER_DEFAULT_PLOT_STYLE,
+                    clearable=False,
+                    style=DROPDOWN_STYLE,
+                ),
+                style=INLINE_DROPDOWN_WRAPPER_STYLE
+            ),
+        ], style={'marginTop': '6px', 'marginBottom': '4px'}),
+        html.Div([
+            html.Div(
+                html.Label(" X axis: "),
+                style=INLINE_VERTICAL_ALIGN_STYLE
+            ),
+            html.Div(
+                dcc.Dropdown(
+                    id='lon-scatter-x-axis',
+                    options=[{'label': label, 'value': value} for value, label in LON_SCATTER_AXIS_OPTIONS],
+                    value=LON_SCATTER_DEFAULT_X_AXIS,
+                    clearable=False,
+                    style=DROPDOWN_STYLE,
+                ),
+                style=INLINE_DROPDOWN_WRAPPER_STYLE
+            ),
+            html.Div(
+                html.Label(" Y axis: "),
+                style=INLINE_VERTICAL_ALIGN_STYLE
+            ),
+            html.Div(
+                dcc.Dropdown(
+                    id='lon-scatter-y-axis',
+                    options=[{'label': label, 'value': value} for value, label in LON_SCATTER_AXIS_OPTIONS],
+                    value=LON_SCATTER_DEFAULT_Y_AXIS,
+                    clearable=False,
+                    style=DROPDOWN_STYLE,
+                ),
+                style=INLINE_DROPDOWN_WRAPPER_STYLE
+            ),
+        ], style={'marginTop': '6px', 'marginBottom': '4px'}),
+        dcc.Graph(id='lon-feas-error-scatter'),
+        html.Div(id='lon-selected-correlation'),
+        html.Div(id='lon-feas-error-correlations'),
         html.Div(id="print_STN_series_labels", style=SELECTION_OUTPUT_STYLE),
         html.H3("Plot Information"),
         dcc.Checklist(

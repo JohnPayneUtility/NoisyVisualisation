@@ -36,6 +36,16 @@ from ..visualization import (
     style_nodes,
     calculate_positions,
     calculate_lon_statistics,
+    compute_node_feasibility_error,
+    compute_pairwise_correlations,
+    compute_correlation_pair,
+    LON_SCATTER_AXIS_LABELS,
+    LON_SCATTER_DEFAULT_X_AXIS,
+    LON_SCATTER_DEFAULT_Y_AXIS,
+    LON_SCATTER_DEFAULT_PLOT_STYLE,
+    plot_lon_stats,
+    build_correlation_table,
+    build_selected_correlation_display,
     build_all_traces,
     create_guide_traces,
     create_axis_settings,
@@ -264,7 +274,10 @@ def update_knapsack_info(pid):
         return html.Div("Not a knapsack problem — no additional information.", style={'fontStyle': 'italic'})
 
     def row(label, value, suffix=""):
-        formatted = f"{value:.3g}" if isinstance(value, float) else str(value)
+        if isinstance(value, float):
+            formatted = f"{value:,.0f}" if value.is_integer() else f"{value:.3g}"
+        else:
+            formatted = str(value)
         return html.Div([
             html.Span(f"{label}: ", style={'fontWeight': 'bold'}),
             html.Span(formatted + suffix),
@@ -1608,7 +1621,10 @@ def handle_print_mode(annotation_options):
     [Output('trajectory-plot', 'figure'),
      Output('run-print-info', 'children'),
      Output('stn-stats-table', 'children'),
-     Output('lon-stats-table', 'children')],
+     Output('lon-stats-table', 'children'),
+     Output('lon-feas-error-scatter', 'figure'),
+     Output('lon-selected-correlation', 'children'),
+     Output('lon-feas-error-correlations', 'children')],
     [Input("optimum", "data"),
      Input("PID", "data"),
      Input("opt_goal", "data"),
@@ -1659,7 +1675,10 @@ def handle_print_mode(annotation_options):
      Input('axes-text-scale', 'value'),
      Input('annotation-text-scale', 'value'),
      Input('plot-theme', 'value'),
-     Input('plot_2d_data', 'data')]
+     Input('plot_2d_data', 'data'),
+     Input('lon-scatter-x-axis', 'value'),
+     Input('lon-scatter-y-axis', 'value'),
+     Input('lon-scatter-plot-style', 'value')]
 )
 def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limit,
                 LO_fit_percent, LON_options, LON_node_colour_mode, LON_surface_colour, LON_edge_colour_feas,
@@ -1671,7 +1690,8 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                 LON_edge_size_slider, STN_edge_size_slider, noisy_fitnesses_list,
                 stn_plot_type, STN_MO_data, STN_MO_series_labels, stn_node_size_metric,
                 annotation_options, fit_func, info_panel_x, info_panel_y,
-                axes_text_scale, annotation_text_scale, plot_theme, plot_2d_data):
+                axes_text_scale, annotation_text_scale, plot_theme, plot_2d_data,
+                lon_scatter_x, lon_scatter_y, lon_scatter_plot_style):
     """
     Main visualization callback - orchestrates the visualization pipeline.
 
@@ -2326,7 +2346,27 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
     else:
         lon_stats_table = html.Div()
 
-    return fig, debug_summary_component, stn_stats_table, lon_stats_table
+    # Build LON node scatter/violin (selectable axes and plot style) and correlations
+    scatter_x_key = lon_scatter_x or LON_SCATTER_DEFAULT_X_AXIS
+    scatter_y_key = lon_scatter_y or LON_SCATTER_DEFAULT_Y_AXIS
+    scatter_plot_style = lon_scatter_plot_style or LON_SCATTER_DEFAULT_PLOT_STYLE
+    if config.plot_type in ('NLon_box', 'NLon_IQR') and node_noise and fitness_dict:
+        node_stats = compute_node_feasibility_error(G, pos, node_noise, fitness_dict, neigh_feas_map)
+        feas_error_fig = plot_lon_stats(node_stats, scatter_x_key, scatter_y_key, scatter_plot_style)
+        selected_correlation = compute_correlation_pair(node_stats, scatter_x_key, scatter_y_key)
+        selected_corr_component = build_selected_correlation_display(
+            selected_correlation,
+            LON_SCATTER_AXIS_LABELS.get(scatter_x_key, scatter_x_key),
+            LON_SCATTER_AXIS_LABELS.get(scatter_y_key, scatter_y_key),
+        )
+        feas_error_corr_component = build_correlation_table(compute_pairwise_correlations(node_stats))
+    else:
+        feas_error_fig = plot_lon_stats([], scatter_x_key, scatter_y_key, scatter_plot_style)
+        selected_corr_component = html.Div()
+        feas_error_corr_component = html.Div("Select NLon_box or NLon_IQR plot type to view this chart.")
+
+    return (fig, debug_summary_component, stn_stats_table, lon_stats_table,
+            feas_error_fig, selected_corr_component, feas_error_corr_component)
 
 @app.callback(
     Output("plotParetoFront", "figure"),

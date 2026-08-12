@@ -22,7 +22,7 @@ problem:
     items_dict: null  # Will be set after problem loading
     capacity: null    # Will be set after problem loading
     noise_intensity: 0
-    penalty: 12
+    penalty: 2
   
   # Attributes and weights
   attr_function: binary_attribute

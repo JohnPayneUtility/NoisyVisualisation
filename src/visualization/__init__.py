@@ -73,6 +73,24 @@ from .statistics import (
     calculate_lon_statistics,
     calculate_stn_statistics,
     calculate_graph_summary,
+    compute_node_feasibility_error,
+    compute_pairwise_correlations,
+    compute_correlation_pair,
+)
+
+# LON stats plots
+from .lon_stats_plots import (
+    AXIS_OPTIONS as LON_SCATTER_AXIS_OPTIONS,
+    AXIS_LABELS as LON_SCATTER_AXIS_LABELS,
+    DEFAULT_X_AXIS as LON_SCATTER_DEFAULT_X_AXIS,
+    DEFAULT_Y_AXIS as LON_SCATTER_DEFAULT_Y_AXIS,
+    PLOT_STYLE_OPTIONS as LON_SCATTER_PLOT_STYLE_OPTIONS,
+    DEFAULT_PLOT_STYLE as LON_SCATTER_DEFAULT_PLOT_STYLE,
+    plot_lon_scatter,
+    plot_lon_violin,
+    plot_lon_stats,
+    build_correlation_table,
+    build_selected_correlation_display,
 )
 
 # Trace building
@@ -132,6 +150,21 @@ __all__ = [
     'calculate_lon_statistics',
     'calculate_stn_statistics',
     'calculate_graph_summary',
+    'compute_node_feasibility_error',
+    'compute_pairwise_correlations',
+    'compute_correlation_pair',
+    # LON stats plots
+    'LON_SCATTER_AXIS_OPTIONS',
+    'LON_SCATTER_AXIS_LABELS',
+    'LON_SCATTER_DEFAULT_X_AXIS',
+    'LON_SCATTER_DEFAULT_Y_AXIS',
+    'LON_SCATTER_PLOT_STYLE_OPTIONS',
+    'LON_SCATTER_DEFAULT_PLOT_STYLE',
+    'plot_lon_scatter',
+    'plot_lon_violin',
+    'plot_lon_stats',
+    'build_correlation_table',
+    'build_selected_correlation_display',
     # Trace building
     'create_edge_traces',
     'create_edge_label_trace',

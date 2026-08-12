@@ -70,7 +70,9 @@ def get_knapsack_problem_stats(pid):
     global_optimum = float(optimal)
     correlation = float(np.corrcoef(values, weights)[0, 1]) if n_items > 1 else float('nan')
 
-    ratios = np.divide(values, weights, out=np.full_like(values, np.inf), where=weights > 0)
+    # Zero-weight items don't affect capacity, so exclude them from the
+    # largest value/weight ratio (they'd otherwise dominate with ratio=inf).
+    ratios = np.divide(values, weights, out=np.full_like(values, -np.inf), where=weights > 0)
     best_idx = int(np.argmax(ratios))
 
     return {

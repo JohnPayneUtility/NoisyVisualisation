@@ -5,9 +5,12 @@ This module contains functions for calculating various statistics
 about the graph, particularly for Local Optima Networks (LON).
 """
 
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass
 import networkx as nx
+import numpy as np
+
+from ..common import lookup_map
 
 
 @dataclass
@@ -185,3 +188,156 @@ def calculate_graph_summary(G: nx.MultiDiGraph, verbose: bool = True) -> Dict[st
         print(f"  Edges by type: {edge_types}")
 
     return summary
+
+
+def compute_node_feasibility_error(
+    G: nx.MultiDiGraph,
+    pos: Dict[str, Any],
+    node_noise: Dict[str, List[float]],
+    fitness_dict: Dict[str, float],
+    neigh_feas_map: Optional[Dict] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Compute, for each LON node currently drawn as a box/IQR plot, its
+    neighbourhood feasibility and the error between its recorded fitness
+    and the median of its sampled noisy-fitness distribution.
+
+    Mirrors the node-inclusion filter used by create_boxplot_traces so the
+    result matches exactly the nodes shown in the main NLon_box/NLon_IQR plot.
+
+    Args:
+        G: NetworkX MultiDiGraph containing LON nodes
+        pos: Node positions (only nodes present here are considered plotted)
+        node_noise: Per-node lists of sampled noisy fitness values
+        fitness_dict: Per-node recorded (clean) fitness values
+        neigh_feas_map: Solution -> neighbourhood feasibility proportion
+
+    Returns:
+        List of dicts with keys: node, neigh_feas, fitness, median, error,
+        abs_error, iqr
+    """
+    neigh_feas_map = neigh_feas_map or {}
+    node_stats = []
+
+    for node in pos:
+        if node not in fitness_dict or node not in node_noise:
+            continue
+        samples = node_noise[node]
+        if not hasattr(samples, '__len__') or len(samples) < 2:
+            continue
+
+        solution = G.nodes[node].get('solution', [])
+        neigh_feas = lookup_map(neigh_feas_map, solution)
+        if neigh_feas is None:
+            continue
+
+        arr = np.array(samples, dtype=float)
+        median = float(np.median(arr))
+        q1 = float(np.percentile(arr, 25))
+        q3 = float(np.percentile(arr, 75))
+        fitness = fitness_dict[node]
+        error = fitness - median
+
+        node_stats.append({
+            'node': node,
+            'neigh_feas': float(neigh_feas),
+            'fitness': fitness,
+            'median': median,
+            'error': error,
+            'abs_error': abs(error),
+            'iqr': q3 - q1,
+        })
+
+    return node_stats
+
+
+def _pearson_r(x: List[float], y: List[float]) -> Tuple[Optional[float], int]:
+    """
+    Pearson correlation coefficient between x and y, guarding against
+    too few points or constant series (where correlation is undefined).
+
+    Returns:
+        (r, n) where r is None if undefined.
+    """
+    n = len(x)
+    if n < 2:
+        return None, n
+    xa = np.asarray(x, dtype=float)
+    ya = np.asarray(y, dtype=float)
+    if np.allclose(xa, xa[0]) or np.allclose(ya, ya[0]):
+        return None, n
+    return float(np.corrcoef(xa, ya)[0, 1]), n
+
+
+def _spearman_r(x: List[float], y: List[float]) -> Tuple[Optional[float], int]:
+    """
+    Spearman rank correlation between x and y (Pearson correlation of the
+    rank-transformed series), guarding against too few points or constant
+    series (where correlation is undefined).
+
+    Returns:
+        (r, n) where r is None if undefined.
+    """
+    n = len(x)
+    if n < 2:
+        return None, n
+    xa = np.asarray(x, dtype=float)
+    ya = np.asarray(y, dtype=float)
+    rx = xa.argsort().argsort().astype(float)
+    ry = ya.argsort().argsort().astype(float)
+    if np.allclose(rx, rx[0]) or np.allclose(ry, ry[0]):
+        return None, n
+    return float(np.corrcoef(rx, ry)[0, 1]), n
+
+
+def compute_correlation_pair(node_stats: List[Dict[str, Any]], x_key: str, y_key: str) -> Dict[str, Any]:
+    """
+    Compute Pearson and Spearman correlation between two arbitrary
+    per-node quantities (e.g. whatever is currently selected for the
+    scatter plot's x and y axes).
+
+    Args:
+        node_stats: Output of compute_node_feasibility_error
+        x_key: Key into each node_stats dict to use as x
+        y_key: Key into each node_stats dict to use as y
+
+    Returns:
+        Dict with keys: pearson, spearman, n
+    """
+    x = [s[x_key] for s in node_stats]
+    y = [s[y_key] for s in node_stats]
+    pearson, n = _pearson_r(x, y)
+    spearman, _ = _spearman_r(x, y)
+    return {'pearson': pearson, 'spearman': spearman, 'n': n}
+
+
+def compute_pairwise_correlations(node_stats: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Compute Pearson and Spearman correlations between neighbourhood
+    feasibility and a few other per-node quantities derived from the
+    sampled fitness distributions.
+
+    Args:
+        node_stats: Output of compute_node_feasibility_error
+
+    Returns:
+        List of dicts with keys: label, pearson, spearman, n
+    """
+    feas = [s['neigh_feas'] for s in node_stats]
+    error = [s['error'] for s in node_stats]
+    abs_error = [abs(s['error']) for s in node_stats]
+    iqr = [s['iqr'] for s in node_stats]
+
+    pairs = [
+        ('Neighbourhood feasibility vs. error', feas, error),
+        ('Neighbourhood feasibility vs. |error|', feas, abs_error),
+        ('Neighbourhood feasibility vs. sample IQR', feas, iqr),
+    ]
+
+    correlations = []
+    for label, x, y in pairs:
+        pearson, n = _pearson_r(x, y)
+        spearman, _ = _spearman_r(x, y)
+        correlations.append({'label': label, 'pearson': pearson, 'spearman': spearman, 'n': n})
+
+    return correlations
