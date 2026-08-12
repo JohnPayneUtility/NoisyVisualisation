@@ -434,34 +434,56 @@ def update_table2_selected(selected_rows, table2_data):
 # ------------------------------
 # ---------- Generate data for 2D performance plot by filtering main data with table 2 selection ----------
 filter_columns = [col for col in display2_df.columns if col in df_no_lists.columns]
-@app.callback(
-    Output('plot_2d_data', 'data'),
-    Input('table2', 'derived_virtual_data')
-)
-def update_filtered_view(filtered_data):
-    # If no filtering is applied, return the full data.
+def _filter_by_table2_selection(filtered_data):
+    """Filter df_no_lists down to the rows matching table2's derived_virtual_data."""
     if not filtered_data:
-        return df_no_lists.to_dict('records')
-    
-    # Convert the filtered data to a DataFrame.
+        return df_no_lists
+
     df_filtered = pd.DataFrame(filtered_data)
-    # print("df_filtered:")
-    # print(df_filtered.head())
-    
+
     mask = pd.Series(True, index=df_no_lists.index)
     for col in filter_columns:
         if col in df_filtered.columns:
             allowed_values = df_filtered[col].unique()
-            # print(f"Filtering column {col} with allowed values: {allowed_values}")
             # If any allowed value is null (None or np.nan), allow null rows.
             if any(pd.isnull(allowed_values)):
                 mask &= (df_no_lists[col].isin(allowed_values) | df_no_lists[col].isnull())
             else:
                 mask &= df_no_lists[col].isin(allowed_values)
-    
-    df_result = df_no_lists[mask]
-    # print("Filtered result (first few rows):")
-    # print(df_result.head())
+
+    return df_no_lists[mask]
+
+def _filter_penalty(plot_df, penalty_value):
+    if penalty_value is not None and 'penalty' in plot_df.columns:
+        plot_df = plot_df[plot_df['penalty'] == penalty_value]
+    return plot_df
+
+@app.callback(
+    Output('penalty-filter-dropdown', 'options'),
+    Input('table2', 'derived_virtual_data')
+)
+def update_penalty_filter_options(filtered_data):
+    base_df = _filter_by_table2_selection(filtered_data)
+    if 'penalty' not in base_df.columns:
+        return []
+    values = sorted(base_df['penalty'].dropna().unique())
+    return [{'label': str(v), 'value': v} for v in values]
+
+@app.callback(
+    Output('penalty-filter-dropdown', 'value'),
+    Input('PID', 'data'),
+    prevent_initial_call=True,
+)
+def reset_penalty_filter_on_problem_change(_pid):
+    return None
+
+@app.callback(
+    Output('plot_2d_data', 'data'),
+    Input('table2', 'derived_virtual_data'),
+    Input('penalty-filter-dropdown', 'value'),
+)
+def update_filtered_view(filtered_data, penalty_value):
+    df_result = _filter_penalty(_filter_by_table2_selection(filtered_data), penalty_value)
     return df_result.to_dict('records')
 
 def _cap_noise(plot_df, cap):
@@ -1266,9 +1288,10 @@ def update_filtered_view(selected_rows, LON_table_data):
 @app.callback(
     Output('STN_data', 'data'),
     Input("table2", "selected_rows"),
+    Input('penalty-filter-dropdown', 'value'),
     State("table2", "data")
 )
-def update_filtered_view(selected_rows, table2_data):
+def update_filtered_view(selected_rows, penalty_value, table2_data):
     if not selected_rows:
         blank_df = pd.DataFrame(columns=df.columns)
         return blank_df.to_dict('records')
@@ -1295,7 +1318,7 @@ def update_filtered_view(selected_rows, table2_data):
         else:
             mask &= df[col].isin(allowed)
 
-    df_result = df[mask]
+    df_result = _filter_penalty(df[mask], penalty_value)
 
     print(
         f"[STN filter] selected_rows={selected_rows} -> matched_rows={len(df_result)}",

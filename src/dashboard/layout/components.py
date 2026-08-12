@@ -546,6 +546,15 @@ def create_2d_plot_tabs():
                 value=0,
                 style={'width': '80px'},
             ),
+            html.Label("Filter by penalty (lambda):"),
+            dcc.Dropdown(
+                id='penalty-filter-dropdown',
+                options=[],
+                value=None,
+                clearable=True,
+                placeholder='All penalty values',
+                style={'width': '200px'},
+            ),
             html.Label("Hide series:"),
             dcc.Dropdown(
                 id='hide-series-dropdown',
