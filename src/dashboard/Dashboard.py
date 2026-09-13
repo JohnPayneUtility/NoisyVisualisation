@@ -1,3 +1,4 @@
+import math
 import dash
 from dash import html, dcc, dash_table, Input, Output, State, ctx
 import pandas as pd
@@ -11,6 +12,7 @@ from sklearn.manifold import ClassicalMDS
 from sklearn.manifold import TSNE
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace as dataclass_replace
 import os
 
 from .DashboardHelpers import *
@@ -44,6 +46,7 @@ from ..visualization import (
     LON_SCATTER_DEFAULT_Y_AXIS,
     LON_SCATTER_DEFAULT_PLOT_STYLE,
     plot_lon_stats,
+    plot_lon_stats_multi,
     build_correlation_table,
     build_selected_correlation_display,
     build_all_traces,
@@ -508,6 +511,35 @@ def _resolve_evals_column(fitness_mode, plot_df):
         return 'evals_to_final_noisy', 'Evaluations to Final Found Noisy Fitness'
     return 'n_evals', 'Runtime (n_evals)'
 
+def _format_scientific(val, decimals=1):
+    """Format a number in scientific notation like '4.5E-2' (no zero-padded exponent)."""
+    if pd.isna(val) or val == 0:
+        return f'{0:.{decimals}f}E0'
+    exponent = math.floor(math.log10(abs(val)))
+    mantissa = val / (10 ** exponent)
+    mantissa_str = f'{mantissa:.{decimals}f}'
+    if abs(float(mantissa_str)) >= 10:
+        exponent += 1
+        mantissa_str = f'{val / (10 ** exponent):.{decimals}f}'
+    return f'{mantissa_str}E{exponent}'
+
+
+def _format_median_std(med, std, round_stats, use_scientific=False, med_decimals=3, std_decimals=3):
+    """Format a median ± std cell.
+
+    If use_scientific is True, both values are rendered in scientific notation
+    (e.g. '4.5E-2'), overruling round_stats. Otherwise, both are rounded to
+    1 decimal place if round_stats is True, else the given defaults.
+    """
+    if use_scientific:
+        std_str = _format_scientific(std) if pd.notna(std) else 'N/A'
+        return f'{_format_scientific(med)} ± {std_str}'
+    if round_stats:
+        med_decimals = std_decimals = 1
+    std_str = f'{std:.{std_decimals}f}' if pd.notna(std) else 'N/A'
+    return f'{med:.{med_decimals}f} ± {std_str}'
+
+
 def _resolve_fit_column(fitness_mode, minimising):
     """Pick the fitness column and label matching the so-fitness-mode dropdown."""
     if fitness_mode == 'final':
@@ -704,8 +736,12 @@ def display_box_advanced_misjudgements_so(data, fit_func, plot_theme, noise_cap,
     Output('misjudgements-summary-table', 'children'),
     Input('plot_2d_data', 'data'),
     Input('fit_func_store', 'data'),
+    Input('round-stats-checkbox', 'value'),
+    Input('scientific-notation-checkbox', 'value'),
 )
-def update_misjudgements_summary_table(data, fit_func):
+def update_misjudgements_summary_table(data, fit_func, round_stats_value, sci_value):
+    round_stats = 'round' in (round_stats_value or [])
+    use_scientific = 'sci' in (sci_value or [])
     if not fit_func:
         return html.P(
             "Select a problem from the table above to see the misjudgements summary.",
@@ -739,8 +775,7 @@ def update_misjudgements_summary_table(data, fit_func):
             else:
                 med = algo_row['median'].values[0]
                 std = algo_row['std'].values[0]
-                std_str = f'{std:.3f}' if pd.notna(std) else 'N/A'
-                row[algo] = f'{med:.3f} ± {std_str}'
+                row[algo] = _format_median_std(med, std, round_stats, use_scientific)
         rows.append(row)
 
     columns = [{'name': 'Noise Level', 'id': 'Noise Level'}] + [{'name': a, 'id': a} for a in algos]
@@ -770,8 +805,12 @@ def update_misjudgements_summary_table(data, fit_func):
     Input('so-fitness-mode', 'value'),
     Input('fit_func_store', 'data'),
     Input('opt_goal', 'data'),
+    Input('round-stats-checkbox', 'value'),
+    Input('scientific-notation-checkbox', 'value'),
 )
-def update_performance_summary_table(data, fitness_mode, fit_func, opt_goal):
+def update_performance_summary_table(data, fitness_mode, fit_func, opt_goal, round_stats_value, sci_value):
+    round_stats = 'round' in (round_stats_value or [])
+    use_scientific = 'sci' in (sci_value or [])
     if not fit_func:
         return html.P(
             "Select a problem from the table above to see the performance summary.",
@@ -811,8 +850,7 @@ def update_performance_summary_table(data, fitness_mode, fit_func, opt_goal):
             else:
                 med = algo_row['median'].values[0]
                 std = algo_row['std'].values[0]
-                std_str = f'{std:.3f}' if pd.notna(std) else 'N/A'
-                row[algo] = f'{med:.3f} ± {std_str}'
+                row[algo] = _format_median_std(med, std, round_stats, use_scientific)
                 if best_median is None or (minimising and med < best_median) or (not minimising and med > best_median):
                     best_median = med
                     best_algos = [algo]
@@ -953,8 +991,12 @@ def update_mann_whitney_table(data, fitness_mode, fit_func, opt_goal):
     Input('plot_2d_data', 'data'),
     Input('fit_func_store', 'data'),
     Input('so-fitness-mode', 'value'),
+    Input('round-stats-checkbox', 'value'),
+    Input('scientific-notation-checkbox', 'value'),
 )
-def update_evals_summary_table(data, fit_func, fitness_mode):
+def update_evals_summary_table(data, fit_func, fitness_mode, round_stats_value, sci_value):
+    round_stats = 'round' in (round_stats_value or [])
+    use_scientific = 'sci' in (sci_value or [])
     if not fit_func:
         return html.P(
             "Select a problem from the table above to see the evaluations summary.",
@@ -991,8 +1033,7 @@ def update_evals_summary_table(data, fit_func, fitness_mode):
             else:
                 med = algo_row['median'].values[0]
                 std = algo_row['std'].values[0]
-                std_str = f'{std:.3f}' if pd.notna(std) else 'N/A'
-                row[algo] = f'{med:.1f} ± {std_str}'
+                row[algo] = _format_median_std(med, std, round_stats, use_scientific, med_decimals=1, std_decimals=3)
                 if best_median is None or med < best_median:
                     best_median = med
                     best_algos = [algo]
@@ -1701,7 +1742,8 @@ def handle_print_mode(annotation_options):
      Input('plot_2d_data', 'data'),
      Input('lon-scatter-x-axis', 'value'),
      Input('lon-scatter-y-axis', 'value'),
-     Input('lon-scatter-plot-style', 'value')]
+     Input('lon-scatter-plot-style', 'value'),
+     Input('lon-scatter-multi-noise', 'value')]
 )
 def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limit,
                 LO_fit_percent, LON_options, LON_node_colour_mode, LON_surface_colour, LON_edge_colour_feas,
@@ -1714,7 +1756,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                 stn_plot_type, STN_MO_data, STN_MO_series_labels, stn_node_size_metric,
                 annotation_options, fit_func, info_panel_x, info_panel_y,
                 axes_text_scale, annotation_text_scale, plot_theme, plot_2d_data,
-                lon_scatter_x, lon_scatter_y, lon_scatter_plot_style):
+                lon_scatter_x, lon_scatter_y, lon_scatter_plot_style, lon_scatter_multi_noise):
     """
     Main visualization callback - orchestrates the visualization pipeline.
 
@@ -2373,9 +2415,31 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
     scatter_x_key = lon_scatter_x or LON_SCATTER_DEFAULT_X_AXIS
     scatter_y_key = lon_scatter_y or LON_SCATTER_DEFAULT_Y_AXIS
     scatter_plot_style = lon_scatter_plot_style or LON_SCATTER_DEFAULT_PLOT_STYLE
+    scatter_multi_noise = 'multi-noise' in (lon_scatter_multi_noise or [])
     if config.plot_type in ('NLon_box', 'NLon_IQR') and node_noise and fitness_dict:
-        node_stats = compute_node_feasibility_error(G, pos, node_noise, fitness_dict, neigh_feas_map)
-        feas_error_fig = plot_lon_stats(node_stats, scatter_x_key, scatter_y_key, scatter_plot_style)
+        if scatter_multi_noise:
+            # Recompute noisy samples at every intensity from 1 up to the
+            # configured 'Noise intensity', plotting each as its own series.
+            max_intensity = max(int(config.noisy_lon.intensity or 1), 1)
+            node_stats_by_intensity = {}
+            for intensity in range(1, max_intensity + 1):
+                if intensity == int(config.noisy_lon.intensity):
+                    intensity_node_noise = node_noise
+                else:
+                    intensity_config = dataclass_replace(
+                        config, noisy_lon=dataclass_replace(config.noisy_lon, intensity=float(intensity))
+                    )
+                    _, intensity_node_noise = add_lon_nodes(
+                        G, local_optima_processed, lon_node_mapping, intensity_config, PID
+                    )
+                node_stats_by_intensity[intensity] = compute_node_feasibility_error(
+                    G, pos, intensity_node_noise, fitness_dict, neigh_feas_map
+                )
+            feas_error_fig = plot_lon_stats_multi(node_stats_by_intensity, scatter_x_key, scatter_y_key, scatter_plot_style)
+            node_stats = [s for stats in node_stats_by_intensity.values() for s in stats]
+        else:
+            node_stats = compute_node_feasibility_error(G, pos, node_noise, fitness_dict, neigh_feas_map)
+            feas_error_fig = plot_lon_stats(node_stats, scatter_x_key, scatter_y_key, scatter_plot_style)
         selected_correlation = compute_correlation_pair(node_stats, scatter_x_key, scatter_y_key)
         selected_corr_component = build_selected_correlation_display(
             selected_correlation,

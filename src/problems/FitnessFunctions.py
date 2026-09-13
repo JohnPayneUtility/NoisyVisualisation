@@ -355,7 +355,7 @@ def eval_noisy_kp_v2_penalty(individual, items_dict, capacity, noise_intensity=0
         noisy_fitness = noisy_value
 
     # Log the evaluation if logger is active
-    # For posterior noise: same solution, different fitnesses
+    # For posterior noise same solution, different fitnesses
     logger = get_active_logger()
     if logger is not None:
         logger.log_noisy_eval(individual, individual, true_fitness, noisy_fitness)

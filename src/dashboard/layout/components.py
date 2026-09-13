@@ -308,8 +308,8 @@ def _build_schematic_figure(simple_mode: bool = False, show_misjudgements: bool 
         z=r * math.sin(el_rad),
     )
 
-    axis_title_size = 24 if simple_mode else 14
-    axis_tick_size = 16 if simple_mode else 12
+    axis_title_size = 18 if simple_mode else 14
+    axis_tick_size = 14 if simple_mode else 12
 
     scene_dict = dict(
         camera=dict(eye=cam),
@@ -637,6 +637,34 @@ def create_2d_plot_tabs():
         ]),
         html.Div(id='2DPlotTabContent'),
     ], style=SECTION_STYLE)
+
+
+def create_round_stats_checkbox():
+    """
+    Create checkboxes controlling how the summary tables (misjudgements,
+    performance, evaluations) format their median/std values.
+
+    'Round stats to 1 decimal place' is checked by default. 'Use scientific
+    notation' is unchecked by default and, when checked, overrules the
+    rounding checkbox for the same tables.
+
+    Returns:
+        html.Div: Container with the format checkboxes.
+    """
+    return html.Div([
+        dcc.Checklist(
+            id='round-stats-checkbox',
+            options=[{'label': ' Round stats to 1 decimal place', 'value': 'round'}],
+            value=['round'],
+            style={'display': 'inline-block'},
+        ),
+        dcc.Checklist(
+            id='scientific-notation-checkbox',
+            options=[{'label': ' Use scientific notation (e.g. 4.5E-2)', 'value': 'sci'}],
+            value=[],
+            style={'display': 'inline-block', 'marginLeft': '20px'},
+        ),
+    ], style={'padding': '0 10px', 'marginTop': '16px'})
 
 
 def create_misjudgements_summary_table():
@@ -1499,6 +1527,13 @@ def create_main_plot_section():
                     style=DROPDOWN_STYLE,
                 ),
                 style=INLINE_DROPDOWN_WRAPPER_STYLE
+            ),
+        ], style={'marginTop': '6px', 'marginBottom': '4px'}),
+        html.Div([
+            dcc.Checklist(
+                id='lon-scatter-multi-noise',
+                options=[{'label': ' Multiple noise values', 'value': 'multi-noise'}],
+                value=[],
             ),
         ], style={'marginTop': '6px', 'marginBottom': '4px'}),
         dcc.Graph(id='lon-feas-error-scatter'),

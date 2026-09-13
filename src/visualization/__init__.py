@@ -89,6 +89,7 @@ from .lon_stats_plots import (
     plot_lon_scatter,
     plot_lon_violin,
     plot_lon_stats,
+    plot_lon_stats_multi,
     build_correlation_table,
     build_selected_correlation_display,
 )
@@ -163,6 +164,7 @@ __all__ = [
     'plot_lon_scatter',
     'plot_lon_violin',
     'plot_lon_stats',
+    'plot_lon_stats_multi',
     'build_correlation_table',
     'build_selected_correlation_display',
     # Trace building
