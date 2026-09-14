@@ -1,0 +1,17 @@
+version: "3.8"
+
+services:
+  dashboard:
+    image: noisyvis:latest
+    container_name: noisyvis-app
+    working_dir: /workspace
+    command: /opt/conda/envs/exp/bin/python -m src.app.app
+    environment:
+      - PYTHONPATH=/workspace
+      - TZ=Europe/London
+    ports:
+      - "8051:8051"
+    volumes:
+      - /home/ubuntucompute/code/NoisyVisualisation:/workspace:cached
+    user: "57439:57439"
+    restart: unless-stopped

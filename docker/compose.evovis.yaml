@@ -1,0 +1,23 @@
+version: "3.8"
+
+services:
+  runner:
+    image: noisyvis:latest
+    pull_policy: never            # don't try to pull from registry
+    working_dir: /workspace
+
+    # Bind-mount repo so code changes are live inside the container
+    # user: "1000:1000"
+    volumes:
+      - /home/ubuntucompute/code/NoisyVisualisation:/workspace:cached
+      - /mnt/nvme:/workspace/fast_storage
+
+    environment:
+      - MLFLOW_TRACKING_URI=http://192.168.0.66:5000
+      - GIT_PYTHON_REFRESH=quiet
+      - TZ=Europe/London
+    
+    entrypoint: ["micromamba","run","-n","exp"]
+    command: ["sleep","infinity"]
+
+    restart: unless-stopped
