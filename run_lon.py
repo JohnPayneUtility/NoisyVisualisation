@@ -15,10 +15,10 @@ import pandas as pd
 import mlflow
 
 # Your modules
-from src.problems import *  # fitness fns & loaders
-from src.algorithms import *  # attribute generators (e.g., binary_attribute)
+from noisyvis.problems import *  # fitness fns & loaders
+from noisyvis.algorithms import *  # attribute generators (e.g., binary_attribute)
 # from src.LONs import BinaryLON, compress_lon_aggregated
-from src.io.ExperimentsHelpers import save_or_append_results
+from noisyvis.io.ExperimentsHelpers import save_or_append_results
 
 # -------------------------------
 # MLflow defaults (local file store under repo/data/mlruns)
@@ -95,10 +95,10 @@ def main(cfg: DictConfig):
     }
 
     # Fitness & attributes
-    fitness_fn = getattr(sys.modules['src.problems'], cfg.problem.fitness_fn)
+    fitness_fn = getattr(sys.modules['noisyvis.problems'], cfg.problem.fitness_fn)
     fit_params = dict(cfg.problem.fitness_params)
     fitness_tuple = (fitness_fn, fit_params)
-    attr_fn = getattr(sys.modules['src.algorithms'], cfg.problem.attr_function)
+    attr_fn = getattr(sys.modules['noisyvis.algorithms'], cfg.problem.attr_function)
     weights = tuple(cfg.problem.weights)
 
     with mlflow.start_run(run_name=cfg.lon.name):

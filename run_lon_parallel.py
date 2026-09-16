@@ -17,9 +17,9 @@ import concurrent.futures
 import os
 import random as _rand
 
-from src.problems import *
-from src.algorithms import *
-from src.io.ExperimentsHelpers import save_or_append_results
+from noisyvis.problems import *
+from noisyvis.algorithms import *
+from noisyvis.io.ExperimentsHelpers import save_or_append_results
 
 # -------------------------------
 # MLflow defaults (local file store under repo/data/mlruns)
@@ -93,8 +93,8 @@ def _run_single_lon_worker(
     np.random.seed(seed)
 
     # Resolve the callables by name (avoid sending function objects)
-    fitness_fn = getattr(sys.modules['src.problems'], fitness_fn_name)
-    attr_fn = getattr(sys.modules['src.algorithms'], attr_fn_name)
+    fitness_fn = getattr(sys.modules['noisyvis.problems'], fitness_fn_name)
+    attr_fn = getattr(sys.modules['noisyvis.algorithms'], attr_fn_name)
     fitness_tuple = (fitness_fn, fit_params)
 
     local_optima, fitness_values, edges_list = BinaryLON(

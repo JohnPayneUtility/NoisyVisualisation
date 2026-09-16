@@ -10,8 +10,8 @@ import hydra
 from hydra.utils import instantiate, call
 from omegaconf import OmegaConf, DictConfig
 import mlflow
-from src.algorithms import *
-from src.problems import *
+from noisyvis.algorithms import *
+from noisyvis.problems import *
 import random
 import numpy as np
 import pandas as pd
@@ -21,8 +21,8 @@ from tqdm import tqdm
 from typing import List, Tuple, Any, Dict, Type
 from deap import tools
 
-from src.io.ExperimentsHelpers import save_or_append_results
-from src.algorithms.Logger import clear_active_logger
+from noisyvis.io.ExperimentsHelpers import save_or_append_results
+from noisyvis.algorithms.Logger import clear_active_logger
 from run_helpers import *
 
 
@@ -439,7 +439,7 @@ def main(cfg: DictConfig):
     }
 
     # Instantiate fitness
-    fitness_fn = getattr(sys.modules['src.problems'], cfg.problem.fitness_fn)
+    fitness_fn = getattr(sys.modules['noisyvis.problems'], cfg.problem.fitness_fn)
     fit_params = dict(cfg.problem.fitness_params)
 
     # Algorithm class and params
@@ -447,7 +447,7 @@ def main(cfg: DictConfig):
         'sol_length':                cfg.problem.dimensions,
         'opt_weights':               tuple(cfg.problem.weights),
         'eval_limit':                cfg.run.eval_limit,
-        'attr_function':             getattr(sys.modules['src.algorithms'], cfg.problem.attr_function),
+        'attr_function':             getattr(sys.modules['noisyvis.algorithms'], cfg.problem.attr_function),
         'starting_solution':         None,
         'target_stop':               cfg.problem.opt_global if getattr(cfg.run, 'target_stop', False) else None,
         'no_improve_limit':          getattr(cfg.run, 'no_improve_limit', None),

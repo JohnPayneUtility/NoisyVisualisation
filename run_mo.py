@@ -8,8 +8,8 @@ import hydra
 from hydra.utils import instantiate, call
 from omegaconf import OmegaConf, DictConfig
 import mlflow
-from src.algorithms import *
-from src.problems import *
+from noisyvis.algorithms import *
+from noisyvis.problems import *
 import random
 import numpy as np
 import pandas as pd
@@ -19,7 +19,7 @@ from tqdm import tqdm
 from typing import List, Tuple, Any, Dict, Type
 from deap import tools
 
-from src.io.ExperimentsHelpers import save_or_append_results
+from noisyvis.io.ExperimentsHelpers import save_or_append_results
 from run_helpers import *
 
 # explicit mlflow path
@@ -281,7 +281,7 @@ def main(cfg: DictConfig):
     }
 
     # Instantiate fitness
-    fitness_fn = getattr(sys.modules['src.problems'], cfg.problem.fitness_fn)
+    fitness_fn = getattr(sys.modules['noisyvis.problems'], cfg.problem.fitness_fn)
     fit_params = dict(cfg.problem.fitness_params)
 
     # Algorithm class and params
@@ -302,7 +302,7 @@ def main(cfg: DictConfig):
         'sol_length':            cfg.problem.dimensions,
         'opt_weights':           tuple(cfg.problem.weights),
         'eval_limit':            cfg.run.eval_limit,
-        'attr_function':         getattr(sys.modules['src.algorithms'], cfg.problem.attr_function),
+        'attr_function':         getattr(sys.modules['noisyvis.algorithms'], cfg.problem.attr_function),
         'starting_solution':     start_sol,
         # 'target_stop':           cfg.problem.opt_global,
         'target_stop':           None,

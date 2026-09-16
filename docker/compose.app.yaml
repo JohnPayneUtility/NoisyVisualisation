@@ -5,9 +5,10 @@ services:
     image: noisyvis:latest
     container_name: noisyvis-app
     working_dir: /workspace
-    command: /opt/conda/envs/exp/bin/python -m src.app.app
+    command: /opt/conda/envs/exp/bin/python -m noisyvis.app.app
     environment:
-      - PYTHONPATH=/workspace
+      # TEMPORARY — Stage 3 bridge only, removed in Stage 4
+      - PYTHONPATH=/workspace/src
       - TZ=Europe/London
     ports:
       - "8051:8051"

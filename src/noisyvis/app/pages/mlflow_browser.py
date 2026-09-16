@@ -6,8 +6,8 @@ from dash import html, dash_table, dcc, Input, Output, State, callback
 import dash
 import mlflow
 
-from src.io.mlflow_loader import list_experiments_df
-from src.io.mlflow_loader import list_runs_df, select_present_columns  # <-- new imports
+from noisyvis.io.mlflow_loader import list_experiments_df
+from noisyvis.io.mlflow_loader import list_runs_df, select_present_columns  # <-- new imports
 
 dash.register_page(__name__, path="/experiments", name="Experiments")
 
@@ -64,7 +64,7 @@ RUN_COLS_DEFAULT = [
 )
 def render_experiments(_):
     # Ensure your file-store tracking URI (adjust depth if your path is different)
-    repo_root = Path(__file__).resolve().parents[3]
+    repo_root = Path(__file__).resolve().parents[4]
     mlruns_dir = repo_root / "data" / "mlruns"
     mlflow.set_tracking_uri(f"file:{mlruns_dir}")
     tracking_uri = mlflow.get_tracking_uri()

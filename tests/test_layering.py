@@ -32,9 +32,16 @@ WORKSPACE = Path("/workspace")
 RULE1_PACKAGES = (
     "src/algorithms", "src/problems", "src/common", "src/visualization", "src/plotting",
     "src/noisyvis/algorithms", "src/noisyvis/problems", "src/noisyvis/common",
+    # Stage 3 moves these packages without renaming them; the viz/ rename is Stage 10, so the
+    # intermediate names must be scanned too or the rules stop following their own violations.
+    "src/noisyvis/visualization", "src/noisyvis/plotting",
     "src/noisyvis/networks", "src/noisyvis/tracking", "src/noisyvis/analysis", "src/noisyvis/viz",
 )
-RULE2_PACKAGES = ("src/visualization", "src/plotting", "src/noisyvis/viz")
+RULE2_PACKAGES = (
+    "src/visualization", "src/plotting",
+    "src/noisyvis/visualization", "src/noisyvis/plotting",  # Stage 3 intermediate names
+    "src/noisyvis/viz",
+)
 
 DASHBOARD_PACKAGES = {"dashboard", "app", "mlflow_app"}
 PACKAGE_ROOTS = {"src", "noisyvis"}
@@ -45,8 +52,17 @@ class LayeringViolation(AssertionError):
 
 
 def _module_of(path: Path) -> str:
-    """Dotted package of the module's parent, e.g. src/visualization/traces.py -> src.visualization."""
-    return ".".join(path.relative_to(WORKSPACE).parts[:-1])
+    """Dotted package of the module's parent, e.g. src/visualization/traces.py -> src.visualization.
+
+    From Stage 3, `src/` is the src-layout root rather than the package, so the real package name
+    drops that component: src/noisyvis/visualization/traces.py -> noisyvis.visualization. Keeping
+    the literal path here would resolve `..dashboard` to `src.noisyvis.dashboard`, whose second
+    component is `noisyvis`, and rule 1 would silently stop matching its own violations.
+    """
+    parts = path.relative_to(WORKSPACE).parts[:-1]
+    if parts[:2] == ("src", "noisyvis"):
+        parts = parts[1:]
+    return ".".join(parts)
 
 
 def _imported_modules(path: Path):
