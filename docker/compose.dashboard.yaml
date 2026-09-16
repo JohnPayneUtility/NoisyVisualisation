@@ -5,10 +5,10 @@ services:
     image: noisyvis:latest
     container_name: noisyvis-dashboard
     working_dir: /workspace
-    command: /opt/conda/envs/exp/bin/python -m noisyvis.dashboard.Dashboard
+    # Stage 4: editable-installs the repo into `exp`, then execs the command in that environment.
+    entrypoint: ["/workspace/docker/entrypoint.sh"]
+    command: ["python","-m","noisyvis.dashboard.Dashboard"]
     environment:
-      # TEMPORARY — Stage 3 bridge only, removed in Stage 4
-      - PYTHONPATH=/workspace/src
       - PYTHONUNBUFFERED=1
       - TZ=Europe/London
     ports:

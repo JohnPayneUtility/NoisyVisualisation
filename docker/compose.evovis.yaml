@@ -16,10 +16,9 @@ services:
       - MLFLOW_TRACKING_URI=http://192.168.0.66:5000
       - GIT_PYTHON_REFRESH=quiet
       - TZ=Europe/London
-      # TEMPORARY — Stage 3 bridge only, removed in Stage 4
-      - PYTHONPATH=/workspace/src
-    
-    entrypoint: ["micromamba","run","-n","exp"]
+
+    # Stage 4: editable-installs the repo into `exp`, then execs the command in that environment.
+    entrypoint: ["/workspace/docker/entrypoint.sh"]
     command: ["sleep","infinity"]
 
     restart: unless-stopped

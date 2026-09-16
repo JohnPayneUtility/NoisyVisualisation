@@ -36,7 +36,10 @@ docker exec -w /workspace -e PYTHONPATH=/workspace/tests/.deps \
   evovis-runner-1 python -m pytest tests
 ```
 
-From Stage 3 onward, the bridge path is appended: `PYTHONPATH=/workspace/tests/.deps:/workspace/src`.
+Stage 3 temporarily appended a bridge path (`PYTHONPATH=/workspace/tests/.deps:/workspace/src`).
+From Stage 4 that is gone: `noisyvis` comes from the editable install's
+`__editable__.noisyvis-0.1.0.pth`, which puts `/workspace/src` on `sys.path` in every interpreter in
+the container. `PYTHONPATH` now carries only the test runner.
 
 The harness strips `tests/.deps` from `PYTHONPATH` in every scientific subprocess, so experiment runs
 see exactly the production environment.
