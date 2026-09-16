@@ -134,12 +134,12 @@ def _resolved_config(root: Path) -> dict:
 def _meta(root: Path, warehouse_name: str) -> dict:
     """Isolation and mode evidence recorded alongside every baseline."""
     config = _resolved_config(root)
-    warehouse = root / "data" / "dashboard_dw" / warehouse_name
+    warehouse = root / "data" / "warehouse" / warehouse_name
     warehouse_rows = None
     if warehouse.is_file():
         warehouse_rows = int(len(_read_pickle(warehouse)))
 
-    mlruns = root / "mlruns"
+    mlruns = root / "data" / "mlruns"
     mlruns_files = sum(1 for path in mlruns.rglob("*") if path.is_file()) if mlruns.is_dir() else 0
 
     return {

@@ -23,8 +23,8 @@ DEPS_DIR = WORKSPACE / "tests" / ".deps"
 
 # The ACTIVE production paths. These four, and only these four, are what the guard watches.
 #
-# Renamed to data/warehouse in Stage 6; update this constant in that stage's commit.
-WAREHOUSE_DIR = WORKSPACE / "data" / "dashboard_dw"
+# data/dashboard_dw was renamed to data/warehouse in Stage 6.
+WAREHOUSE_DIR = WORKSPACE / "data" / "warehouse"
 MLRUNS_DIR = WORKSPACE / "data" / "mlruns"
 TEMP_DIR = WORKSPACE / "data" / "temp"
 CONFIGS_DIR = WORKSPACE / "configs"
@@ -184,6 +184,13 @@ def _describe_changes(before: dict, after: dict) -> list:
 @pytest.fixture(scope="session", autouse=True)
 def production_data_guard(request):
     """Assert the real warehouse, MLflow store and temp data are untouched by the session."""
+    # A guard pointed at a missing directory would snapshot {} before and after and report
+    # UNCHANGED while watching nothing, so a moved or renamed warehouse must fail loudly.
+    if not WAREHOUSE_DIR.is_dir() or not any(WAREHOUSE_DIR.glob("*.pkl")):
+        raise AssertionError(
+            f"production warehouse not found at {WAREHOUSE_DIR}; the guard would watch nothing. "
+            "Update WAREHOUSE_DIR if the warehouse has moved."
+        )
     before = production_snapshot()
     request.config._noisyvis_guard_before = before
 

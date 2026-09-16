@@ -6,7 +6,8 @@ from deap import base
 from deap import creator
 from deap import tools
 
-from ..io.ExperimentsHelpers import *
+from ..results.store import *
+from ..results.paths import PROJECT_ROOT
 
 from tqdm import trange
 
@@ -368,6 +369,6 @@ def create_binary_LON(prob_info,
             'edges': LON_data['edges']
         }
         LON_results_df = pd.DataFrame([LON_results])
-        save_or_append_results(df = LON_results_df, filename = 'results_LON.pkl')
+        save_or_append_results(df = LON_results_df, filename = PROJECT_ROOT / 'results_LON.pkl')
 
 

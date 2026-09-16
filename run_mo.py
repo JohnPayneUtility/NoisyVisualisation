@@ -19,14 +19,13 @@ from tqdm import tqdm
 from typing import List, Tuple, Any, Dict, Type
 from deap import tools
 
-from noisyvis.io.ExperimentsHelpers import save_or_append_results
+from noisyvis.results.store import save_or_append_results
+from noisyvis.results.paths import MLRUNS_DIR, TEMP_DIR, WAREHOUSE_DIR
 from run_helpers import *
 
 # explicit mlflow path
 from pathlib import Path
-base = Path(__file__).resolve().parents[0]          # folder containing run_mo.py
-project_root = base                                 # run_mo.py is in project root
-mlruns_dir = project_root / "data" / "mlruns"
+mlruns_dir = MLRUNS_DIR                             # <project root>/data/mlruns (results.paths)
 mlruns_dir.mkdir(parents=True, exist_ok=True)
 mlflow.set_tracking_uri(f"file:{mlruns_dir.as_posix()}")
 
@@ -342,11 +341,11 @@ def main(cfg: DictConfig):
                 mlflow.log_metric('final_true_hypervolume', row.true_pf_hypervolumes[-1], step=row.seed)
             if row.noisy_pf_true_hypervolumes:
                 mlflow.log_metric('final_noisy_pf_hypervolume', row.noisy_pf_true_hypervolumes[-1], step=row.seed)
-        df.to_csv('data/temp/results.csv', index=False) # save csv
-        mlflow.log_artifact('data/temp/results.csv')
-        df.to_pickle("data/temp/results.pkl") # save pickle
-        save_or_append_results(df, 'data/dashboard_dw/algo_results.pkl')
-        mlflow.log_artifact("data/temp/results.pkl")
+        df.to_csv(TEMP_DIR / 'results.csv', index=False) # save csv
+        mlflow.log_artifact(str(TEMP_DIR / 'results.csv'))
+        df.to_pickle(TEMP_DIR / "results.pkl") # save pickle
+        save_or_append_results(df, WAREHOUSE_DIR / 'algo_results.pkl')
+        mlflow.log_artifact(str(TEMP_DIR / "results.pkl"))
         mlflow.log_artifact("data/outputs/.hydra/config.yaml")
     
     mlflow.end_run(status="FINISHED")

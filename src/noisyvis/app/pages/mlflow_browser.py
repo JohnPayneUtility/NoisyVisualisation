@@ -6,8 +6,8 @@ from dash import html, dash_table, dcc, Input, Output, State, callback
 import dash
 import mlflow
 
-from noisyvis.io.mlflow_loader import list_experiments_df
-from noisyvis.io.mlflow_loader import list_runs_df, select_present_columns  # <-- new imports
+from noisyvis.results.mlflow_query import list_experiments_df
+from noisyvis.results.mlflow_query import list_runs_df, select_present_columns  # <-- new imports
 
 dash.register_page(__name__, path="/experiments", name="Experiments")
 

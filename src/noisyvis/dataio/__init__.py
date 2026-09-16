@@ -28,7 +28,8 @@ from dataclasses import dataclass
 from typing import List
 import pandas as pd
 
-from .loader import load_algo_results, load_lon_results, DataLoadError
+from ..results.paths import WAREHOUSE_DIR
+from ..results.store import load_algo_results, load_lon_results, DataLoadError
 from .transformers import (
     create_df_no_lists,
     create_display1_df,
@@ -77,8 +78,8 @@ class DashboardData:
     @classmethod
     def load(
         cls,
-        algo_path: str = 'data/dashboard_dw/algo_results.pkl',
-        lon_path: str = 'data/dashboard_dw/lon_results.pkl',
+        algo_path: str = str(WAREHOUSE_DIR / 'algo_results.pkl'),
+        lon_path: str = str(WAREHOUSE_DIR / 'lon_results.pkl'),
     ) -> 'DashboardData':
         """
         Load and transform all dashboard data.
@@ -88,9 +89,9 @@ class DashboardData:
 
         Args:
             algo_path: Path to algorithm results pickle file.
-                      Defaults to 'data/dashboard_dw/algo_results.pkl'
+                      Defaults to data/warehouse/algo_results.pkl under the project root
             lon_path: Path to LON results pickle file.
-                     Defaults to 'data/dashboard_dw/lon_results.pkl'
+                     Defaults to data/warehouse/lon_results.pkl under the project root
 
         Returns:
             DashboardData instance with all data loaded and transformed

@@ -100,7 +100,7 @@ REGISTRY = [
     Fixture(
         id="warehouse-so",
         kind="dataframe",
-        path="data/dashboard_dw/algo_results.pkl",
+        path="data/warehouse/algo_results.pkl",
         expected_columns=ALGO_RESULTS_COLUMNS,
         min_rows=38430,
         notes="Live single-objective warehouse; 1.27 GB, rewritten whole on every run (P9/R6).",
@@ -108,7 +108,7 @@ REGISTRY = [
     Fixture(
         id="warehouse-lon",
         kind="dataframe",
-        path="data/dashboard_dw/lon_results.pkl",
+        path="data/warehouse/lon_results.pkl",
         expected_columns=LON_RESULTS_COLUMNS,
         min_rows=28,
         notes="Live LON/CoLON warehouse, including the feasibility columns.",

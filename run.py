@@ -21,20 +21,16 @@ from tqdm import tqdm
 from typing import List, Tuple, Any, Dict, Type
 from deap import tools
 
-from noisyvis.io.ExperimentsHelpers import save_or_append_results
+from noisyvis.results.store import save_or_append_results
+from noisyvis.results.paths import MLRUNS_DIR, PROJECT_ROOT, TEMP_DIR, WAREHOUSE_DIR
 from noisyvis.algorithms.Logger import clear_active_logger
 from run_helpers import *
 
 
 # explicit mlflow path
 from pathlib import Path
-# base = Path(__file__).resolve().parents[1]  # project root
-# mlruns_dir = base / "data" / "mlruns"
-# mlflow.set_tracking_uri(f"file:{mlruns_dir}")
 
-base = Path(__file__).resolve().parents[0]          # folder containing run.py
-project_root = base                                 # if run.py is in root
-mlruns_dir = project_root / "data" / "mlruns"
+mlruns_dir = MLRUNS_DIR                             # <project root>/data/mlruns (results.paths)
 mlruns_dir.mkdir(parents=True, exist_ok=True)
 
 mlflow.set_tracking_uri(f"file:{mlruns_dir.as_posix()}")
@@ -149,7 +145,7 @@ def hydra_algo_data_single(prob_info: Dict[str, Any],
                           algo_config: Dict[str, Any],
                           algo_params: Dict[str, Any],
                           seed: int,
-                          payload_dir: str = "data/temp/payloads",
+                          payload_dir: str = str(TEMP_DIR / "payloads"),
                           nvme_base_path: str = None) -> Tuple[Dict[str, Any], str]:
     # Seeds
     random.seed(seed)
@@ -239,7 +235,11 @@ def hydra_algo_data_single(prob_info: Dict[str, Any],
         "peak_ram_mb": round(peak_ram_mb, 1),
 
         # Keep track of where payload is (for main process logging)
-        "payload_path": str(payload_path),
+        "payload_path": (
+            str(payload_path.relative_to(PROJECT_ROOT))
+            if payload_path.is_relative_to(PROJECT_ROOT)
+            else str(payload_path)
+        ),
     }
 
     # Cleanup (important for sequential + parallel)
@@ -340,7 +340,7 @@ def mlflow_log_child_from_row(row: Dict[str, Any], algo_params: Dict[str, Any]) 
         # ---- Artifacts (payload pickle) ----
         # Log with a FIXED name inside each run for easy dashboard retrieval later
         # We copy/rename into temp so MLflow sees "stn_payload.pkl" consistently.
-        payload_src = Path(row["payload_path"])
+        payload_src = PROJECT_ROOT / row["payload_path"]
         payload_tmp = payload_src.parent / "stn_payload.pkl"
         if payload_src.name != "stn_payload.pkl":
             # copy bytes (avoid shutil import if you want)
@@ -386,7 +386,7 @@ def enrich_df_with_payloads(df: pd.DataFrame) -> pd.DataFrame:
             continue
 
         try:
-            with open(payload_path, "rb") as f:
+            with open(PROJECT_ROOT / payload_path, "rb") as f:
                 payload = pickle.load(f)
         except Exception as e:
             print(f"[WARN] Failed to load payload {payload_path}: {e}")
@@ -504,14 +504,14 @@ def main(cfg: DictConfig):
         df["parent_run_id"] = parent_run_id
 
         # ---- Keep CSV unchanged (backup) ----
-        df.to_csv('data/temp/results.csv', index=False)
-        mlflow.log_artifact('data/temp/results.csv')
+        df.to_csv(TEMP_DIR / 'results.csv', index=False)
+        mlflow.log_artifact(str(TEMP_DIR / 'results.csv'))
 
         # Keep your pickle + dashboard append unchanged for now
-        df.to_pickle("data/temp/results.pkl")
-        mlflow.log_artifact("data/temp/results.pkl")
+        df.to_pickle(TEMP_DIR / "results.pkl")
+        mlflow.log_artifact(str(TEMP_DIR / "results.pkl"))
         df_dashboard = enrich_df_with_payloads(df)
-        save_or_append_results(df_dashboard, 'data/dashboard_dw/algo_results.pkl')
+        save_or_append_results(df_dashboard, WAREHOUSE_DIR / 'algo_results.pkl')
 
         mlflow.log_artifact("data/outputs/.hydra/config.yaml")
 

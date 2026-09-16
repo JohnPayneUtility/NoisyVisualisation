@@ -1,5 +1,5 @@
 """
-mlflow_loader.py — basic MLflow utilities
+mlflow_query.py — basic MLflow utilities
 
 This version is simplified to just list experiments.
 """

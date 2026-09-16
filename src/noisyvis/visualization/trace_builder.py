@@ -14,6 +14,7 @@ import plotly.express as px
 from .config import PlotConfig
 from ..common import hamming_distance, sol_tuple_ints, lookup_map
 from ..common.geometry import quadratic_bezier, should_label_edge
+from ..results.paths import PLOTS_DIR
 
 
 def _precalculate_stn_edge_colors(G: nx.MultiDiGraph) -> Dict[Tuple, Dict[str, int]]:
@@ -778,7 +779,7 @@ def create_figure(
     xaxis_settings: Dict,
     yaxis_settings: Dict,
     zaxis_settings: Dict,
-    output_path: str = 'plots/3dplot.html',
+    output_path: str = str(PLOTS_DIR / '3dplot.html'),
     scene_annotations: List[Dict] = None,
 ) -> go.Figure:
     """

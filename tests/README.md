@@ -63,14 +63,17 @@ before starting. `data/old_mlruns` is archival and deliberately outside the guar
 
 ```sh
 docker exec -w /workspace -e PYTHONPATH=/workspace/tests/.deps evovis-runner-1 \
-  python -m pytest tests/test_layering.py tests/test_historical_pickles.py tests/test_config_resolution.py
+  python -m pytest tests/test_layering.py tests/test_historical_pickles.py tests/test_config_resolution.py \
+  tests/test_paths.py
 ```
 
 Resolves every `_target_`, `violation_fn`, `fitness_fn` and `attr_function` in `configs/` through each
-runner's own namespace, loads the persisted artefacts, and scans imports for the two layering rules.
+runner's own namespace, loads the persisted artefacts, scans imports for the two layering rules, and
+checks the `noisyvis.results.paths` contract.
 No experiment executes, so this is the quickest way to catch a broken import or a moved module.
 
-**Expect:** `220 passed, 2 xfailed` in roughly 50 seconds (Stages 1–4: `219 passed, 3 xfailed`).
+**Expect:** `223 passed, 2 xfailed` in roughly 50 seconds (Stages 1–4: `219 passed, 3 xfailed`;
+Stage 5: `220 passed, 2 xfailed`, before `test_paths.py` existed).
 
 ### 3. Harness smoke — before anything is recorded
 
@@ -129,7 +132,8 @@ docker exec -w /workspace -e PYTHONPATH=/workspace/tests/.deps evovis-runner-1 p
 docker exec -w /workspace -e PYTHONPATH=/workspace/tests/.deps evovis-runner-1 python -m pytest tests
 ```
 
-**Expect:** `226 passed, 2 xfailed` both times (Stages 1–4: `225 passed, 3 xfailed`), about 110 seconds each. Two consecutive identical runs
+**Expect:** `229 passed, 2 xfailed` both times (Stages 1–4: `225 passed, 3 xfailed`; Stage 5:
+`226 passed, 2 xfailed`), about 110 seconds each. Two consecutive identical runs
 are the completion criterion: a single run cannot distinguish genuine determinism from luck.
 
 ### Reading the output
@@ -153,10 +157,10 @@ Summary of expected results:
 
 | Step | Command | Expected |
 |---|---|---|
-| 2 | gates only | `220 passed, 2 xfailed` |
+| 2 | gates only | `223 passed, 2 xfailed` |
 | 3 | `-k so_seq`, no baselines yet | 1 failed: `no baseline recorded` |
 | 4 | record mode | `6 passed`, five baselines written |
-| 5 | full suite ×2 | `226 passed, 2 xfailed` each |
+| 5 | full suite ×2 | `229 passed, 2 xfailed` each |
 
 ## What each file gates
 
@@ -166,6 +170,7 @@ Summary of expected results:
 | `test_config_resolution.py` + `known_broken_configs.py` | Every `_target_`, `violation_fn`, `fitness_fn` and `attr_function` in `configs/` still resolves (§5.6) |
 | `test_historical_pickles.py` + `historical_fixtures.py` | Existing persisted data still loads with the expected schema (§7.5); gates Stages 8 and 12 |
 | `test_layering.py` | The two architectural rules of §5.1: rule 1 enforced from Stage 5, rule 2 xfailed until Stage 10 |
+| `test_paths.py` | `noisyvis.results.paths` (§5.9): repository root by default from any cwd, `NOISYVIS_ROOT` override, no writes on import |
 | `conftest.py` | Session-scoped production-data guard (§5.5a) |
 | `harness/` | Isolated subprocess runner, write fence, extractors, canonical comparison |
 
@@ -176,12 +181,18 @@ must never touch any of it, so isolation is enforced in three independent layers
 
 1. **Temp root.** Each run executes the real entry point as a subprocess whose working directory is a
    fresh temporary root outside the repository, holding its own `data/outputs`, `data/temp`,
-   `data/dashboard_dw`, `mlruns` and a symlink to the instance directory.
+   `data/warehouse`, `data/mlruns` and a symlink to the instance directory. `NOISYVIS_ROOT` points at
+   the same root, so every `noisyvis.results.paths` location (warehouse, temp, SO/MO MLflow) resolves
+   inside it; Hydra's outputs and the LON configs' `tracking_uri: "data/mlruns"` follow the cwd, which
+   is the root too.
+   **MLflow is not patched** (from Stage 6; Stages 1–5 patched `mlflow.set_tracking_uri`). Each entry
+   point sets its own tracking URI, and `MLFLOW_TRACKING_URI` is an unreachable sentinel, so a missed
+   call fails loudly instead of logging to the runner's configured server (R24).
 2. **Write fence.** The subprocess installs an audit hook (`harness/fence.py`) that raises before any
    write, rename or delete whose target resolves under `/workspace`. Contamination fails loudly
    instead of happening silently.
-3. **Production guard.** A session fixture records the warehouse pickles, `data/mlruns` and
-   `data/temp` before the session and asserts they are unchanged afterwards, printing both snapshots
+3. **Production guard.** A session fixture records the warehouse pickles (`data/warehouse`, which it
+   requires to exist), `data/mlruns` and `data/temp` before the session and asserts they are unchanged afterwards, printing both snapshots
    in the terminal summary.
 
 ## Baselines

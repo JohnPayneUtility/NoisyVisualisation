@@ -6,14 +6,15 @@ reimplementing any of their science. It only changes where they write.
 
 Parent side (`run_isolated`):
     * builds a fresh temp root outside the repository, with the runtime layout the scripts expect;
-    * launches this same file as a child process with cwd set to that root.
+    * launches this same file as a child process with cwd set to that root, `NOISYVIS_ROOT`
+      pointing at it (so every `noisyvis.results.paths` location resolves inside it), and
+      `MLFLOW_TRACKING_URI` set to an unreachable sentinel (R24).
 
 Child side (`--child`):
     1. puts /workspace first on sys.path, exactly as `python run.py` does;
     2. installs the write fence, so any write into /workspace fails loudly;
-    3. forces the MLflow tracking URI into the temp root;
-    4. sets sys.argv and runs the script through runpy with run_name="__main__";
-    5. extracts the compared fields *in this process*, because MO results contain DEAP
+    3. sets sys.argv and runs the script through runpy with run_name="__main__";
+    4. extracts the compared fields *in this process*, because MO results contain DEAP
        `creator.Individual` objects that cannot be unpickled anywhere else.
 
 Usage from tests:
@@ -42,6 +43,13 @@ DEPS_DIR = TESTS_DIR / ".deps"
 HARNESS_DIR = Path(__file__).resolve().parent
 
 INSTANCE_DIR_NAME = "instances_01_KP"  # retargeted to "instances" in Stage 9
+
+# Stage 6: every entry point sets its tracking URI explicitly, into the temp root through
+# NOISYVIS_ROOT (SO/MO, and the LON module level) or relative to the cwd (LON configs). This URI
+# has no transport, so a missed set_tracking_uri fails immediately instead of silently logging to
+# the runner's configured MLflow server (R24).
+MLFLOW_SENTINEL_URI = "noisyvis-harness-sentinel://unreachable-mlflow-tracking-uri-was-not-set"
+
 DEFAULT_TIMEOUT = 1800
 
 
@@ -73,7 +81,7 @@ def make_temp_root() -> Path:
         shutil.rmtree(root, ignore_errors=True)
         raise HarnessError(f"refusing to use a temp root inside {WORKSPACE}: {root}")
 
-    for relative in ("data/outputs", "data/temp", "data/dashboard_dw"):
+    for relative in ("data/outputs", "data/temp", "data/warehouse"):
         (root / relative).mkdir(parents=True, exist_ok=True)
 
     # Read-only reference to the knapsack instances; the loaders resolve them CWD-relative.
@@ -105,9 +113,9 @@ def child_env(root: Path) -> dict:
     else:
         env.pop("PYTHONPATH", None)
 
-    # Both belt and braces for MLflow: the env var covers any code path that reads it,
-    # and the child additionally patches mlflow.set_tracking_uri.
-    env["MLFLOW_TRACKING_URI"] = f"file:{root}/mlruns"
+    # Every results.paths location (warehouse, temp, SO/MO and LON-module MLflow) lands in the root.
+    env["NOISYVIS_ROOT"] = str(root)
+    env["MLFLOW_TRACKING_URI"] = MLFLOW_SENTINEL_URI
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     env["NOISYVIS_HARNESS_ROOT"] = str(root)
     return env
@@ -217,22 +225,10 @@ def _child(root: Path, script_path: Path, config_name: str, kind: str, overrides
     # 2. Nothing may be written inside /workspace from here on.
     fence.install(str(WORKSPACE))
 
-    # 3. Force every MLflow store into the temp root. The SO/MO scripts anchor their
-    #    store to __file__ at import time, and the LON scripts call set_tracking_uri
-    #    again inside main() with the CWD-relative config value; patching the function
-    #    covers all of those call sites without editing any source.
-    import mlflow
+    # MLflow is not patched (Stage 6): the entry points' own set_tracking_uri calls resolve into
+    # the temp root via NOISYVIS_ROOT and the cwd, and anything they miss hits the sentinel.
 
-    forced_uri = f"file:{root}/mlruns"
-    original_set_tracking_uri = mlflow.set_tracking_uri
-
-    def _forced_set_tracking_uri(uri, *args, **kwargs):  # noqa: ARG001 - uri deliberately ignored
-        return original_set_tracking_uri(forced_uri, *args, **kwargs)
-
-    mlflow.set_tracking_uri = _forced_set_tracking_uri
-    mlflow.set_tracking_uri(forced_uri)
-
-    # 4. Hydra reads the command line, so build it exactly as a terminal invocation would.
+    # 3. Hydra reads the command line, so build it exactly as a terminal invocation would.
     #    Flat config names keep run.py's symlink hack from writing into configs/.
     sys.argv = [
         str(script_path),
@@ -242,10 +238,10 @@ def _child(root: Path, script_path: Path, config_name: str, kind: str, overrides
         *overrides,
     ]
 
-    # 5. Run the real entry point.
+    # 4. Run the real entry point.
     runpy.run_path(str(script_path), run_name="__main__")
 
-    # 6. Extract in-process: MO results hold DEAP creator.Individual objects that only
+    # 5. Extract in-process: MO results hold DEAP creator.Individual objects that only
     #    unpickle where those classes exist.
     if kind != "none":
         payload = extract_module.extract(kind, root)

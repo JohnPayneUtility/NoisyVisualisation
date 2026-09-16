@@ -129,11 +129,8 @@ def main() -> int:
     sys.path[0] = str(WORKSPACE)
     fence.install(str(WORKSPACE))
 
-    import mlflow
-
-    forced_uri = f"file:{root}/mlruns"
-    original = mlflow.set_tracking_uri
-    mlflow.set_tracking_uri = lambda uri, *a, **kw: original(forced_uri, *a, **kw)
+    # No MLflow patch (Stage 6): the runner's import-time set_tracking_uri resolves into the temp
+    # root through NOISYVIS_ROOT, and the environment carries the harness's unreachable sentinel.
 
     keys = namespace_keys(script_path)
 

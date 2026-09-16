@@ -18,13 +18,13 @@ import mlflow
 from noisyvis.problems import *  # fitness fns & loaders
 from noisyvis.algorithms import *  # attribute generators (e.g., binary_attribute)
 # from src.LONs import BinaryLON, compress_lon_aggregated
-from noisyvis.io.ExperimentsHelpers import save_or_append_results
+from noisyvis.results.store import save_or_append_results
+from noisyvis.results.paths import MLRUNS_DIR, TEMP_DIR, WAREHOUSE_DIR
 
 # -------------------------------
 # MLflow defaults (local file store under repo/data/mlruns)
 # -------------------------------
-base = Path(__file__).resolve().parents[1]  # project root
-mlruns_dir = base / "data" / "mlruns"
+mlruns_dir = MLRUNS_DIR  # <project root>/data/mlruns (results.paths)
 mlflow.set_tracking_uri(f"file:{mlruns_dir}")
 print("RUN(LON) tracking:", mlflow.get_tracking_uri())
 
@@ -184,11 +184,10 @@ def main(cfg: DictConfig):
             mlflow.log_metric("n_local_optima", int(r.n_local_optima), step=i)
 
         # Artifacts
-        out_dir = Path("data/temp")
+        out_dir = TEMP_DIR
         out_dir.mkdir(parents=True, exist_ok=True)
         df.to_pickle(out_dir / "lon_results.pkl")
-        save_or_append_results(df, 'data/dashboard_dw/lon_results.pkl')
-        # df.to_pickle("data/dashboard_dw/lon_results.pkl")
+        save_or_append_results(df, WAREHOUSE_DIR / 'lon_results.pkl')
         df.to_csv(out_dir / "lon_results.csv", index=False)
         mlflow.log_artifact(str(out_dir / "lon_results.pkl"))
         mlflow.log_artifact(str(out_dir / "lon_results.csv"))
