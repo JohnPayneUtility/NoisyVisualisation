@@ -1,0 +1,56 @@
+# Stage 1 harness config: tiny multiobjective noisy knapsack (run_mo.py).
+#
+# SEMO performs one evaluation per generation, so max_gens bounds the run deterministically.
+# ref_point is left null: run_mo.py's resolver computes it from the loaded instance for
+# knapsack problems, and that computation is part of the behaviour being baselined.
+#
+# Note MO runs bypass the ExperimentLogger entirely (finding B10) -- that is existing,
+# deliberate behaviour and is preserved here, not corrected.
+
+experiment_name: "stage1_harness_mo_knapsack"
+
+run:
+  max_gens: 150
+  eval_limit: 400
+  use_noise_dependent_eval_limit: false
+  eval_limit_for_noise: null
+  seed: 1
+  num_runs: 3
+  parallel: false
+  verbose_rate: 0
+
+mlflow:
+  tracking_uri: "data/mlruns"
+
+algo:
+  name: SEMO
+  type: SEMO
+
+  init_args:
+    _target_: src.algorithms.MOAlgorithms.SEMO
+
+problem:
+  PID: f1_l-d_kp_10_269
+  prob_name: knapsack
+  prob_type: discrete
+  opt_goal: maximise
+  dimensions: null   # set after loading
+  opt_global: null   # set after loading
+  capacity: null     # set after loading
+  mean_value: null   # set after loading
+  mean_weight: null  # set after loading
+  items_dict: null   # set after loading
+  ref_point: null    # set by the MO resolver for knapsack
+
+  loader:
+    _target_: src.problems.ProblemScripts.load_problem_KP
+    filename: f1_l-d_kp_10_269
+
+  fitness_fn: eval_noisy_kp_v1_mo
+  fitness_params:
+    items_dict: null   # set after loading
+    capacity: null     # set after loading
+    noise_intensity: 1
+
+  attr_function: binary_attribute
+  weights: [1.0, -1.0]

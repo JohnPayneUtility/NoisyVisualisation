@@ -1,0 +1,76 @@
+# Stage 1 harness config: tiny noisy knapsack, single-objective.
+#
+# Complements so_onemax by exercising the LOADER path: the instance loader runs, and
+# resolve_config_dependencies injects items_dict/capacity into fitness_params and derives
+# dimensions, opt_global, mean_value and mean_weight.
+#
+# f2_l-d_kp_20_878 (20 items) rather than the 10-item instance: a 10-item knapsack has only
+# 1024 possible solutions, so trajectories were as short as a single accepted solution, which
+# makes a weak baseline. 20 items keeps the run to a few seconds while giving the comparison
+# real trajectory content to work with.
+
+experiment_name: "stage1_harness_so_knapsack"
+
+run:
+  max_gens: null
+  eval_limit: 2000
+  target_stop: false
+  no_improve_limit: null
+  noisy_no_improve_limit: null
+  use_noise_dependent_eval_limit: false
+  eval_limit_for_noise: null
+  seed: 1
+  num_runs: 4
+  parallel: false
+  override_max_workers: null
+  progress_print_interval: null
+  record_population: false
+
+mlflow:
+  tracking_uri: "data/mlruns"
+
+algo:
+  name: OnePlusOneEA
+  type: MuPlusLamdaEA
+  use_dynamic_pop_size: false
+  static_indpb: 0.01
+  use_dynamic_mutation: true
+
+  indpb_fn:
+    _target_: run_helpers.inverse_n_mut_rate
+    n_items: null   # resolved after problem loading
+    noise: 1
+
+  init_args:
+    _target_: src.algorithms.Algorithms.MuPlusLamdaEA
+    mu: 1
+    lam: 1
+    mutate_function: "probFlipBit"
+    mutate_params:
+      indpb: null   # resolved dynamically
+
+problem:
+  PID: f2_l-d_kp_20_878
+  prob_name: knapsack
+  prob_type: discrete
+  opt_goal: maximise
+  dimensions: null   # set after loading
+  opt_global: null   # set after loading
+  capacity: null     # set after loading
+  mean_value: null   # set after loading
+  mean_weight: null  # set after loading
+  items_dict: null   # set after loading
+
+  loader:
+    _target_: src.problems.ProblemScripts.load_problem_KP
+    filename: f2_l-d_kp_20_878
+
+  fitness_fn: eval_noisy_kp_v1
+  fitness_params:
+    items_dict: null   # set after loading
+    capacity: null     # set after loading
+    noise_intensity: 1
+    penalty: 1
+
+  attr_function: binary_attribute
+  weights: [1.0]

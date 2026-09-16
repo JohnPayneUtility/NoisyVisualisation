@@ -1,0 +1,59 @@
+# Stage 1 harness config: tiny constrained noisy knapsack CoLON (run_colon_parallel.py).
+#
+# Exercises violation_fn, which is resolved by run_colon_parallel's own _import_from_dotted
+# and is the only config key loaded via importlib rather than Hydra instantiate.
+# The extra feasibility outputs (optima_feasibility, neighbour_feasibility, visit_counts,
+# visit_proportions) are part of the compared baseline.
+#
+# Sequential for the same reason as the LON baseline (risk R27); the harness also passes
+# run.parallel=false explicitly.
+
+experiment_name: "stage1_harness_colon"
+
+run:
+  num_runs: 6
+  seed: 1
+  parallel: false
+  num_workers: 1
+
+mlflow:
+  tracking_uri: "data/mlruns"
+
+lon:
+  name: CoLON_stage1
+  pert_attempts: 100
+  n_flips_mut: 1
+  n_flips_pert: 2
+  compression_accs: ["None", 0, 1]
+  include_start_nodes: False
+  only_improving_perturbations: True
+
+problem:
+  PID: f1_l-d_kp_10_269
+  prob_name: knapsack
+  prob_type: discrete
+  opt_goal: maximise
+  dimensions: null   # set after loading
+  opt_global: null   # set after loading
+  capacity: null
+  mean_value: null
+  mean_weight: null
+  items_dict: null
+
+  violation_fn: src.problems.ViolationFunctions.knap_violation
+  violation_params:
+    items_dict: null   # set after loading
+    capacity: null     # set after loading
+
+  loader:
+    _target_: src.problems.ProblemScripts.load_problem_KP
+    filename: f1_l-d_kp_10_269
+
+  fitness_fn: eval_noisy_kp_v1
+  fitness_params:
+    items_dict: null   # set after loading
+    capacity: null     # set after loading
+    noise_intensity: 1
+
+  attr_function: binary_attribute
+  weights: [1.0]

@@ -1,0 +1,62 @@
+# Stage 1 harness config: tiny noisy knapsack LON (run_lon_parallel.py).
+#
+# parallel is false here AND the harness passes run.parallel=false on the command line.
+# This is deliberate and permanent (risk R27): parallel LON output depends on the order in
+# which workers finish, because _merge keeps the first-seen fitness under as_completed,
+# BinaryLON stores noisy fitness, and compress_lon_aggregated groups greedily in list order.
+# A parallel LON baseline could not pass twice in a row. Do not "fix" this.
+#
+# Several compression levels are included so compress_lon_aggregated is covered, not just
+# the raw aggregate.
+
+experiment_name: "stage1_harness_lon"
+
+run:
+  # 20 rather than 6: each run contributes only ~2 optima before target_stop ends it (see the
+  # note on pert_attempts below), and the aggregated optimum/edge maps are what this baseline
+  # protects. More runs is the lever that actually thickens them.
+  num_runs: 20
+  seed: 1
+  parallel: false
+  num_workers: 1
+
+mlflow:
+  tracking_uri: "data/mlruns"
+
+lon:
+  name: BinaryLON_stage1
+  # MEASURED: raising this to 300 changed nothing at all -- same 13 optima, same 7 edges, same
+  # values. run_lon_parallel.py passes target_stop=problem.opt_global into BinaryLON, and with a
+  # noisy fitness a spuriously high noisy evaluation crosses that target early, so each run ends
+  # well before the perturbation budget binds. Under noise the network is grown by num_runs, not
+  # by pert_attempts, so this is left at the cheaper value.
+  pert_attempts: 100
+  n_flips_mut: 1
+  n_flips_pert: 2
+  compression_accs: ["None", 0, 1, 5]
+
+problem:
+  PID: f1_l-d_kp_10_269
+  prob_name: knapsack
+  prob_type: discrete
+  opt_goal: maximise
+  dimensions: null   # set after loading
+  opt_global: null   # set after loading
+  capacity: null
+  mean_value: null
+  mean_weight: null
+  items_dict: null
+
+  loader:
+    _target_: src.problems.ProblemScripts.load_problem_KP
+    filename: f1_l-d_kp_10_269
+
+  fitness_fn: eval_noisy_kp_v1
+  fitness_params:
+    items_dict: null   # set after loading
+    capacity: null     # set after loading
+    noise_intensity: 1
+    penalty: 1
+
+  attr_function: binary_attribute
+  weights: [1.0]

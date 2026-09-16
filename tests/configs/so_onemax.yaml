@@ -1,0 +1,67 @@
+# Stage 1 harness config: tiny OneMax, single-objective.
+#
+# Exercises the LOADER-LESS path: problem.loader is null, so the ten sys.modules[...]
+# lookups are the only way the fitness and attribute names resolve (risk R5).
+# Deliberately noisy, so the ExperimentLogger contract is exercised too (risk R3).
+#
+# No nvme_path and no hydra: block -- the harness passes hydra.run.dir on the command line.
+# Kept flat-named so run.py's __main__ symlink hack never writes into configs/.
+
+experiment_name: "stage1_harness_so_onemax"
+
+run:
+  max_gens: null
+  eval_limit: 3000
+  target_stop: true
+  no_improve_limit: null
+  noisy_no_improve_limit: null
+  use_noise_dependent_eval_limit: false
+  eval_limit_for_noise: null
+  seed: 1
+  num_runs: 4
+  parallel: false
+  override_max_workers: null
+  progress_print_interval: null
+  record_population: false
+
+mlflow:
+  tracking_uri: "data/mlruns"
+
+algo:
+  name: OnePlusOneEA
+  type: MuPlusLamdaEA
+  use_dynamic_pop_size: false
+  static_indpb: 0.01
+  use_dynamic_mutation: true
+
+  indpb_fn:
+    _target_: run_helpers.inverse_n_mut_rate
+    n_items: null   # resolved after problem loading
+    noise: 1
+
+  init_args:
+    _target_: src.algorithms.Algorithms.MuPlusLamdaEA
+    mu: 1
+    lam: 1
+    mutate_function: "probFlipBit"
+    mutate_params:
+      indpb: null   # resolved dynamically
+
+problem:
+  prob_name: onemax
+  prob_type: discrete
+  opt_goal: maximise
+  dimensions: 30
+  opt_global: 30
+  capacity: 0
+  mean_value: 50.0
+  mean_weight: 0.5
+
+  loader: null
+
+  fitness_fn: OneMax_fitness
+  fitness_params:
+    noise_intensity: 1
+
+  attr_function: binary_attribute
+  weights: [1.0]

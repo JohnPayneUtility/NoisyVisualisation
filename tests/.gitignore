@@ -1,0 +1,7 @@
+# Test-runner dependencies, installed by the bootstrap command in README.md.
+# Deliberately not committed: they are third-party wheels, not project source.
+.deps/
+
+# Byte-code from the test process (the repo root .gitignore already covers this,
+# repeated here so tests/ is self-describing).
+__pycache__/
