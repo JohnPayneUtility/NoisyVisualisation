@@ -6,6 +6,7 @@ fast_storage/
 data/
 plots/
 outputs/
+plans/
 
 # notes
 tasks.txt
