@@ -190,6 +190,29 @@ def test_baseline(name, run_baseline, note):
     )
 
 
+def test_run_lon_matches_lon_baseline():
+    """`run_lon.py` reproduces the LON baseline recorded from `run_lon_parallel.py`.
+
+    `run_lon.py` builds the LON inline -- no worker function, its own merge loop -- and nothing else
+    covers it behaviourally. Its merge, seeding and BinaryLON arguments match the sequential path of
+    `run_lon_parallel.py`, so its aggregated maps must equal the LON baseline exactly. This compares
+    against `lon.json` and never records.
+    """
+    spec = BASELINES["lon"]
+    runs = {}
+    for config_name in spec["configs"]:
+        result = run_isolated("run_lon.py", config_name, spec["kind"], overrides=spec["overrides"])
+        _check_isolation_and_mode("lon", config_name, result.extracted)
+        runs[config_name] = result.extracted
+
+    stored = json.loads((BASELINE_DIR / "lon.json").read_text())
+    difference = canonical.first_difference(stored["cases"], _observed(runs))
+    assert difference is None, (
+        f"run_lon.py: output differs from the LON baseline.\n  {difference}\n"
+        f"Investigate; never re-record lon.json to make this pass."
+    )
+
+
 def test_so_parallel_matches_sequential(run_baseline, note):
     """Observation, not a gate.
 
