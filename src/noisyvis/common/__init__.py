@@ -6,7 +6,7 @@ the 2D plotting module (src/plotting) and the 3D visualization module
 (src/visualization).
 """
 
-from .distance_metrics import (
+from .distance import (
     # Type aliases
     Solution,
     Front,

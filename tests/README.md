@@ -70,7 +70,7 @@ Resolves every `_target_`, `violation_fn`, `fitness_fn` and `attr_function` in `
 runner's own namespace, loads the persisted artefacts, and scans imports for the two layering rules.
 No experiment executes, so this is the quickest way to catch a broken import or a moved module.
 
-**Expect:** `219 passed, 3 xfailed` in roughly 50 seconds.
+**Expect:** `220 passed, 2 xfailed` in roughly 50 seconds (Stages 1–4: `219 passed, 3 xfailed`).
 
 ### 3. Harness smoke — before anything is recorded
 
@@ -129,7 +129,7 @@ docker exec -w /workspace -e PYTHONPATH=/workspace/tests/.deps evovis-runner-1 p
 docker exec -w /workspace -e PYTHONPATH=/workspace/tests/.deps evovis-runner-1 python -m pytest tests
 ```
 
-**Expect:** `225 passed, 3 xfailed` both times, about 110 seconds each. Two consecutive identical runs
+**Expect:** `226 passed, 2 xfailed` both times (Stages 1–4: `225 passed, 3 xfailed`), about 110 seconds each. Two consecutive identical runs
 are the completion criterion: a single run cannot distinguish genuine determinism from luck.
 
 ### Reading the output
@@ -153,10 +153,10 @@ Summary of expected results:
 
 | Step | Command | Expected |
 |---|---|---|
-| 2 | gates only | `219 passed, 3 xfailed` |
+| 2 | gates only | `220 passed, 2 xfailed` |
 | 3 | `-k so_seq`, no baselines yet | 1 failed: `no baseline recorded` |
 | 4 | record mode | `6 passed`, five baselines written |
-| 5 | full suite ×2 | `225 passed, 3 xfailed` each |
+| 5 | full suite ×2 | `226 passed, 2 xfailed` each |
 
 ## What each file gates
 
@@ -165,7 +165,7 @@ Summary of expected results:
 | `test_reproducibility.py` | The five baselines of §5.5: SO-seq, SO-par, MO, LON, CoLON |
 | `test_config_resolution.py` + `known_broken_configs.py` | Every `_target_`, `violation_fn`, `fitness_fn` and `attr_function` in `configs/` still resolves (§5.6) |
 | `test_historical_pickles.py` + `historical_fixtures.py` | Existing persisted data still loads with the expected schema (§7.5); gates Stages 8 and 12 |
-| `test_layering.py` | The two architectural rules of §5.1, both expected to fail today |
+| `test_layering.py` | The two architectural rules of §5.1: rule 1 enforced from Stage 5, rule 2 xfailed until Stage 10 |
 | `conftest.py` | Session-scoped production-data guard (§5.5a) |
 | `harness/` | Isolated subprocess runner, write fence, extractors, canonical comparison |
 
@@ -205,7 +205,7 @@ it reproducible.
 - All five baselines pass.
 - `test_config_resolution.py`: exactly one xfail — B1, `Multiobjective/MO_knapsack_test/mo_1p1ea.yaml`,
   which targets the nonexistent `MOAlgorithms.MoMuPlusLamdaEA`. A deferred behavioural fix.
-- `test_layering.py`: exactly two xfails — rule 1 until Stage 5, rule 2 until Stage 10.
+- `test_layering.py`: exactly one xfail — rule 2, until Stage 10. Rule 1 passes from Stage 5.
 - Everything else passes.
 
 ## Extending the compatibility fixtures

@@ -17,7 +17,7 @@ from ..common import (
     sol_tuple_ints, sol_tuple_floats, is_continuous_solution,
     front_distance,
 )
-from ..dashboard.DimensionalityReduction import landmark_mds, compute_distance_matrix
+from ..common.embedding import landmark_mds, compute_distance_matrix
 
 
 def _is_dual_front(G: nx.MultiDiGraph, noisy_nodes: List[Tuple[str, Dict]]) -> bool:

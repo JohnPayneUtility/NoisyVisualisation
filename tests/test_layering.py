@@ -1,10 +1,10 @@
 """The two architectural rules of plan §5.1.
 
-Both are EXPECTED TO FAIL today. That is the point: the debt is encoded before the tree moves, not
-after. The source is not to be "fixed" to make them pass here.
+Both were encoded as expected failures in Stage 1, before the tree moved, so the debt was recorded
+rather than hidden. Each is un-xfailed in the stage that genuinely fixes it.
 
     Rule 1 -- nothing in the science, common, analysis or visualisation packages imports the
-              dashboard packages. This is problem P2. Xfailed until Stage 5.
+              dashboard packages. This is problem P2. Enforced from Stage 5.
     Rule 2 -- nothing in the visualisation packages imports Dash. Xfailed until Stage 10, when
               lon_stats_plots.py is split.
 
@@ -126,12 +126,6 @@ def _imports_dash(module: str) -> bool:
     return top == "dash" or top.startswith("dash_")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=LayeringViolation,
-    reason="Rule 1 (P2): visualization imports upwards into dashboard. Fixed in Stage 5, which "
-           "moves the pure numerics into common/ and un-xfails this test.",
-)
 def test_science_does_not_import_dashboard():
     violations = _scan(RULE1_PACKAGES, _imports_dashboard)
     if violations:

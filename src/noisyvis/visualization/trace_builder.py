@@ -13,7 +13,7 @@ import plotly.express as px
 
 from .config import PlotConfig
 from ..common import hamming_distance, sol_tuple_ints, lookup_map
-from ..dashboard.DashboardHelpers import quadratic_bezier, should_label_edge
+from ..common.geometry import quadratic_bezier, should_label_edge
 
 
 def _precalculate_stn_edge_colors(G: nx.MultiDiGraph) -> Dict[Tuple, Dict[str, int]]:

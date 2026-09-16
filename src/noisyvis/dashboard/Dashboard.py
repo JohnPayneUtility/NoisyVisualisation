@@ -18,7 +18,7 @@ import os
 from .DashboardHelpers import *
 from ..problems.FitnessFunctions import *
 from ..problems.ProblemScripts import load_problem_KP, get_knapsack_problem_stats, interpret_correlation
-from .DimensionalityReduction import *
+from ..common.embedding import *
 from .layout import create_layout, TAB_STYLE, TAB_SELECTED_STYLE, _build_schematic_figure, _build_schematic_legend
 from .layout.stores import LON_TABLE_SELECTED_PID_STORE
 
