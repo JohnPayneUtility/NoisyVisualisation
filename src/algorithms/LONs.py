@@ -6,7 +6,7 @@ from deap import base
 from deap import creator
 from deap import tools
 
-from .ExperimentsHelpers import *
+from ..io.ExperimentsHelpers import *
 
 from tqdm import trange
 
