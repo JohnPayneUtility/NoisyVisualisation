@@ -1,5 +1,5 @@
 from deap import base, creator, tools
-from .LONs import random_bit_flip
+from .lon import random_bit_flip
 
 def BinaryCoLON(pert_attempts, len_sol, weights,
                 attr_function=None,

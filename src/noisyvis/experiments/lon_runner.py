@@ -46,7 +46,7 @@ import random as _rand
 # register both keys; the LON scripts used to do it with star imports, in this order.
 import noisyvis.problems
 import noisyvis.algorithms
-from noisyvis.algorithms import BinaryLON, BinaryCoLON, compress_lon_aggregated
+from noisyvis.networks import BinaryLON, BinaryCoLON, compress_lon_aggregated
 
 from noisyvis.results.store import save_or_append_results
 from noisyvis.results.paths import TEMP_DIR, WAREHOUSE_DIR
