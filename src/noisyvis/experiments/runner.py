@@ -42,7 +42,7 @@ from typing import Tuple, Any, Dict
 
 from noisyvis.results.store import save_or_append_results
 from noisyvis.results.paths import TEMP_DIR, WAREHOUSE_DIR
-from noisyvis.algorithms.Logger import clear_active_logger
+from noisyvis.tracking.logger import clear_active_logger
 from noisyvis.experiments.config.workflows import resolve_mo_config, resolve_so_config
 from noisyvis.experiments.payloads import (
     build_stn_payload,

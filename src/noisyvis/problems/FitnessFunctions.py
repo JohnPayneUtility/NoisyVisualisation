@@ -2,7 +2,7 @@
 import numpy as np
 import random
 from ..algorithms.LONs import random_bit_flip
-from ..algorithms.Logger import get_active_logger
+from ..tracking.logger import get_active_logger
 
 # ==============================
 

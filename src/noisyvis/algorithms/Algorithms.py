@@ -13,7 +13,7 @@ from deap import creator
 from deap import tools
 import optuna
 
-from .Logger import ExperimentLogger, set_active_logger, clear_active_logger
+from ..tracking.logger import ExperimentLogger, set_active_logger, clear_active_logger
 
 # ==============================
 # Attribute Functions
