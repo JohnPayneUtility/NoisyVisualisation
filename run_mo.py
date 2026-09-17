@@ -21,7 +21,7 @@ from deap import tools
 
 from noisyvis.results.store import save_or_append_results
 from noisyvis.results.paths import MLRUNS_DIR, TEMP_DIR, WAREHOUSE_DIR
-from run_helpers import *
+from noisyvis.experiments.hyperparams import determine_pid_from_cfg
 
 # explicit mlflow path
 from pathlib import Path
