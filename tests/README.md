@@ -65,21 +65,25 @@ before starting. `data/old_mlruns` is archival and deliberately outside the guar
 docker exec -w /workspace -e PYTHONPATH=/workspace/tests/.deps evovis-runner-1 \
   python -m pytest tests/test_layering.py tests/test_historical_pickles.py tests/test_config_resolution.py \
   tests/test_paths.py tests/test_config_workflows.py tests/test_experiments_package.py \
-  tests/test_config_cli.py tests/test_core_library.py tests/test_problems_package.py
+  tests/test_config_cli.py tests/test_core_library.py tests/test_problems_package.py \
+  tests/test_viz_package.py
 ```
 
 Resolves every `_target_`, `violation_fn`, `fitness_fn` and `attr_function` in `configs/` through each
 runner's namespace mechanism, loads the persisted artefacts, scans imports for the two layering rules,
 checks the `noisyvis.results.paths` contract, replays the 26 frozen config-resolution cases, checks
 the `noisyvis.experiments` package and CLI-helper contracts, checks the core-library contracts
-that Stage 8 moves, and checks the problems-package contracts that Stage 9 moves.
+that Stage 8 moves, checks the problems-package contracts that Stage 9 moves, and checks the
+visualisation/plotting contracts that Stage 10 moves.
 No experiment executes, so this is the quickest way to catch a broken import or a moved module.
 
-**Expect:** `254 passed, 2 xfailed` in roughly 70 seconds (Stages 1–4: `219 passed, 3 xfailed`;
+**Expect:** `262 passed, 2 xfailed` in roughly 3.5 minutes (Stages 1–4: `219 passed, 3 xfailed`;
 Stage 5: `220 passed, 2 xfailed`; Stage 6: `223 passed, 2 xfailed`, before the Stage 7 files existed;
 Stage 7: `235 passed, 2 xfailed`, before `test_core_library.py` existed; Stage 8: `241 passed, 2 xfailed`,
 before `test_problems_package.py` existed; Stage 9 Checkpoints 0–C: `253 passed, 2 xfailed`, before the
-loader-anchoring test).
+loader-anchoring test; Stage 9 complete: `254 passed, 2 xfailed`, before `test_viz_package.py` existed).
+Most of the added time is the Stage 10 characterization; see "Stage 10 gate groups" below when a
+checkpoint does not need all of it.
 
 ### 3. Harness smoke — before anything is recorded
 
@@ -138,9 +142,10 @@ docker exec -w /workspace -e PYTHONPATH=/workspace/tests/.deps evovis-runner-1 p
 docker exec -w /workspace -e PYTHONPATH=/workspace/tests/.deps evovis-runner-1 python -m pytest tests
 ```
 
-**Expect:** `266 passed, 2 xfailed` both times (Stages 1–4: `225 passed, 3 xfailed`; Stage 5:
+**Expect:** `274 passed, 2 xfailed` both times (Stages 1–4: `225 passed, 3 xfailed`; Stage 5:
 `226 passed, 2 xfailed`; Stage 6: `229 passed, 2 xfailed`; Stage 7: `247 passed, 2 xfailed`; Stage 8:
-`253 passed, 2 xfailed`; Stage 9 Checkpoints 0–C: `265 passed, 2 xfailed`), about 150 seconds each. Two consecutive identical runs
+`253 passed, 2 xfailed`; Stage 9 Checkpoints 0–C: `265 passed, 2 xfailed`; Stage 9 complete:
+`266 passed, 2 xfailed`), about 290 seconds each. Two consecutive identical runs
 are the completion criterion: a single run cannot distinguish genuine determinism from luck.
 
 ### Reading the output
@@ -164,10 +169,10 @@ Summary of expected results:
 
 | Step | Command | Expected |
 |---|---|---|
-| 2 | gates only | `254 passed, 2 xfailed` |
+| 2 | gates only | `262 passed, 2 xfailed` |
 | 3 | `-k so_seq`, no baselines yet | 1 failed: `no baseline recorded` |
 | 4 | record mode (Stage 1, historical) | `6 passed`, five baselines written |
-| 5 | full suite ×2 | `266 passed, 2 xfailed` each |
+| 5 | full suite ×2 | `274 passed, 2 xfailed` each |
 
 ## What each file gates
 
@@ -181,11 +186,61 @@ Summary of expected results:
 | `test_config_cli.py` | The nested `--config-name` helper behind `run.py`/`run_mo.py`: argument rewriting, symlink target, cleanup, exception propagation (temporary config root only) |
 | `test_core_library.py` | Core-library contracts that Stage 8 moves, pinned to frozen values from the pre-Stage-8 commit 465ca06: one active-logger singleton shared by set/get/clear; the configured `attr_function` names in the `noisyvis.algorithms` namespace; the D4 operator definitions every consumer reaches; the `src.algorithms.*` forwarders' namespace, object identity and config-target resolution (B1 the only unresolvable target); the `BinaryLON`/`BinaryCoLON`/`compress_lon_aggregated` bodies. Location-agnostic, so it holds before and after each move (from Stage 9 Checkpoint 0 the fitness consumers are found through evaluator `__globals__`, not the `FitnessFunctions` path) |
 | `test_problems_package.py` | Problems-package contracts that Stage 9 moves, pinned to frozen values captured from a `git archive` of the pre-Stage-9 commit 8424f5e under the runner's Python 3.11: the 19 configured `fitness_fn` names resolve through the dynamic namespace to unchanged definitions; the 31 top-level problem definitions (only `mean_weight` twice); the globals each of the 24 evaluators reads; every evaluator's output, log records and RNG consumption on fixed, fully isolated inputs; the `src.problems.*` forwarders' namespace, identity and config resolution; loader output for all 31 knapsack instances plus the stats/correlation helpers; the `knap_violation` clamp divergence; both `mean_weight` copies; the problem imports of `Dashboard.py` and `graph_builder.add_lon_nodes`; the 66-file instance-tree manifest and git tree; each definition in its pre- or intended post-split module; from Checkpoint A, the loader finding instances through `NOISYVIS_ROOT` (`INSTANCES_DIR / "knapsack"`) from an unrelated cwd, with the loaders' frozen hashes compared after reading `_KNAPSACK_DIR + '/x/'` back as the pre-Stage-9 literal. Location-agnostic across the Stage 9 checkpoints. Any PRE/post differential run must use separate fresh subprocesses, never two copies of `noisyvis` in one interpreter |
+| `test_viz_package.py` | Visualisation/plotting contracts that Stage 10 moves, pinned to frozen values captured from a `git archive` of the pre-Stage-10 commit 4530785 under the runner's Python 3.11: every top-level definition of the 19 visualisation/plotting modules by normalised AST and string-literal multiset, each existing exactly once in its pre- or intended post-move module; the plot registry's key order, callable identity, Dashboard dropdown values and aliases; every reachable Pareto plot with the Dashboard's own argument variants; both performance families including their missing-column fallbacks; the LON-stats figures, graph-statistics correlations and both Dash table builders; the real `update_plot` orchestration over one shared graph for M1–M10 and the nine-layout smoke matrix, pinned at three levels (graph immediately before layout, returned positions, rendered outputs); the Dashboard/DashboardHelpers/layout-components bodies with imports excluded; and the visualisation names those files import, resolved to objects. Location-agnostic across the Stage 10 checkpoints. `PYTHONHASHSEED` is pinned to 0 for the probe subprocess only, because `update_plot` iterates a `set` of node labels when building advanced-misjudgement traces; that pre-existing presentation-order nondeterminism is additionally covered by an order-insensitive `figure_semantic` digest over those traces alone |
 | `test_historical_pickles.py` + `historical_fixtures.py` | Existing persisted data still loads with the expected schema (§7.5); gates Stages 8 and 12 |
 | `test_layering.py` | The two architectural rules of §5.1: rule 1 enforced from Stage 5, rule 2 xfailed until Stage 10 |
 | `test_paths.py` | `noisyvis.results.paths` (§5.9): repository root by default from any cwd, `NOISYVIS_ROOT` override, no writes on import |
 | `conftest.py` | Session-scoped production-data guard (§5.5a) |
 | `harness/` | Isolated subprocess runner, write fence, extractors, canonical comparison |
+
+## Stage 10 gate groups
+
+The Stage 10 characterization is expensive, so it is grouped rather than weakened: the assertions are
+unchanged, only *when* each group runs differs. An ordinary `python -m pytest tests` still runs all of
+it, and every checkpoint that can affect a contract runs the group that covers it.
+
+`test_viz_package.py` spends its time in three independent probe subprocesses, one per fixture, so a
+targeted selection really does skip the cost:
+
+| Probe | Covers | Used by | Measured |
+|---|---|---|---|
+| `core` | definitions, registry, performance plots, LON stats/tables, Dashboard bodies, import surface | tests 1, 2, 4, 5, 7, 8 | ~3 s |
+| `pareto` | all 12 Pareto registry keys, including the MDS/t-SNE/Isomap distance variants | `test_pareto_figures_pinned` | ~41 s |
+| `heavy` | M1–M10 through the real `update_plot`, plus the nine-layout smoke matrix | `test_update_plot_mixed_pipeline_pinned` | ~92 s |
+
+**FAST / TARGETED GATE** — roughly 10 s of visualisation cost:
+
+```sh
+docker exec -w /workspace -e PYTHONPATH=/workspace/tests/.deps evovis-runner-1 \
+  python -m pytest tests/test_viz_package.py \
+  -k "definitions or registry or performance or lon_stats or bodies or imports"
+```
+
+**EXPENSIVE VISUAL-SEMANTICS GATE** — roughly 135 s:
+
+```sh
+docker exec -w /workspace -e PYTHONPATH=/workspace/tests/.deps evovis-runner-1 \
+  python -m pytest tests/test_viz_package.py::test_pareto_figures_pinned \
+                   tests/test_viz_package.py::test_update_plot_mixed_pipeline_pinned
+```
+
+**FULL ACCEPTANCE GATE** — the focused list of step 2, then the full suite (twice at a stage boundary).
+
+| Checkpoint | Gate |
+|---|---|
+| 0 | Full capture: both gates, plus two PRE-archive probe runs per section for the determinism gate |
+| A (`plotting/` → `viz/plots/`) | Fast/targeted **and** the Pareto half of the expensive gate; no routine M1–M10 rerun |
+| B (`statistics` → `analysis/graph_stats`) | Fast/targeted (definitions, LON stats and graph statistics, bodies, imports) |
+| C (lon_stats split, Rule 2) | Fast/targeted **and** `tests/test_layering.py` |
+| D1 (viz core + graph-population split) | **Full expensive gate**: this is where population, layout, styling and traces move |
+| D2 (facade + consumer imports) | Fast/targeted, plus the full `heavy` test once as the mixed smoke. The heavy probe is all-or-nothing, so there is no cheaper single-case variant; skip it here only if D1 was clean and E is imminent |
+| E (tighten + structural acceptance) | Full expensive gate **and** the full repository acceptance |
+| F (Pareto legacy removal) | Pareto half of the expensive gate, plus fast/targeted |
+| G (final) | Full expensive gate and the full acceptance, full suite twice |
+
+Pytest markers (`slow`, `viz_expensive`) were considered and deliberately not added: registering a
+marker requires `pytest.ini`, which Checkpoint 0 may not touch, and an unregistered marker would emit
+warnings. `-k` and node-id selection give exactly the same targeting without changing collection.
 
 ## Isolation
 
@@ -234,7 +289,9 @@ it reproducible.
 - All five baselines and the config-resolution golden pass.
 - `test_config_resolution.py`: exactly one xfail — B1, `Multiobjective/MO_knapsack_test/mo_1p1ea.yaml`,
   which targets the nonexistent `MOAlgorithms.MoMuPlusLamdaEA`. A deferred behavioural fix.
-- `test_layering.py`: exactly one xfail — rule 2, until Stage 10. Rule 1 passes from Stage 5.
+- `test_layering.py`: exactly one xfail — rule 2, until Stage 10 Checkpoint C splits `lon_stats_plots.py`.
+  Rule 1 passes from Stage 5.
+- `test_viz_package.py`: 8 passed, no xfails.
 - Everything else passes.
 
 ## Extending the compatibility fixtures
