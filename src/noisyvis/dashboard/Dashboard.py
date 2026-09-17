@@ -60,8 +60,8 @@ from ..visualization import (
 from ..common import is_continuous_solution
 
 # Plotting module imports - using registry for dynamic dispatch
-from ..plotting import get_pareto_plot
-from ..plotting.performance import plot2d_line, plot2d_box, plot2d_line_mo, plot2d_box_mo, plot2d_line_evals, plot2d_box_evals, plot2d_box_penalty, plot2d_box_misjudgements_so, plot2d_box_advanced_misjudgements_so
+from ..viz.plots import get_pareto_plot
+from ..viz.plots.performance import plot2d_line, plot2d_box, plot2d_line_mo, plot2d_box_mo, plot2d_line_evals, plot2d_box_evals, plot2d_box_penalty, plot2d_box_misjudgements_so, plot2d_box_advanced_misjudgements_so
 
 # ==========
 # Data Loading

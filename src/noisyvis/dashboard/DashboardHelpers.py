@@ -11,7 +11,7 @@ import numpy as np
 import math
 
 # Re-export plot functions from their new location for backward compatibility
-from ..plotting.performance import (
+from ..viz.plots.performance import (
     plot2d_line,
     plot2d_box,
     plot2d_line_mo,

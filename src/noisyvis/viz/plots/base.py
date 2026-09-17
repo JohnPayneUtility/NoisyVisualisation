@@ -12,7 +12,7 @@ from plotly.colors import sample_colorscale
 import plotly.graph_objects as go
 
 # Re-export distance metrics from common for convenience
-from ..common import (
+from ...common import (
     front_distance,
     avg_min_hamming_A_to_B,
     sol_tuple_ints,
