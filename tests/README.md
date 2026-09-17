@@ -65,17 +65,19 @@ before starting. `data/old_mlruns` is archival and deliberately outside the guar
 docker exec -w /workspace -e PYTHONPATH=/workspace/tests/.deps evovis-runner-1 \
   python -m pytest tests/test_layering.py tests/test_historical_pickles.py tests/test_config_resolution.py \
   tests/test_paths.py tests/test_config_workflows.py tests/test_experiments_package.py \
-  tests/test_config_cli.py
+  tests/test_config_cli.py tests/test_core_library.py
 ```
 
 Resolves every `_target_`, `violation_fn`, `fitness_fn` and `attr_function` in `configs/` through each
 runner's namespace mechanism, loads the persisted artefacts, scans imports for the two layering rules,
-checks the `noisyvis.results.paths` contract, replays the 26 frozen config-resolution cases, and checks
-the `noisyvis.experiments` package and CLI-helper contracts.
+checks the `noisyvis.results.paths` contract, replays the 26 frozen config-resolution cases, checks
+the `noisyvis.experiments` package and CLI-helper contracts, and checks the core-library contracts
+that Stage 8 moves.
 No experiment executes, so this is the quickest way to catch a broken import or a moved module.
 
-**Expect:** `235 passed, 2 xfailed` in roughly 60 seconds (Stages 1–4: `219 passed, 3 xfailed`;
-Stage 5: `220 passed, 2 xfailed`; Stage 6: `223 passed, 2 xfailed`, before the Stage 7 files existed).
+**Expect:** `241 passed, 2 xfailed` in roughly 60 seconds (Stages 1–4: `219 passed, 3 xfailed`;
+Stage 5: `220 passed, 2 xfailed`; Stage 6: `223 passed, 2 xfailed`, before the Stage 7 files existed;
+Stage 7: `235 passed, 2 xfailed`, before `test_core_library.py` existed).
 
 ### 3. Harness smoke — before anything is recorded
 
@@ -134,8 +136,8 @@ docker exec -w /workspace -e PYTHONPATH=/workspace/tests/.deps evovis-runner-1 p
 docker exec -w /workspace -e PYTHONPATH=/workspace/tests/.deps evovis-runner-1 python -m pytest tests
 ```
 
-**Expect:** `247 passed, 2 xfailed` both times (Stages 1–4: `225 passed, 3 xfailed`; Stage 5:
-`226 passed, 2 xfailed`; Stage 6: `229 passed, 2 xfailed`), about 140 seconds each. Two consecutive identical runs
+**Expect:** `253 passed, 2 xfailed` both times (Stages 1–4: `225 passed, 3 xfailed`; Stage 5:
+`226 passed, 2 xfailed`; Stage 6: `229 passed, 2 xfailed`; Stage 7: `247 passed, 2 xfailed`), about 140 seconds each. Two consecutive identical runs
 are the completion criterion: a single run cannot distinguish genuine determinism from luck.
 
 ### Reading the output
@@ -159,10 +161,10 @@ Summary of expected results:
 
 | Step | Command | Expected |
 |---|---|---|
-| 2 | gates only | `235 passed, 2 xfailed` |
+| 2 | gates only | `241 passed, 2 xfailed` |
 | 3 | `-k so_seq`, no baselines yet | 1 failed: `no baseline recorded` |
 | 4 | record mode (Stage 1, historical) | `6 passed`, five baselines written |
-| 5 | full suite ×2 | `247 passed, 2 xfailed` each |
+| 5 | full suite ×2 | `253 passed, 2 xfailed` each |
 
 ## What each file gates
 
@@ -174,6 +176,7 @@ Summary of expected results:
 | `test_experiments_package.py` | The root `run_helpers` forwarder re-exports `noisyvis.experiments.hyperparams` object-for-object and every `run_helpers.*` config target resolves through it; no Python source imports the forwarder; importing any `noisyvis.experiments` module sets no MLflow URI and creates no files |
 | `test_tracking_uris.py` | Each entry point logs to its intended MLflow store (R24): SO/MO to `data/mlruns`, LON/CoLON to the config's `tracking_uri` |
 | `test_config_cli.py` | The nested `--config-name` helper behind `run.py`/`run_mo.py`: argument rewriting, symlink target, cleanup, exception propagation (temporary config root only) |
+| `test_core_library.py` | Core-library contracts that Stage 8 moves, pinned to frozen values from the pre-Stage-8 commit 465ca06: one active-logger singleton shared by set/get/clear; the configured `attr_function` names in the `noisyvis.algorithms` namespace; the D4 operator definitions every consumer reaches; the `src.algorithms.*` forwarders' namespace, object identity and config-target resolution (B1 the only unresolvable target); the `BinaryLON`/`BinaryCoLON`/`compress_lon_aggregated` bodies. Location-agnostic, so it holds before and after each move |
 | `test_historical_pickles.py` + `historical_fixtures.py` | Existing persisted data still loads with the expected schema (§7.5); gates Stages 8 and 12 |
 | `test_layering.py` | The two architectural rules of §5.1: rule 1 enforced from Stage 5, rule 2 xfailed until Stage 10 |
 | `test_paths.py` | `noisyvis.results.paths` (§5.9): repository root by default from any cwd, `NOISYVIS_ROOT` override, no writes on import |
