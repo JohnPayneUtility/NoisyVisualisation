@@ -5,8 +5,9 @@ rather than hidden. Each is un-xfailed in the stage that genuinely fixes it.
 
     Rule 1 -- nothing in the science, common, analysis or visualisation packages imports the
               dashboard packages. This is problem P2. Enforced from Stage 5.
-    Rule 2 -- nothing in the visualisation packages imports Dash. Xfailed until Stage 10, when
-              lon_stats_plots.py is split.
+    Rule 2 -- nothing in the visualisation packages imports Dash. Enforced from Stage 10 Checkpoint C,
+              which split lon_stats_plots.py: the figures went to viz/plots/lon_stats.py and the two
+              dash_table builders to dashboard/components.py, where Dash belongs.
 
 Each rule is a separate test with its own xfail, so they can be un-xfailed independently in the
 stage that fixes them.
@@ -23,8 +24,6 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
-
-import pytest
 
 WORKSPACE = Path("/workspace")
 
@@ -135,12 +134,6 @@ def test_science_does_not_import_dashboard():
         )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=LayeringViolation,
-    reason="Rule 2: lon_stats_plots.py imports dash_table, pinning Dash onto the visualisation "
-           "layer. Fixed in Stage 10, which splits that module and un-xfails this test.",
-)
 def test_visualisation_does_not_import_dash():
     violations = _scan(RULE2_PACKAGES, _imports_dash)
     if violations:

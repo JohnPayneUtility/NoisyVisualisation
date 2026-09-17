@@ -46,8 +46,6 @@ from ..visualization import (
     LON_SCATTER_DEFAULT_PLOT_STYLE,
     plot_lon_stats,
     plot_lon_stats_multi,
-    build_correlation_table,
-    build_selected_correlation_display,
     build_all_traces,
     create_guide_traces,
     create_axis_settings,
@@ -58,6 +56,10 @@ from ..analysis.graph_stats import (
     compute_node_feasibility_error,
     compute_pairwise_correlations,
     compute_correlation_pair,
+)
+from .components import (
+    build_correlation_table,
+    build_selected_correlation_display,
 )
 from ..common import is_continuous_solution
 

@@ -77,11 +77,12 @@ that Stage 8 moves, checks the problems-package contracts that Stage 9 moves, an
 visualisation/plotting contracts that Stage 10 moves.
 No experiment executes, so this is the quickest way to catch a broken import or a moved module.
 
-**Expect:** `262 passed, 2 xfailed` in roughly 3.5 minutes (Stages 1–4: `219 passed, 3 xfailed`;
+**Expect:** `263 passed, 1 xfailed` in roughly 3.5 minutes (Stages 1–4: `219 passed, 3 xfailed`;
 Stage 5: `220 passed, 2 xfailed`; Stage 6: `223 passed, 2 xfailed`, before the Stage 7 files existed;
 Stage 7: `235 passed, 2 xfailed`, before `test_core_library.py` existed; Stage 8: `241 passed, 2 xfailed`,
 before `test_problems_package.py` existed; Stage 9 Checkpoints 0–C: `253 passed, 2 xfailed`, before the
-loader-anchoring test; Stage 9 complete: `254 passed, 2 xfailed`, before `test_viz_package.py` existed).
+loader-anchoring test; Stage 9 complete: `254 passed, 2 xfailed`, before `test_viz_package.py` existed;
+Stage 10 Checkpoints 0–B: `262 passed, 2 xfailed`, before Checkpoint C enforced layering rule 2).
 Most of the added time is the Stage 10 characterization; see "Stage 10 gate groups" below when a
 checkpoint does not need all of it.
 
@@ -142,10 +143,11 @@ docker exec -w /workspace -e PYTHONPATH=/workspace/tests/.deps evovis-runner-1 p
 docker exec -w /workspace -e PYTHONPATH=/workspace/tests/.deps evovis-runner-1 python -m pytest tests
 ```
 
-**Expect:** `274 passed, 2 xfailed` both times (Stages 1–4: `225 passed, 3 xfailed`; Stage 5:
+**Expect:** `275 passed, 1 xfailed` both times (Stages 1–4: `225 passed, 3 xfailed`; Stage 5:
 `226 passed, 2 xfailed`; Stage 6: `229 passed, 2 xfailed`; Stage 7: `247 passed, 2 xfailed`; Stage 8:
 `253 passed, 2 xfailed`; Stage 9 Checkpoints 0–C: `265 passed, 2 xfailed`; Stage 9 complete:
-`266 passed, 2 xfailed`), about 290 seconds each. Two consecutive identical runs
+`266 passed, 2 xfailed`; Stage 10 Checkpoints 0–B: `274 passed, 2 xfailed`), about 290 seconds each.
+Two consecutive identical runs
 are the completion criterion: a single run cannot distinguish genuine determinism from luck.
 
 ### Reading the output
@@ -169,10 +171,10 @@ Summary of expected results:
 
 | Step | Command | Expected |
 |---|---|---|
-| 2 | gates only | `262 passed, 2 xfailed` |
+| 2 | gates only | `263 passed, 1 xfailed` |
 | 3 | `-k so_seq`, no baselines yet | 1 failed: `no baseline recorded` |
 | 4 | record mode (Stage 1, historical) | `6 passed`, five baselines written |
-| 5 | full suite ×2 | `274 passed, 2 xfailed` each |
+| 5 | full suite ×2 | `275 passed, 1 xfailed` each |
 
 ## What each file gates
 
@@ -188,7 +190,7 @@ Summary of expected results:
 | `test_problems_package.py` | Problems-package contracts that Stage 9 moves, pinned to frozen values captured from a `git archive` of the pre-Stage-9 commit 8424f5e under the runner's Python 3.11: the 19 configured `fitness_fn` names resolve through the dynamic namespace to unchanged definitions; the 31 top-level problem definitions (only `mean_weight` twice); the globals each of the 24 evaluators reads; every evaluator's output, log records and RNG consumption on fixed, fully isolated inputs; the `src.problems.*` forwarders' namespace, identity and config resolution; loader output for all 31 knapsack instances plus the stats/correlation helpers; the `knap_violation` clamp divergence; both `mean_weight` copies; the problem imports of `Dashboard.py` and `graph_builder.add_lon_nodes`; the 66-file instance-tree manifest and git tree; each definition in its pre- or intended post-split module; from Checkpoint A, the loader finding instances through `NOISYVIS_ROOT` (`INSTANCES_DIR / "knapsack"`) from an unrelated cwd, with the loaders' frozen hashes compared after reading `_KNAPSACK_DIR + '/x/'` back as the pre-Stage-9 literal. Location-agnostic across the Stage 9 checkpoints. Any PRE/post differential run must use separate fresh subprocesses, never two copies of `noisyvis` in one interpreter |
 | `test_viz_package.py` | Visualisation/plotting contracts that Stage 10 moves, pinned to frozen values captured from a `git archive` of the pre-Stage-10 commit 4530785 under the runner's Python 3.11: every top-level definition of the 19 visualisation/plotting modules by normalised AST and string-literal multiset, each existing exactly once in its pre- or intended post-move module; the plot registry's key order, callable identity, Dashboard dropdown values and aliases; every reachable Pareto plot with the Dashboard's own argument variants; both performance families including their missing-column fallbacks; the LON-stats figures, graph-statistics correlations and both Dash table builders; the real `update_plot` orchestration over one shared graph for M1–M10 and the nine-layout smoke matrix, pinned at three levels (graph immediately before layout, returned positions, rendered outputs); the Dashboard/DashboardHelpers/layout-components bodies with imports excluded; and the visualisation names those files import, resolved to objects. Location-agnostic across the Stage 10 checkpoints. `PYTHONHASHSEED` is pinned to 0 for the probe subprocess only, because `update_plot` iterates a `set` of node labels when building advanced-misjudgement traces; that pre-existing presentation-order nondeterminism is additionally covered by an order-insensitive `figure_semantic` digest over those traces alone |
 | `test_historical_pickles.py` + `historical_fixtures.py` | Existing persisted data still loads with the expected schema (§7.5); gates Stages 8 and 12 |
-| `test_layering.py` | The two architectural rules of §5.1: rule 1 enforced from Stage 5, rule 2 xfailed until Stage 10 |
+| `test_layering.py` | The two architectural rules of §5.1: rule 1 enforced from Stage 5, rule 2 from Stage 10 Checkpoint C, which split `lon_stats_plots.py` so no visualisation module imports Dash |
 | `test_paths.py` | `noisyvis.results.paths` (§5.9): repository root by default from any cwd, `NOISYVIS_ROOT` override, no writes on import |
 | `conftest.py` | Session-scoped production-data guard (§5.5a) |
 | `harness/` | Isolated subprocess runner, write fence, extractors, canonical comparison |
@@ -289,8 +291,7 @@ it reproducible.
 - All five baselines and the config-resolution golden pass.
 - `test_config_resolution.py`: exactly one xfail — B1, `Multiobjective/MO_knapsack_test/mo_1p1ea.yaml`,
   which targets the nonexistent `MOAlgorithms.MoMuPlusLamdaEA`. A deferred behavioural fix.
-- `test_layering.py`: exactly one xfail — rule 2, until Stage 10 Checkpoint C splits `lon_stats_plots.py`.
-  Rule 1 passes from Stage 5.
+- `test_layering.py`: both rules pass. Rule 1 from Stage 5, rule 2 from Stage 10 Checkpoint C.
 - `test_viz_package.py`: 8 passed, no xfails.
 - Everything else passes.
 

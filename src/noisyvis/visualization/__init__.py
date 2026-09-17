@@ -68,7 +68,7 @@ from .node_positioning import (
 )
 
 # LON stats plots
-from .lon_stats_plots import (
+from ..viz.plots.lon_stats import (
     AXIS_OPTIONS as LON_SCATTER_AXIS_OPTIONS,
     AXIS_LABELS as LON_SCATTER_AXIS_LABELS,
     DEFAULT_X_AXIS as LON_SCATTER_DEFAULT_X_AXIS,
@@ -79,8 +79,6 @@ from .lon_stats_plots import (
     plot_lon_violin,
     plot_lon_stats,
     plot_lon_stats_multi,
-    build_correlation_table,
-    build_selected_correlation_display,
 )
 
 # Trace building
@@ -146,8 +144,6 @@ __all__ = [
     'plot_lon_violin',
     'plot_lon_stats',
     'plot_lon_stats_multi',
-    'build_correlation_table',
-    'build_selected_correlation_display',
     # Trace building
     'create_edge_traces',
     'create_edge_label_trace',
