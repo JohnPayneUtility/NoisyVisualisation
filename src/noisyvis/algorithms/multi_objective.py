@@ -22,6 +22,13 @@ try: # try import fast hypervolume else fallback to python implementation
 except Exception:
     from deap.tools._hypervolume.pyhv import hypervolume # python version
 
+from .operators import (
+    binary_attribute,
+    Rastrigin_attribute,
+    mutSwapBit,
+    complementary_crossover,
+)
+
 # ==============================
 # Helpers
 # ==============================
@@ -31,44 +38,13 @@ def _ind_to_key(ind):
     return tuple(ind)
 
 # ==============================
-# Attribute Functions
-# ==============================
-
-def binary_attribute():
-        return random.randint(0, 1)
-
-def Rastrigin_attribute():
-    return random.uniform(-5.12, 5.12)
-
-# ==============================
 # Mutation Functions
 # ==============================
-
-def mutSwapBit(individual, indpb):
-    if random.random() < indpb and len(individual) >= 2:
-        idx1, idx2 = random.sample(range(len(individual)), 2)
-        individual[idx1], individual[idx2] = individual[idx2], individual[idx1]
-    return (individual,)
 
 def mut_flip_one_bit(individual):
     i = random.randrange(len(individual))
     individual[i] = 1 - individual[i]  # assumes binary
     return (individual,)
-
-def complementary_crossover(parent1, parent2):
-    assert len(parent1) == len(parent2), "Parents must have the same length."
-    
-    # Create empty offspring as lists
-    offspring1 = type(parent1)([])
-    offspring2 = type(parent2)([])
-    
-    # Generate the offspring
-    for x1, x2 in zip(parent1, parent2):
-        a = random.randint(0, 1)  # Randomly choose 0 or 1 with equal probability
-        offspring1.append(a * x1 + (1 - a) * x2)
-        offspring2.append((1 - a) * x1 + a * x2)
-
-    return offspring1, offspring2
 
 # def mo_umda_update_full(len_sol, population, pop_size, select_size, toolbox,
 #                         prob_margin=True, margin_scale=1.0):

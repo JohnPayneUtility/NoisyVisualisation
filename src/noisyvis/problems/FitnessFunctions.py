@@ -1,7 +1,7 @@
 # IMPORTS
 import numpy as np
 import random
-from ..networks.lon import random_bit_flip
+from ..algorithms.operators import random_bit_flip
 from ..tracking.logger import get_active_logger
 
 # ==============================
