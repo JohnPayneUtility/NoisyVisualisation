@@ -64,16 +64,18 @@ before starting. `data/old_mlruns` is archival and deliberately outside the guar
 ```sh
 docker exec -w /workspace -e PYTHONPATH=/workspace/tests/.deps evovis-runner-1 \
   python -m pytest tests/test_layering.py tests/test_historical_pickles.py tests/test_config_resolution.py \
-  tests/test_paths.py
+  tests/test_paths.py tests/test_config_workflows.py tests/test_experiments_package.py \
+  tests/test_config_cli.py
 ```
 
 Resolves every `_target_`, `violation_fn`, `fitness_fn` and `attr_function` in `configs/` through each
-runner's own namespace, loads the persisted artefacts, scans imports for the two layering rules, and
-checks the `noisyvis.results.paths` contract.
+runner's namespace mechanism, loads the persisted artefacts, scans imports for the two layering rules,
+checks the `noisyvis.results.paths` contract, replays the 26 frozen config-resolution cases, and checks
+the `noisyvis.experiments` package and CLI-helper contracts.
 No experiment executes, so this is the quickest way to catch a broken import or a moved module.
 
-**Expect:** `223 passed, 2 xfailed` in roughly 50 seconds (Stages 1–4: `219 passed, 3 xfailed`;
-Stage 5: `220 passed, 2 xfailed`, before `test_paths.py` existed).
+**Expect:** `235 passed, 2 xfailed` in roughly 60 seconds (Stages 1–4: `219 passed, 3 xfailed`;
+Stage 5: `220 passed, 2 xfailed`; Stage 6: `223 passed, 2 xfailed`, before the Stage 7 files existed).
 
 ### 3. Harness smoke — before anything is recorded
 
@@ -132,8 +134,8 @@ docker exec -w /workspace -e PYTHONPATH=/workspace/tests/.deps evovis-runner-1 p
 docker exec -w /workspace -e PYTHONPATH=/workspace/tests/.deps evovis-runner-1 python -m pytest tests
 ```
 
-**Expect:** `229 passed, 2 xfailed` both times (Stages 1–4: `225 passed, 3 xfailed`; Stage 5:
-`226 passed, 2 xfailed`), about 110 seconds each. Two consecutive identical runs
+**Expect:** `247 passed, 2 xfailed` both times (Stages 1–4: `225 passed, 3 xfailed`; Stage 5:
+`226 passed, 2 xfailed`; Stage 6: `229 passed, 2 xfailed`), about 140 seconds each. Two consecutive identical runs
 are the completion criterion: a single run cannot distinguish genuine determinism from luck.
 
 ### Reading the output
@@ -157,17 +159,21 @@ Summary of expected results:
 
 | Step | Command | Expected |
 |---|---|---|
-| 2 | gates only | `223 passed, 2 xfailed` |
+| 2 | gates only | `235 passed, 2 xfailed` |
 | 3 | `-k so_seq`, no baselines yet | 1 failed: `no baseline recorded` |
-| 4 | record mode | `6 passed`, five baselines written |
-| 5 | full suite ×2 | `229 passed, 2 xfailed` each |
+| 4 | record mode (Stage 1, historical) | `6 passed`, five baselines written |
+| 5 | full suite ×2 | `247 passed, 2 xfailed` each |
 
 ## What each file gates
 
 | File | Gate |
 |---|---|
-| `test_reproducibility.py` | The five baselines of §5.5: SO-seq, SO-par, MO, LON, CoLON |
-| `test_config_resolution.py` + `known_broken_configs.py` | Every `_target_`, `violation_fn`, `fitness_fn` and `attr_function` in `configs/` still resolves (§5.6) |
+| `test_reproducibility.py` | The five baselines of §5.5: SO-seq, SO-par, MO, LON, CoLON; plus `run_lon.py` (inline sequential LON) reproducing the LON baseline |
+| `test_config_resolution.py` + `known_broken_configs.py` | Every `_target_`, `violation_fn`, `fitness_fn` and `attr_function` in `configs/` still resolves (§5.6). From Stage 7 the `sys.modules` keys and `_import_from_dotted` are also read from the `noisyvis.experiments` modules a thin runner delegates to |
+| `test_config_workflows.py` + `config_workflow_cases.py` | 26 synthetic configs pin the SO, MO, LON and CoLON config-resolution semantics (§5.4) against the frozen golden `baselines/config_workflows.json`, recorded once from the pre-Stage-7 resolvers |
+| `test_experiments_package.py` | The root `run_helpers` forwarder re-exports `noisyvis.experiments.hyperparams` object-for-object and every `run_helpers.*` config target resolves through it; no Python source imports the forwarder; importing any `noisyvis.experiments` module sets no MLflow URI and creates no files |
+| `test_tracking_uris.py` | Each entry point logs to its intended MLflow store (R24): SO/MO to `data/mlruns`, LON/CoLON to the config's `tracking_uri` |
+| `test_config_cli.py` | The nested `--config-name` helper behind `run.py`/`run_mo.py`: argument rewriting, symlink target, cleanup, exception propagation (temporary config root only) |
 | `test_historical_pickles.py` + `historical_fixtures.py` | Existing persisted data still loads with the expected schema (§7.5); gates Stages 8 and 12 |
 | `test_layering.py` | The two architectural rules of §5.1: rule 1 enforced from Stage 5, rule 2 xfailed until Stage 10 |
 | `test_paths.py` | `noisyvis.results.paths` (§5.9): repository root by default from any cwd, `NOISYVIS_ROOT` override, no writes on import |
@@ -207,13 +213,18 @@ docker exec -w /workspace -e PYTHONPATH=/workspace/tests/.deps \
 
 In normal mode a missing baseline is a failure, never a skip, so the gate cannot be bypassed.
 
+`baselines/config_workflows.json` is the config-resolution golden for `test_config_workflows.py`. It
+was recorded once, from the pre-Stage-7 `resolve_config_dependencies` copies (commit 777f46d), and is
+**frozen**: the test refuses to re-record it in any record mode. A mismatch means config-resolution
+behaviour changed.
+
 LON and CoLON baselines are **deliberately sequential** (`run.parallel=false`). Parallel LON output
 depends on worker completion order and is nondeterministic by design (risk R27); do not try to make
 it reproducible.
 
 ## Expected result on the unmodified tree
 
-- All five baselines pass.
+- All five baselines and the config-resolution golden pass.
 - `test_config_resolution.py`: exactly one xfail — B1, `Multiobjective/MO_knapsack_test/mo_1p1ea.yaml`,
   which targets the nonexistent `MOAlgorithms.MoMuPlusLamdaEA`. A deferred behavioural fix.
 - `test_layering.py`: exactly one xfail — rule 2, until Stage 10. Rule 1 passes from Stage 5.
