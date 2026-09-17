@@ -8,8 +8,10 @@ The config corpus reaches the code through four channels, all of which break sil
     attr_function   getattr(sys.modules[...], name)     150 occurrences
 
 The dynamic names are resolved **through each runner's own namespace mechanism**, inside a
-subprocess that has loaded that runner with a non-"__main__" run name. See
-`harness/resolve_in_runner.py` for why the test must not import those namespaces itself.
+subprocess that has loaded that runner with a non-"__main__" run name. From Stage 7 a runner may be
+a thin wrapper whose lookups live in the `noisyvis.experiments` modules it imports; the harness
+reads the keys from those too. See `harness/resolve_in_runner.py` for why the test must not import
+those namespaces itself.
 
 Configs are read, never written.
 """
@@ -69,8 +71,8 @@ def _classify(raw: dict, requests: list) -> list:
     """Which runner(s) would execute this config.
 
     Fragments under configs/defaults/ are not standalone configurations, so they are checked
-    against every runner: each runner star-imports both dynamic namespaces, so a name that
-    resolves in one must resolve in all.
+    against every runner: each runner loads both dynamic namespaces (by star import, or through
+    its noisyvis.experiments delegates), so a name that resolves in one must resolve in all.
     """
     targets = [value for kind, value in requests if kind == "target"]
     has_violation = any(kind == "violation" for kind, _ in requests)
