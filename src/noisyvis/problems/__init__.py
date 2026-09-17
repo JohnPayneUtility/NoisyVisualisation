@@ -1,4 +1,4 @@
 from .FitnessFunctions import *
 from .ProblemScripts import *
-from .multiobjectiveFunctions import *
+from .knapsack_mo import *
 from .constraints import *
