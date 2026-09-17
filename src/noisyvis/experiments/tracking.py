@@ -1,12 +1,15 @@
 """MLflow helpers shared by the experiment workflows (plan Stage 7, risk R24).
 
 Nothing here runs on import. Each entry point sets its tracking URI *explicitly*, at the moment the
-old scripts did: the SO and MO wrappers call `set_so_mo_tracking_uri()` at module level, before Hydra
-runs `main`. A workflow must never inherit another workflow's URI, and a missed call fails loudly
-against the test harness's unreachable sentinel instead of logging to the runner's configured server.
+old scripts did: the SO and MO wrappers call `set_so_mo_tracking_uri()` and the LON-family wrappers
+call `set_lon_module_tracking_uri()` at module level, before Hydra runs `main`. The LON workflows
+then set the config's `mlflow.tracking_uri` themselves, right after resolving the config. A workflow
+must never inherit another workflow's URI, and a missed call fails loudly against the test harness's
+unreachable sentinel instead of logging to the runner's configured server.
 
 Parent-run lifecycles (`set_experiment`, `start_run`, parameters, artefacts, `end_run`) stay inside
-the workflow functions in `runner.py`, because they interleave with computation and persistence.
+the workflow functions in `runner.py` and `lon_runner.py`, because they interleave with computation
+and persistence.
 """
 
 from typing import Any, Dict
@@ -25,6 +28,17 @@ def set_so_mo_tracking_uri() -> None:
     mlflow.set_tracking_uri(f"file:{mlruns_dir.as_posix()}")
 
     print("RUN tracking:", mlflow.get_tracking_uri())
+
+
+def set_lon_module_tracking_uri() -> None:
+    """The LON-family import-time default: <project root>/data/mlruns (results.paths), not created.
+
+    Each LON workflow replaces it with the config's `mlflow.tracking_uri` before logging anything.
+    """
+    # MLflow defaults (local file store under repo/data/mlruns)
+    mlruns_dir = MLRUNS_DIR  # <project root>/data/mlruns (results.paths)
+    mlflow.set_tracking_uri(f"file:{mlruns_dir}")
+    print("RUN(LON) tracking:", mlflow.get_tracking_uri())
 
 
 def mlflow_log_child_from_row(row: Dict[str, Any], algo_params: Dict[str, Any]) -> str:

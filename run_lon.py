@@ -1,172 +1,17 @@
-# `run_lon.py`
-
 # IMPORTS
-import sys
-import time
-from pathlib import Path
-from typing import Any, Dict, List, Tuple
-
 import hydra
-from hydra.utils import call
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 
-import numpy as np
-import pandas as pd
-import mlflow
+from noisyvis.experiments.lon_runner import run_lon_experiment
+from noisyvis.experiments.tracking import set_lon_module_tracking_uri
 
-# Your modules
-from noisyvis.problems import *  # fitness fns & loaders
-from noisyvis.algorithms import *  # attribute generators (e.g., binary_attribute)
-# from src.LONs import BinaryLON, compress_lon_aggregated
-from noisyvis.results.store import save_or_append_results
-from noisyvis.results.paths import MLRUNS_DIR, TEMP_DIR, WAREHOUSE_DIR
-from noisyvis.experiments.config.workflows import resolve_lon_config
+# MLflow defaults: established at import, before Hydra runs main (plan Stage 7, R24)
+set_lon_module_tracking_uri()
 
-# -------------------------------
-# MLflow defaults (local file store under repo/data/mlruns)
-# -------------------------------
-mlruns_dir = MLRUNS_DIR  # <project root>/data/mlruns (results.paths)
-mlflow.set_tracking_uri(f"file:{mlruns_dir}")
-print("RUN(LON) tracking:", mlflow.get_tracking_uri())
-
-# -------------------------------
-# Helpers
-# -------------------------------
-
-# -------------------------------
-# Main
-# -------------------------------
 
 @hydra.main(version_base=None, config_path="configs", config_name="test_lon_kp")
 def main(cfg: DictConfig):
-    start_time = time.perf_counter()
-
-    # Resolve nested deps
-    cfg = resolve_lon_config(cfg)
-
-    # MLflow init
-    mlflow.set_tracking_uri(cfg.mlflow.tracking_uri)
-    mlflow.set_experiment(cfg.experiment_name)
-
-    # Problem metadata
-    prob_info = {
-        "name": cfg.problem.prob_name,
-        "type": cfg.problem.prob_type,
-        "goal": cfg.problem.opt_goal,
-        "dimensions": cfg.problem.dimensions,
-        "opt_global": cfg.problem.opt_global,
-        "mean_value": cfg.problem.mean_value,
-        "mean_weight": cfg.problem.mean_weight,
-        "PID": cfg.problem.PID,
-    }
-
-    # Fitness & attributes
-    fitness_fn = getattr(sys.modules['noisyvis.problems'], cfg.problem.fitness_fn)
-    fit_params = dict(cfg.problem.fitness_params)
-    fitness_tuple = (fitness_fn, fit_params)
-    attr_fn = getattr(sys.modules['noisyvis.algorithms'], cfg.problem.attr_function)
-    weights = tuple(cfg.problem.weights)
-
-    with mlflow.start_run(run_name=cfg.lon.name):
-        print("RUN(LON) artifact root:", mlflow.get_artifact_uri())
-
-        # Log params
-        mlflow.log_params({
-            "dimensions": cfg.problem.dimensions,
-            "seed": cfg.run.seed,
-            "num_runs": cfg.run.num_runs,
-            "pert_attempts": cfg.lon.pert_attempts,
-            "n_flips_mut": cfg.lon.n_flips_mut,
-            "n_flips_pert": cfg.lon.n_flips_pert,
-            **{f"fit_{k}": v for k, v in fit_params.items()},
-        })
-
-        # -------------------------------
-        # Build aggregated LON inline (no helper)
-        # -------------------------------
-        aggregated = {"local_optima": [], "fitness_values": [], "edges": {}}
-        for i in range(cfg.run.num_runs):
-            seed = cfg.run.seed + i
-            import random as _rand
-            _rand.seed(seed)
-            np.random.seed(seed)
-
-            local_optima, fitness_values, edges_list = BinaryLON(
-                pert_attempts=cfg.lon.pert_attempts,
-                len_sol=cfg.problem.dimensions,
-                weights=weights,
-                attr_function=attr_fn,
-                n_flips_mut=cfg.lon.n_flips_mut,
-                n_flips_pert=cfg.lon.n_flips_pert,
-                mutate_function=None,
-                perturb_function=None,
-                improv_method="best",
-                fitness_function=fitness_tuple,
-                starting_solution=None,
-                true_fitness_function=None,
-                target_stop=cfg.problem.opt_global,
-            )
-
-            # Merge optima/fitness
-            for opt, fit in zip(local_optima, fitness_values):
-                if opt not in aggregated["local_optima"]:
-                    aggregated["local_optima"].append(opt)
-                    aggregated["fitness_values"].append(fit)
-
-            # Merge edges
-            for (src, dst, w) in edges_list:
-                key = (src, dst)
-                aggregated["edges"][key] = aggregated["edges"].get(key, 0) + w
-
-        # For each compression setting, create a row
-        rows: List[Dict[str, Any]] = []
-        for comp in cfg.lon.compression_accs:
-            if comp == 'None':
-                L = aggregated
-            else:
-                L = compress_lon_aggregated(aggregated, accuracy=float(comp))
-
-            rows.append({
-                "problem_name": prob_info["name"],
-                "problem_type": prob_info["type"],
-                "problem_goal": prob_info["goal"],
-                "dimensions": prob_info["dimensions"],
-                "opt_global": prob_info["opt_global"],
-                "PID": prob_info["PID"],
-                "LON_Algo": cfg.lon.name,
-                "n_flips_mut": cfg.lon.n_flips_mut,
-                "n_flips_pert": cfg.lon.n_flips_pert,
-                "compression_val": comp,
-                "n_local_optima": len(L["local_optima"]),
-                "local_optima": L["local_optima"],
-                "fitness_values": L["fitness_values"],
-                "edges": L["edges"],
-            })
-
-        df = pd.DataFrame(rows)
-
-        # Log metric per compression row
-        for i, r in enumerate(df.itertuples()):
-            mlflow.log_metric("n_local_optima", int(r.n_local_optima), step=i)
-
-        # Artifacts
-        out_dir = TEMP_DIR
-        out_dir.mkdir(parents=True, exist_ok=True)
-        df.to_pickle(out_dir / "lon_results.pkl")
-        save_or_append_results(df, WAREHOUSE_DIR / 'lon_results.pkl')
-        df.to_csv(out_dir / "lon_results.csv", index=False)
-        mlflow.log_artifact(str(out_dir / "lon_results.pkl"))
-        mlflow.log_artifact(str(out_dir / "lon_results.csv"))
-        mlflow.log_artifact("data/outputs/.hydra/config.yaml")
-
-    mlflow.end_run(status="FINISHED")
-
-    # Summary
-    try:
-        print(df[["compression_val", "n_local_optima"]])
-    except Exception:
-        print(df.head())
-    print("Compute time (s):", time.perf_counter() - start_time)
+    run_lon_experiment(cfg)
 
 
 if __name__ == "__main__":
