@@ -1111,15 +1111,33 @@ report["configured"] = {
 }
 
 # 2. every top-level definition in the problems package, parsed statically
-definitions = []
+class AnchorNormaliser(ast.NodeTransformer):
+    """Stage 9 Checkpoint A: `_KNAPSACK_DIR + '/x/'` is the anchored form of the literal 'instances_01_KP/x/'.
+
+    Rewriting it back lets the frozen pre-Stage-9 hashes pin every other statement of the loaders.
+    """
+
+    def visit_BinOp(self, node):
+        self.generic_visit(node)
+        if (isinstance(node.op, ast.Add) and isinstance(node.left, ast.Name) and node.left.id == "_KNAPSACK_DIR"
+                and isinstance(node.right, ast.Constant) and isinstance(node.right.value, str)):
+            return ast.copy_location(ast.Constant(value="instances_01_KP" + node.right.value), node)
+        return node
+
+
+definitions, anchor_normalised = [], []
 for path in sorted((SOURCE_ROOT / "src" / "noisyvis" / "problems").glob("*.py")):
     if path.name == "__init__.py":
         continue
     for node in ast.parse(path.read_text()).body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            definitions.append([type(node).__name__, node.name,
-                                hashlib.sha256(ast.dump(node).encode()).hexdigest()])
+            raw = ast.dump(node)
+            normalised = ast.dump(AnchorNormaliser().visit(node))
+            if normalised != raw:
+                anchor_normalised.append(node.name)
+            definitions.append([type(node).__name__, node.name, hashlib.sha256(normalised.encode()).hexdigest()])
 report["definitions"] = sorted(definitions)
+report["anchor_normalised"] = sorted(anchor_normalised)
 
 # 3. evaluator definitions and the globals each one reads
 evaluators = {name: getattr(problems, name, None) for name in EVALUATORS}
@@ -1551,6 +1569,10 @@ def test_problem_definitions_pinned_and_unique(probe):
     )
     changed = sorted({name for _, name, sha in observed if sha != DEFINITION_AST[name]})
     assert not changed, f"problem definitions changed since the pre-Stage-9 tree: {changed}"
+    # Only the two loaders may differ from their pins, and only by the INSTANCES_DIR path anchoring.
+    assert set(probe["anchor_normalised"]) <= {"load_problem_KP", "get_knapsack_problem_stats"}, (
+        f"the instance-path normalisation touched unexpected definitions: {probe['anchor_normalised']}"
+    )
 
 
 def test_fitness_globals_closure_pinned(probe):
@@ -1684,3 +1706,86 @@ def test_definition_family_locations(probe):
     assert set(locations) == set(ALLOWED_LOCATIONS) and len(ALLOWED_LOCATIONS) == 31
     misplaced = {label: module for label, module in locations.items() if module not in ALLOWED_LOCATIONS[label]}
     assert not misplaced, f"definitions outside their pre-Stage-9 or intended Stage 9 module: {misplaced}"
+
+
+# ------------------------------------------------------- loader anchoring (Stage 9 Checkpoint A)
+
+ANCHOR_PIDS = ("f1_l-d_kp_10_269", "knapPI_1_100_1000_1")  # one low-dimensional, one large-scale instance
+
+_ANCHOR_PROBE = r'''
+import hashlib
+import importlib.util
+import json
+import os
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__SOURCE_ROOT__) / "src"))
+spec = importlib.util.spec_from_file_location("_harness_fence", __FENCE__)
+fence = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(fence)
+fence.install(__WORKSPACE__)
+
+import numpy as np
+from hydra._internal.utils import _locate
+
+__CANON__
+
+loader = _locate("src.problems.ProblemScripts.load_problem_KP")
+results = {}
+for pid in __PIDS__:
+    try:
+        results[pid] = {"digest": digest(canon(loader(pid)))}
+    except Exception as exc:  # noqa: BLE001
+        results[pid] = {"error": f"{type(exc).__name__}: {exc}"}
+print(json.dumps({"cwd": os.getcwd(), "cwd_entries": sorted(os.listdir(".")),
+                  "noisyvis_root": os.environ.get("NOISYVIS_ROOT"), "results": results}))
+'''
+
+
+def build_anchor_probe(source_root: Path) -> str:
+    """The loader-anchoring probe; `canon`/`digest` are the main probe's own definitions, verbatim."""
+    import ast
+
+    tree = ast.parse(_PROBE)
+    helpers = "\n\n".join(ast.get_source_segment(_PROBE, node) for node in tree.body
+                          if isinstance(node, ast.FunctionDef) and node.name in ("sha256", "canon", "digest"))
+    replacements = {
+        "__SOURCE_ROOT__": repr(str(source_root)),
+        "__WORKSPACE__": repr(str(WORKSPACE)),
+        "__FENCE__": repr(str(HARNESS_DIR / "fence.py")),
+        "__PIDS__": repr(ANCHOR_PIDS),
+        "__CANON__": helpers,
+    }
+    probe = _ANCHOR_PROBE
+    for marker, value in replacements.items():
+        probe = probe.replace(marker, value)
+    return probe
+
+
+def test_loader_is_anchored_to_instances_dir(tmp_path):
+    """The loader finds instances through NOISYVIS_ROOT (INSTANCES_DIR), whatever the working directory.
+
+    Before Stage 9 Checkpoint A the loader resolved `instances_01_KP/...` against the cwd, so this run,
+    from an empty directory unrelated to the project root, raised FileNotFoundError.
+    """
+    root = make_temp_root()                      # exposes <root>/instances -> /workspace/instances
+    unrelated_cwd = tmp_path / "unrelated-cwd"   # empty, outside both the root and the workspace
+    unrelated_cwd.mkdir()
+    try:
+        completed = subprocess.run(
+            [sys.executable, "-c", build_anchor_probe(WORKSPACE)],
+            cwd=str(unrelated_cwd),
+            env=child_env(root),
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        assert completed.returncode == 0, f"anchoring probe failed:\n{completed.stderr[-4000:]}"
+        report = json.loads(completed.stdout.strip().splitlines()[-1])
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+    assert Path(report["cwd"]).resolve() == unrelated_cwd.resolve() and report["cwd_entries"] == []
+    assert report["noisyvis_root"] == str(root) and not str(unrelated_cwd).startswith(str(root))
+    assert report["results"] == {pid: LOADER_DIGESTS[pid] for pid in ANCHOR_PIDS}, report["results"]

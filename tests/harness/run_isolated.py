@@ -42,7 +42,7 @@ TEST_CONFIG_DIR = TESTS_DIR / "configs"
 DEPS_DIR = TESTS_DIR / ".deps"
 HARNESS_DIR = Path(__file__).resolve().parent
 
-INSTANCE_DIR_NAME = "instances_01_KP"  # retargeted to "instances" in Stage 9
+INSTANCE_DIR_NAME = "instances"  # the loaders read INSTANCES_DIR / "knapsack" (Stage 9)
 
 # Stage 6: every entry point sets its tracking URI explicitly, into the temp root through
 # NOISYVIS_ROOT (SO/MO, and the LON module level) or relative to the cwd (LON configs). This URI
@@ -84,7 +84,7 @@ def make_temp_root() -> Path:
     for relative in ("data/outputs", "data/temp", "data/warehouse"):
         (root / relative).mkdir(parents=True, exist_ok=True)
 
-    # Read-only reference to the knapsack instances; the loaders resolve them CWD-relative.
+    # Read-only reference to the instances; the loaders resolve them through NOISYVIS_ROOT (INSTANCES_DIR).
     (root / INSTANCE_DIR_NAME).symlink_to(WORKSPACE / INSTANCE_DIR_NAME)
     return root
 

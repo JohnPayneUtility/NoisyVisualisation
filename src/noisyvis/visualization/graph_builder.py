@@ -889,7 +889,7 @@ def add_lon_nodes(
         eval_noisy_kp_prior_bitflip, eval_noisy_kp_prior_mult_bitflip,
         eval_noisy_kp_pq_prior_bitwise, eval_noisy_kp_1q_prior_bitwise
     )
-    from ..problems.ProblemScripts import load_problem_KP
+    from ..problems.instances import load_problem_KP
 
     node_noise = {}
 

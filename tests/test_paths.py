@@ -6,7 +6,8 @@ subprocess environment comes from the harness (`tests/.deps` stripped, no byteco
 two path variables set or removed explicitly per test.
 
 Deliberately narrow: this covers where the constants point, not what later stages do with them
-(instances are Stage 9; the fast_storage configs are unchanged, R12).
+(the knapsack loader's use of INSTANCES_DIR is pinned in test_problems_package.py; the fast_storage
+configs are unchanged, R12).
 """
 
 from __future__ import annotations

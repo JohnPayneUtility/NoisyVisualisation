@@ -75,10 +75,11 @@ the `noisyvis.experiments` package and CLI-helper contracts, checks the core-lib
 that Stage 8 moves, and checks the problems-package contracts that Stage 9 moves.
 No experiment executes, so this is the quickest way to catch a broken import or a moved module.
 
-**Expect:** `253 passed, 2 xfailed` in roughly 70 seconds (Stages 1–4: `219 passed, 3 xfailed`;
+**Expect:** `254 passed, 2 xfailed` in roughly 70 seconds (Stages 1–4: `219 passed, 3 xfailed`;
 Stage 5: `220 passed, 2 xfailed`; Stage 6: `223 passed, 2 xfailed`, before the Stage 7 files existed;
 Stage 7: `235 passed, 2 xfailed`, before `test_core_library.py` existed; Stage 8: `241 passed, 2 xfailed`,
-before `test_problems_package.py` existed).
+before `test_problems_package.py` existed; Stage 9 Checkpoints 0–C: `253 passed, 2 xfailed`, before the
+loader-anchoring test).
 
 ### 3. Harness smoke — before anything is recorded
 
@@ -137,9 +138,9 @@ docker exec -w /workspace -e PYTHONPATH=/workspace/tests/.deps evovis-runner-1 p
 docker exec -w /workspace -e PYTHONPATH=/workspace/tests/.deps evovis-runner-1 python -m pytest tests
 ```
 
-**Expect:** `265 passed, 2 xfailed` both times (Stages 1–4: `225 passed, 3 xfailed`; Stage 5:
+**Expect:** `266 passed, 2 xfailed` both times (Stages 1–4: `225 passed, 3 xfailed`; Stage 5:
 `226 passed, 2 xfailed`; Stage 6: `229 passed, 2 xfailed`; Stage 7: `247 passed, 2 xfailed`; Stage 8:
-`253 passed, 2 xfailed`), about 150 seconds each. Two consecutive identical runs
+`253 passed, 2 xfailed`; Stage 9 Checkpoints 0–C: `265 passed, 2 xfailed`), about 150 seconds each. Two consecutive identical runs
 are the completion criterion: a single run cannot distinguish genuine determinism from luck.
 
 ### Reading the output
@@ -163,10 +164,10 @@ Summary of expected results:
 
 | Step | Command | Expected |
 |---|---|---|
-| 2 | gates only | `253 passed, 2 xfailed` |
+| 2 | gates only | `254 passed, 2 xfailed` |
 | 3 | `-k so_seq`, no baselines yet | 1 failed: `no baseline recorded` |
 | 4 | record mode (Stage 1, historical) | `6 passed`, five baselines written |
-| 5 | full suite ×2 | `265 passed, 2 xfailed` each |
+| 5 | full suite ×2 | `266 passed, 2 xfailed` each |
 
 ## What each file gates
 
@@ -179,7 +180,7 @@ Summary of expected results:
 | `test_tracking_uris.py` | Each entry point logs to its intended MLflow store (R24): SO/MO to `data/mlruns`, LON/CoLON to the config's `tracking_uri` |
 | `test_config_cli.py` | The nested `--config-name` helper behind `run.py`/`run_mo.py`: argument rewriting, symlink target, cleanup, exception propagation (temporary config root only) |
 | `test_core_library.py` | Core-library contracts that Stage 8 moves, pinned to frozen values from the pre-Stage-8 commit 465ca06: one active-logger singleton shared by set/get/clear; the configured `attr_function` names in the `noisyvis.algorithms` namespace; the D4 operator definitions every consumer reaches; the `src.algorithms.*` forwarders' namespace, object identity and config-target resolution (B1 the only unresolvable target); the `BinaryLON`/`BinaryCoLON`/`compress_lon_aggregated` bodies. Location-agnostic, so it holds before and after each move (from Stage 9 Checkpoint 0 the fitness consumers are found through evaluator `__globals__`, not the `FitnessFunctions` path) |
-| `test_problems_package.py` | Problems-package contracts that Stage 9 moves, pinned to frozen values captured from a `git archive` of the pre-Stage-9 commit 8424f5e under the runner's Python 3.11: the 19 configured `fitness_fn` names resolve through the dynamic namespace to unchanged definitions; the 31 top-level problem definitions (only `mean_weight` twice); the globals each of the 24 evaluators reads; every evaluator's output, log records and RNG consumption on fixed, fully isolated inputs; the `src.problems.*` forwarders' namespace, identity and config resolution; loader output for all 31 knapsack instances plus the stats/correlation helpers; the `knap_violation` clamp divergence; both `mean_weight` copies; the problem imports of `Dashboard.py` and `graph_builder.add_lon_nodes`; the 66-file instance-tree manifest and git tree; each definition in its pre- or intended post-split module. Location-agnostic across the Stage 9 checkpoints. Any PRE/post differential run must use separate fresh subprocesses, never two copies of `noisyvis` in one interpreter |
+| `test_problems_package.py` | Problems-package contracts that Stage 9 moves, pinned to frozen values captured from a `git archive` of the pre-Stage-9 commit 8424f5e under the runner's Python 3.11: the 19 configured `fitness_fn` names resolve through the dynamic namespace to unchanged definitions; the 31 top-level problem definitions (only `mean_weight` twice); the globals each of the 24 evaluators reads; every evaluator's output, log records and RNG consumption on fixed, fully isolated inputs; the `src.problems.*` forwarders' namespace, identity and config resolution; loader output for all 31 knapsack instances plus the stats/correlation helpers; the `knap_violation` clamp divergence; both `mean_weight` copies; the problem imports of `Dashboard.py` and `graph_builder.add_lon_nodes`; the 66-file instance-tree manifest and git tree; each definition in its pre- or intended post-split module; from Checkpoint A, the loader finding instances through `NOISYVIS_ROOT` (`INSTANCES_DIR / "knapsack"`) from an unrelated cwd, with the loaders' frozen hashes compared after reading `_KNAPSACK_DIR + '/x/'` back as the pre-Stage-9 literal. Location-agnostic across the Stage 9 checkpoints. Any PRE/post differential run must use separate fresh subprocesses, never two copies of `noisyvis` in one interpreter |
 | `test_historical_pickles.py` + `historical_fixtures.py` | Existing persisted data still loads with the expected schema (§7.5); gates Stages 8 and 12 |
 | `test_layering.py` | The two architectural rules of §5.1: rule 1 enforced from Stage 5, rule 2 xfailed until Stage 10 |
 | `test_paths.py` | `noisyvis.results.paths` (§5.9): repository root by default from any cwd, `NOISYVIS_ROOT` override, no writes on import |

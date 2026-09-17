@@ -1,15 +1,20 @@
+from ..results.paths import INSTANCES_DIR as _INSTANCES_DIR
+
+_KNAPSACK_DIR = str(_INSTANCES_DIR / "knapsack")
+
+
 def load_problem_KP(filename, verbose=False):
     " Description of function "
     import numpy as np
     import os
 
-    if os.path.exists('instances_01_KP/low-dimensional/'+filename):
-        problem_path = 'instances_01_KP/low-dimensional/'+filename
-        solution_path = 'instances_01_KP/low-dimensional-optimum/'+filename
+    if os.path.exists(_KNAPSACK_DIR + '/low-dimensional/'+filename):
+        problem_path = _KNAPSACK_DIR + '/low-dimensional/'+filename
+        solution_path = _KNAPSACK_DIR + '/low-dimensional-optimum/'+filename
 
-    elif os.path.exists('instances_01_KP/large_scale/'+filename):
-        problem_path = 'instances_01_KP/large_scale/'+filename
-        solution_path = 'instances_01_KP/large_scale-optimum/'+filename
+    elif os.path.exists(_KNAPSACK_DIR + '/large_scale/'+filename):
+        problem_path = _KNAPSACK_DIR + '/large_scale/'+filename
+        solution_path = _KNAPSACK_DIR + '/large_scale-optimum/'+filename
 
     else:
         raise FileNotFoundError(f"No knapsack instance found for PID: {filename}")
@@ -57,8 +62,8 @@ def get_knapsack_problem_stats(pid):
     import numpy as np
     import os
 
-    if not (os.path.exists('instances_01_KP/low-dimensional/' + pid)
-            or os.path.exists('instances_01_KP/large_scale/' + pid)):
+    if not (os.path.exists(_KNAPSACK_DIR + '/low-dimensional/' + pid)
+            or os.path.exists(_KNAPSACK_DIR + '/large_scale/' + pid)):
         return None
 
     n_items, capacity, optimal, values, weights, items_dict, problem_info = load_problem_KP(pid)

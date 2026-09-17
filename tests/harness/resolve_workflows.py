@@ -1,7 +1,7 @@
 """Run the synthetic config-resolution cases through a set of resolver functions (plan §5.4, Stage 7).
 
 Child process of `test_config_workflows.py`. Like `resolve_in_runner.py`, it runs with its cwd in a
-harness temp root (knapsack loaders resolve instances relative to the cwd), puts /workspace first
+harness temp root (knapsack loaders resolve instances through NOISYVIS_ROOT), puts /workspace first
 on sys.path so `run_helpers.*` and `src.*` config targets resolve exactly as they do for
 `python run.py`, and installs the write fence.
 

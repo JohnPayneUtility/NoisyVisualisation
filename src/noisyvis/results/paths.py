@@ -6,8 +6,8 @@ test harness isolates every run (§5.5a). Constants only: importing this module 
 writes nothing.
 
 Deliberately still relative to the working directory after Stage 6: the 16
-`${hydra:runtime.cwd}/fast_storage` configs (R12), the LON configs' `tracking_uri: "data/mlruns"`,
-Hydra's output directory, and the knapsack instance literals (anchored to INSTANCES_DIR in Stage 9).
+`${hydra:runtime.cwd}/fast_storage` configs (R12), the LON configs' `tracking_uri: "data/mlruns"` and
+Hydra's output directory. The knapsack loaders read `INSTANCES_DIR / "knapsack"` from Stage 9.
 """
 
 import os
