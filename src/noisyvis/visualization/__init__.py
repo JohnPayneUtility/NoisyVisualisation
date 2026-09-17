@@ -67,17 +67,6 @@ from .node_positioning import (
     create_hover_text,
 )
 
-# Statistics
-from .statistics import (
-    LONStatistics,
-    calculate_lon_statistics,
-    calculate_stn_statistics,
-    calculate_graph_summary,
-    compute_node_feasibility_error,
-    compute_pairwise_correlations,
-    compute_correlation_pair,
-)
-
 # LON stats plots
 from .lon_stats_plots import (
     AXIS_OPTIONS as LON_SCATTER_AXIS_OPTIONS,
@@ -146,14 +135,6 @@ __all__ = [
     'calculate_positions_so',
     'calculate_positions',
     'create_hover_text',
-    # Statistics
-    'LONStatistics',
-    'calculate_lon_statistics',
-    'calculate_stn_statistics',
-    'calculate_graph_summary',
-    'compute_node_feasibility_error',
-    'compute_pairwise_correlations',
-    'compute_correlation_pair',
     # LON stats plots
     'LON_SCATTER_AXIS_OPTIONS',
     'LON_SCATTER_AXIS_LABELS',

@@ -40,10 +40,6 @@ from ..visualization import (
     debug_mo_counts,
     style_nodes,
     calculate_positions,
-    calculate_lon_statistics,
-    compute_node_feasibility_error,
-    compute_pairwise_correlations,
-    compute_correlation_pair,
     LON_SCATTER_AXIS_LABELS,
     LON_SCATTER_DEFAULT_X_AXIS,
     LON_SCATTER_DEFAULT_Y_AXIS,
@@ -56,6 +52,12 @@ from ..visualization import (
     create_guide_traces,
     create_axis_settings,
     create_figure,
+)
+from ..analysis.graph_stats import (
+    calculate_lon_statistics,
+    compute_node_feasibility_error,
+    compute_pairwise_correlations,
+    compute_correlation_pair,
 )
 from ..common import is_continuous_solution
 
