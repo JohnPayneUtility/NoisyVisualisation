@@ -714,7 +714,23 @@ DEFINITION_MODULES = {'AXIS_LABELS': 'visualization/lon_stats_plots.py',
  'style_nodes': 'visualization/node_styling.py',
  'symmetric_range': 'plotting/base.py'}
 
-KNOWN_DUPLICATES = {'_viridis_colors': ['plotting/performance/box_plots.py', 'plotting/performance/line_plots.py']}
+# `_viridis_colors` is deliberately defined twice, once in each performance module. The pair is pinned
+# by its count and by the two module basenames; each copy is allowed only at its exact pre- or
+# post-move package location. This is not a generic duplicate exemption: any other duplicated name, or
+# either copy at a third location, fails.
+DUPLICATE_DEFINITIONS = {"_viridis_colors": 2}
+
+ALLOWED_DUPLICATE_MODULES = {
+    "_viridis_colors": (
+        "plotting/performance/box_plots.py", "plotting/performance/line_plots.py",
+        "viz/plots/performance/box_plots.py", "viz/plots/performance/line_plots.py",
+    ),
+}
+
+DUPLICATE_BASENAMES = {"_viridis_colors": ["box_plots.py", "line_plots.py"]}
+
+# The legacy Pareto monolith, excluded from the inventory until Checkpoint F deletes it.
+ALLOWED_MONOLITHS = ("plotting/plotParetoFrontMain.py", "viz/plots/plotParetoFrontMain.py")
 
 REGISTRY = {'alias_names_present': ['PlotparetoFrontSubplotsHighlighted',
                          'plotMoveDeltaHistograms',
@@ -2898,11 +2914,21 @@ PKG = SOURCE_ROOT / "src" / "noisyvis"
 
 SCAN_DIRS = ["visualization", "plotting", "viz", "analysis"]
 SCAN_FILES = ["dashboard/components.py"]
-MONOLITH = "plotting/plotParetoFrontMain.py"
+
+# The legacy Pareto monolith is excluded from the definition inventory until Checkpoint F deletes it.
+# It is identified by basename under either plotting tree, and nowhere else: a file with any other
+# name, or this name outside those two trees, is scanned like every other module.
+MONOLITH_BASENAME = "plotParetoFrontMain.py"
+MONOLITH_DIRS = ("plotting/", "viz/plots/")
+MONOLITH_MODULES = ("plotting/" + MONOLITH_BASENAME, "viz/plots/" + MONOLITH_BASENAME)
+
+
+def is_monolith(key, path):
+    return path.name == MONOLITH_BASENAME and key.startswith(MONOLITH_DIRS)
 
 
 def scan_definitions():
-    found, duplicates = {}, {}
+    found, duplicates, monoliths = {}, {}, []
     files = []
     for name in SCAN_DIRS:
         directory = PKG / name
@@ -2915,7 +2941,10 @@ def scan_definitions():
 
     for path in files:
         key = module_key(path)
-        if key == MONOLITH or path.name == "__init__.py":
+        if is_monolith(key, path):
+            monoliths.append(key)
+            continue
+        if path.name == "__init__.py":
             continue
         package = package_of(path)
         tree = ast.parse(path.read_text())
@@ -2941,7 +2970,7 @@ def scan_definitions():
                 if name in found:
                     duplicates.setdefault(name, [found[name]["module"]]).append(key)
                 found[name] = record
-    return found, duplicates
+    return found, {name: sorted(modules) for name, modules in duplicates.items()}, sorted(monoliths)
 
 
 # ------------------------------------------------------------------ 2. registry and aliases
@@ -3011,7 +3040,7 @@ def registry_report():
             for option in ast.literal_eval(keywords["options"]):
                 dropdown.append(option["value"])
     report["dropdown_values"] = dropdown
-    report["monolith_present"] = (PKG / MONOLITH).is_file()
+    report["monolith_present"] = any((PKG / module).is_file() for module in MONOLITH_MODULES)
     return report
 
 
@@ -3766,9 +3795,10 @@ def main():
     }
 
     if "core" in SECTIONS:
-        definitions, duplicates = timed("definitions", scan_definitions)
+        definitions, duplicates, monoliths = timed("definitions", scan_definitions)
         report["definitions"] = definitions
         report["duplicates"] = duplicates
+        report["monoliths"] = monoliths
         report["registry"] = timed("registry", registry_report)
         report["performance"] = timed("performance", performance_report)
         report["lon_stats"] = timed("lon_stats", lon_stats_report)
@@ -3878,8 +3908,27 @@ def test_viz_definitions_pinned_and_unique(probe):
             f"{name} is defined in {module}, which is not one of {allowed_modules(name)}"
         )
 
-    # Only the two `_viridis_colors` copies are allowed to exist twice, as they do today.
-    assert probe["duplicates"] == KNOWN_DUPLICATES, probe["duplicates"]
+    # Only `_viridis_colors` may exist twice, once per performance module, and only at an approved
+    # pre- or post-move location. The count, the basenames and the locations are all pinned.
+    duplicates = probe["duplicates"]
+    assert set(duplicates) == set(DUPLICATE_DEFINITIONS), (
+        f"the set of duplicated definitions changed: {sorted(duplicates)}"
+    )
+    for name, modules in sorted(duplicates.items()):
+        assert len(modules) == DUPLICATE_DEFINITIONS[name], f"{name}: {modules}"
+        assert len(set(modules)) == DUPLICATE_DEFINITIONS[name], f"{name}: repeated module {modules}"
+        assert all(module in ALLOWED_DUPLICATE_MODULES[name] for module in modules), (
+            f"{name} is defined at an unapproved location: {modules}"
+        )
+        assert sorted(module.rsplit("/", 1)[1] for module in modules) == DUPLICATE_BASENAMES[name], modules
+        assert len({module.startswith("viz/plots/") for module in modules}) == 1, (
+            f"{name}: the two copies straddle the pre- and post-move trees: {modules}"
+        )
+
+    # The legacy monolith is the only module excluded from the inventory, and only while it exists.
+    monoliths = probe["monoliths"]
+    assert all(module in ALLOWED_MONOLITHS for module in monoliths), monoliths
+    assert len(monoliths) == (1 if probe["registry"]["monolith_present"] else 0), monoliths
 
     # The graph-population split keeps every definition on exactly one side.
     for name in STN_POPULATION:
