@@ -954,29 +954,23 @@ INSTANCE_GIT_TREE = '9bce55551303bf2f4a78bee4f73e58cc2775df2b'
 
 # ------------------------------------------------------------- location contract (Stage 9)
 
-_FF = "noisyvis.problems.FitnessFunctions"
-_MO = "noisyvis.problems.multiobjectiveFunctions"
+def _family(names, module):
+    return {name: frozenset({"noisyvis.problems." + module}) for name in names}
 
 
-def _family(names, post):
-    return {name: frozenset({_FF, "noisyvis.problems." + post}) for name in names}
-
-
-# Where each definition may live: its pre-Stage-9 module or its intended Stage 9 module.
-# Checkpoint D removes the pre-Stage-9 alternatives.
+# Where each definition must live. Until Checkpoint D this also allowed each definition's
+# pre-Stage-9 module; from Checkpoint D only the Stage 9 canonical module is accepted.
 ALLOWED_LOCATIONS = {
     **_family(PRE_STAGE_9_DEFINITIONS["FitnessFunctions.py"][2:7], "onemax"),
     **_family(("jump_fitness",), "jump"),
     **_family(PRE_STAGE_9_DEFINITIONS["FitnessFunctions.py"][8:20], "knapsack"),
     **_family(("rastrigin_eval", "birastrigin_eval", "ackley"), "continuous"),
-    "bitflip_prior_noise": frozenset({_FF, "noisyvis.problems.onemax"}),
-    "mean_weight[single-objective users]": frozenset({_FF, "noisyvis.problems.knapsack"}),
-    "mean_weight[multi-objective users]": frozenset({_MO, "noisyvis.problems.knapsack_mo"}),
-    **{name: frozenset({_MO, "noisyvis.problems.knapsack_mo"})
-       for name in PRE_STAGE_9_DEFINITIONS["multiobjectiveFunctions.py"][1:]},
-    "knap_violation": frozenset({"noisyvis.problems.ViolationFunctions", "noisyvis.problems.constraints"}),
-    **{name: frozenset({"noisyvis.problems.ProblemScripts", "noisyvis.problems.instances"})
-       for name in PRE_STAGE_9_DEFINITIONS["ProblemScripts.py"]},
+    **_family(("bitflip_prior_noise",), "onemax"),
+    **_family(("mean_weight[single-objective users]",), "knapsack"),
+    **_family(("mean_weight[multi-objective users]",), "knapsack_mo"),
+    **_family(PRE_STAGE_9_DEFINITIONS["multiobjectiveFunctions.py"][1:], "knapsack_mo"),
+    **_family(("knap_violation",), "constraints"),
+    **_family(PRE_STAGE_9_DEFINITIONS["ProblemScripts.py"], "instances"),
 }
 
 # ------------------------------------------------------------------------------ the probe
@@ -1705,7 +1699,7 @@ def test_definition_family_locations(probe):
 
     assert set(locations) == set(ALLOWED_LOCATIONS) and len(ALLOWED_LOCATIONS) == 31
     misplaced = {label: module for label, module in locations.items() if module not in ALLOWED_LOCATIONS[label]}
-    assert not misplaced, f"definitions outside their pre-Stage-9 or intended Stage 9 module: {misplaced}"
+    assert not misplaced, f"definitions outside their Stage 9 canonical module: {misplaced}"
 
 
 # ------------------------------------------------------- loader anchoring (Stage 9 Checkpoint A)

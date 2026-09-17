@@ -882,7 +882,7 @@ def add_lon_nodes(
     Returns:
         Tuple of (updated lon_node_mapping, node_noise dictionary)
     """
-    from ..problems.FitnessFunctions import (
+    from ..problems.knapsack import (
         eval_noisy_kp_v1_simple, eval_noisy_kp_v2_simple,
         eval_noisy_kp_v1, eval_noisy_kp_v2, eval_noisy_kp_v3,
         eval_noisy_kp_v1_penalty, eval_noisy_kp_v2_penalty,

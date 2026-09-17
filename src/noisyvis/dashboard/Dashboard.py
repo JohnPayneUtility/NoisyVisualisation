@@ -16,7 +16,10 @@ from dataclasses import replace as dataclass_replace
 import os
 
 from .DashboardHelpers import *
-from ..problems.FitnessFunctions import *
+from ..problems.onemax import *
+from ..problems.jump import *
+from ..problems.knapsack import *
+from ..problems.continuous import *
 from ..problems.instances import load_problem_KP, get_knapsack_problem_stats, interpret_correlation
 from ..common.embedding import *
 from .layout import create_layout, TAB_STYLE, TAB_SELECTED_STYLE, _build_schematic_figure, _build_schematic_legend
