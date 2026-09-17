@@ -22,6 +22,7 @@ from deap import tools
 from noisyvis.results.store import save_or_append_results
 from noisyvis.results.paths import MLRUNS_DIR, TEMP_DIR, WAREHOUSE_DIR
 from noisyvis.experiments.hyperparams import determine_pid_from_cfg
+from noisyvis.experiments.config.workflows import resolve_mo_config
 
 # explicit mlflow path
 from pathlib import Path
@@ -33,120 +34,6 @@ print("RUN tracking:", mlflow.get_tracking_uri())
 # -------------------------------
 # Helper Functions for Dependency Resolution
 # -------------------------------
-
-def resolve_config_dependencies(cfg: DictConfig) -> DictConfig:
-    """
-    Resolve dependencies in a nested config structure.
-    This keeps the nested structure but resolves dynamic values.
-    """
-    
-    # Create a copy to avoid modifying the original
-    resolved_cfg = OmegaConf.create(OmegaConf.to_container(cfg, resolve=True))
-    
-    # Step 1: Load problem data if needed
-    if "loader" in resolved_cfg.problem and resolved_cfg.problem.loader is not None:
-        # Load problem-specific data (e.g., for Knapsack)
-        outputs = call(resolved_cfg.problem.loader)
-        n_items, capacity, optimal, values, weights, items_dict, _ = outputs
-        
-        # Convert items_dict to proper format
-        items_dict = {
-            int(k): (float(v[0]), float(v[1]))
-            for k, v in items_dict.items()
-        }
-        
-        # Set problem metadata
-        resolved_cfg.problem.dimensions = int(n_items)
-        resolved_cfg.problem.opt_global = float(optimal)
-        resolved_cfg.problem.capacity = float(capacity)
-        resolved_cfg.problem.mean_value = float(np.mean(values))
-        resolved_cfg.problem.mean_weight = float(np.mean(weights))
-        resolved_cfg.problem.items_dict = items_dict
-        
-        # Set fitness parameters that depend on problem loading
-        if hasattr(resolved_cfg.problem, 'fitness_params'):
-            resolved_cfg.problem.fitness_params.items_dict = items_dict
-            resolved_cfg.problem.fitness_params.capacity = float(capacity)
-        
-        # Set reference point for multiobjective knapsack
-        if getattr(resolved_cfg.problem, "prob_name", "").lower() == "knapsack":
-            W = float(sum(float(v[1]) for v in resolved_cfg.problem.items_dict.values()))
-            # code will fail if fitness function produces weight higher than ref point for knapsack
-            resolved_cfg.problem.ref_point = [0.0, 2*W] # double max weight to account for noise
-            # print(resolved_cfg.problem.ref_point)
-    else:
-        # For problems like OneMax that don't need a loader
-        # Ensure dimensions and opt_global are set if they exist in config
-        if hasattr(resolved_cfg.problem, 'dimensions') and resolved_cfg.problem.dimensions is not None:
-            # Dimensions are already set in config, no need to load
-            pass
-        if hasattr(resolved_cfg.problem, 'opt_global') and resolved_cfg.problem.opt_global is not None:
-            # Optimum is already set in config, no need to load
-            pass
-        
-        # Set default values for OneMax-specific parameters if not already set
-        if resolved_cfg.problem.prob_name == 'onemax':
-            if not hasattr(resolved_cfg.problem, 'capacity') or resolved_cfg.problem.capacity is None:
-                resolved_cfg.problem.capacity = 0
-            if not hasattr(resolved_cfg.problem, 'mean_value') or resolved_cfg.problem.mean_value is None:
-                resolved_cfg.problem.mean_value = 50.0
-            if not hasattr(resolved_cfg.problem, 'mean_weight') or resolved_cfg.problem.mean_weight is None:
-                resolved_cfg.problem.mean_weight = 0.5
-    
-    # Step 2: Resolve algorithm dependencies
-    if hasattr(resolved_cfg.algo, 'indpb_fn') and resolved_cfg.algo.indpb_fn is not None:
-        # Set n_items for dynamic mutation rate
-        if hasattr(resolved_cfg.problem, 'dimensions'):
-            resolved_cfg.algo.indpb_fn.n_items = resolved_cfg.problem.dimensions
-    
-    # # Step 3: Resolve mutation parameters
-    # if hasattr(resolved_cfg.algo, 'use_dynamic_mutation'):
-    #     if resolved_cfg.algo.use_dynamic_mutation:
-    #         # Calculate dynamic mutation rate
-    #         if hasattr(resolved_cfg.algo, 'indpb_fn'):
-    #             resolved_cfg.algo.init_args.mutate_params.indpb = call(resolved_cfg.algo.indpb_fn)
-    #     else:
-    #         # Use static mutation rate
-    #         if hasattr(resolved_cfg.algo, 'static_indpb'):
-    #             resolved_cfg.algo.init_args.mutate_params.indpb = resolved_cfg.algo.static_indpb
-    if hasattr(resolved_cfg.algo, 'use_dynamic_mutation'):
-        # Ensure mutation dict exists in either naming scheme
-        if not hasattr(resolved_cfg.algo.init_args, "mutate_params") and hasattr(resolved_cfg.algo.init_args, "mutate_kwargs"):
-            # NSGA2-style naming present
-            mut_container = resolved_cfg.algo.init_args.mutate_kwargs
-            target_path = "mutate_kwargs"
-        else:
-            # legacy naming
-            if not hasattr(resolved_cfg.algo.init_args, "mutate_params"):
-                resolved_cfg.algo.init_args.mutate_params = OmegaConf.create({})
-            mut_container = resolved_cfg.algo.init_args.mutate_params
-            target_path = "mutate_params"
-
-        if resolved_cfg.algo.use_dynamic_mutation:
-            resolved_cfg.algo.init_args[target_path].indpb = call(resolved_cfg.algo.indpb_fn)
-        else:
-            if hasattr(resolved_cfg.algo, 'static_indpb'):
-                resolved_cfg.algo.init_args[target_path].indpb = resolved_cfg.algo.static_indpb
-
-    # Step 4: Resolve dynamic population size
-    if getattr(resolved_cfg.algo, 'use_dynamic_pop_size', False):
-        fn_cfg = resolved_cfg.algo.pop_size_fn
-        fn_cfg.n_items = resolved_cfg.problem.dimensions
-        fn_cfg.noise = resolved_cfg.problem.fitness_params.noise_intensity
-        resolved_cfg.algo.init_args.pop_size = call(fn_cfg)
-
-    # Step 5: Resolve noise-dependent eval limits
-    if hasattr(resolved_cfg.run, 'use_noise_dependent_eval_limit'):
-        if resolved_cfg.run.use_noise_dependent_eval_limit:
-            noise_val = resolved_cfg.problem.fitness_params.noise_intensity
-            if hasattr(resolved_cfg.run, 'eval_limit_for_noise'):
-                mapping = {k: int(v) for k, v in resolved_cfg.run.eval_limit_for_noise.items()}
-                resolved_cfg.run.eval_limit = mapping.get(f"{noise_val}", resolved_cfg.run.eval_limit)
-    
-    # Resolve problem ID
-    resolved_cfg.problem.PID = determine_pid_from_cfg(resolved_cfg)
-
-    return resolved_cfg
 
 # -------------------------------
 # Run Functions
@@ -258,7 +145,7 @@ def main(cfg: DictConfig):
     start_time = time.perf_counter() # Record start time
 
     # Resolve dependencies in nested config structure
-    cfg = resolve_config_dependencies(cfg)
+    cfg = resolve_mo_config(cfg)
     
     # Initialise MLflow (tracking URI set at module level)
     # mlflow.set_tracking_uri(cfg.mlflow.tracking_uri)

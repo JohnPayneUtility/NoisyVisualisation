@@ -21,6 +21,7 @@ from noisyvis.problems import *
 from noisyvis.algorithms import *
 from noisyvis.results.store import save_or_append_results
 from noisyvis.results.paths import MLRUNS_DIR, TEMP_DIR, WAREHOUSE_DIR
+from noisyvis.experiments.config.workflows import resolve_lon_config
 
 # -------------------------------
 # MLflow defaults (local file store under repo/data/mlruns)
@@ -32,41 +33,6 @@ print("RUN(LON) tracking:", mlflow.get_tracking_uri())
 # -------------------------------
 # Helpers
 # -------------------------------
-
-def resolve_config_dependencies(cfg: DictConfig) -> DictConfig:
-    """Resolve loader-driven problem details and fitness params (like run.py)."""
-    resolved = OmegaConf.create(OmegaConf.to_container(cfg, resolve=True))
-
-    # Load problem if a loader is specified (e.g., knapsack instance)
-    if "loader" in resolved.problem and resolved.problem.loader is not None:
-        outputs = call(resolved.problem.loader)
-        n_items, capacity, optimal, values, weights, items_dict, _ = outputs
-
-        items_dict = {int(k): (float(v[0]), float(v[1])) for k, v in items_dict.items()}
-
-        # Attach to cfg
-        resolved.problem.dimensions = int(n_items)
-        resolved.problem.opt_global = float(optimal)
-        resolved.problem.capacity = float(capacity)
-        resolved.problem.mean_value = float(np.mean(values))
-        resolved.problem.mean_weight = float(np.mean(weights))
-        resolved.problem.items_dict = items_dict
-
-        # Fitness params
-        if hasattr(resolved.problem, "fitness_params"):
-            resolved.problem.fitness_params.items_dict = items_dict
-            resolved.problem.fitness_params.capacity = float(capacity)
-    else:
-        # OneMax-style problems (no loader)
-        if not getattr(resolved.problem, "capacity", None):
-            resolved.problem.capacity = 0
-        if not getattr(resolved.problem, "mean_value", None):
-            resolved.problem.mean_value = 50.0
-        if not getattr(resolved.problem, "mean_weight", None):
-            resolved.problem.mean_weight = 0.5
-
-    return resolved
-
 
 # -------------------------------
 # Worker wrapper (for parallel runs)
@@ -124,7 +90,7 @@ def main(cfg: DictConfig):
     start_time = time.perf_counter()
 
     # Resolve nested deps
-    cfg = resolve_config_dependencies(cfg)
+    cfg = resolve_lon_config(cfg)
 
     # MLflow init
     mlflow.set_tracking_uri(cfg.mlflow.tracking_uri)

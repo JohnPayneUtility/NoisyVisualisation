@@ -39,14 +39,16 @@ RECORD_ENV = "NOISYVIS_RECORD_BASELINES"
 RECORDED_FROM_COMMIT = "777f46d"
 
 # Every resolver listed for a workflow must reproduce that workflow's recorded outcomes.
+#
+# The golden was recorded from the run scripts' own `resolve_config_dependencies` copies
+# (run.py, run_mo.py, run_lon.py + run_lon_parallel.py, run_colon_parallel.py; see
+# `recorded_from` in the golden). Stage 7 Checkpoint B replaced those copies with these workflow
+# functions, which both LON scripts now share.
 RESOLVERS = {
-    "so": ["run.py:resolve_config_dependencies"],
-    "mo": ["run_mo.py:resolve_config_dependencies"],
-    "lon": [
-        "run_lon.py:resolve_config_dependencies",
-        "run_lon_parallel.py:resolve_config_dependencies",
-    ],
-    "colon": ["run_colon_parallel.py:resolve_config_dependencies"],
+    "so": ["noisyvis.experiments.config.workflows:resolve_so_config"],
+    "mo": ["noisyvis.experiments.config.workflows:resolve_mo_config"],
+    "lon": ["noisyvis.experiments.config.workflows:resolve_lon_config"],
+    "colon": ["noisyvis.experiments.config.workflows:resolve_colon_config"],
 }
 
 
