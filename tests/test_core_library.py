@@ -9,16 +9,19 @@ that could cause, but not these:
    baselines fail loudly, but a `clear_active_logger` on a stale copy is silent.
 2. The configured `attr_function` names must keep resolving through the `noisyvis.algorithms` namespace
    to the same definitions.
-3. Every D4 definition a consumer reaches today (package namespace, SO module, MO module,
-   FitnessFunctions, the LON and CoLON builder modules) must keep the same definition, whichever copy
-   survives the dedupe.
+3. Every D4 definition a consumer reaches today (package namespace, SO module, MO module, the
+   fitness evaluators that call `random_bit_flip`, the LON and CoLON builder modules) must keep the same
+   definition, whichever copy survives the dedupe.
 4. The two `src.algorithms.*` config forwarders must keep their namespace and re-export the canonical
    objects, and every config target must resolve to them.
 5. The LON, CoLON and compression entry points must move without any edit to their bodies.
 
 Every test is location-agnostic: modules are found through the objects runtime code actually uses,
 never by hard-coding pre- or post-move paths, so the same tests hold before and after each Stage 8
-checkpoint.
+checkpoint. Stage 9 Checkpoint 0 removed the one remaining hard-coded path, the
+`noisyvis.problems.FitnessFunctions` import: the fitness consumers are now the `__globals__` of the two
+evaluators that call `random_bit_flip` and of `OneMax_fitness`, reached through the `noisyvis.problems`
+namespace, so the tests also hold across the Stage 9 split of that module.
 
 The EXPECTED values are frozen literals captured from the untouched pre-Stage-8 tree (commit
 PRE_STAGE8_COMMIT), under the runner's Python 3.11. They were computed from a `git archive` of that
@@ -70,13 +73,15 @@ LON_ENTRY_POINT_AST = {
 
 CONFIGURED_ATTR_FUNCTIONS = frozenset({"binary_attribute", "Rastrigin_attribute"})
 
-# Which D4 names each consumer reaches today. The MO module never had random_bit_flip; FitnessFunctions
-# and the LON/CoLON builder modules use only random_bit_flip.
+# Which D4 names each consumer reaches today. The MO module never had random_bit_flip; the fitness
+# evaluators and the LON/CoLON builder modules use only random_bit_flip. The two evaluators that call it
+# are consumers through their own __globals__, wherever Stage 9 places them.
 D4_CONSUMERS = {
     "package": frozenset(D4_AST),
     "single_objective_module": frozenset(D4_AST),
     "multi_objective_module": frozenset(D4_AST) - {"random_bit_flip"},
-    "FitnessFunctions": frozenset({"random_bit_flip"}),
+    "OneMax_prior_mult_bitflip_fitness_globals": frozenset({"random_bit_flip"}),
+    "eval_noisy_kp_prior_mult_bitflip_globals": frozenset({"random_bit_flip"}),
     "BinaryLON_module": frozenset({"random_bit_flip"}),
     "BinaryCoLON_module": frozenset({"random_bit_flip"}),
 }
@@ -179,10 +184,17 @@ def config_values(key):
 
 
 # Every current consumer, imported the way runtime code imports it.
-import noisyvis.problems.FitnessFunctions as fitness_functions
+import noisyvis.problems
 import noisyvis.experiments.runner as runner
 import noisyvis.experiments.lon_runner as lon_runner
 import noisyvis.algorithms
+
+# Fitness consumers through the dynamic namespace the runners use, never through a module path.
+problems = sys.modules["noisyvis.problems"]
+fitness_globals = {name: getattr(problems, name).__globals__
+                   for name in ("OneMax_fitness", "OneMax_prior_mult_bitflip_fitness",
+                                "eval_noisy_kp_prior_mult_bitflip")}
+get_active_logger_via_fitness = fitness_globals["OneMax_fitness"]["get_active_logger"]
 
 package = sys.modules["noisyvis.algorithms"]
 forwarders = {name: importlib.import_module("src.algorithms." + name) for name in FORWARDER_ANCHOR}
@@ -207,17 +219,17 @@ if len(holders) == 1:
     holder = sys.modules[holders[0]]
     users = {
         "set_active_logger via single-objective module": so_module.set_active_logger,
-        "get_active_logger via FitnessFunctions": fitness_functions.get_active_logger,
+        "get_active_logger via OneMax_fitness globals": get_active_logger_via_fitness,
         "clear_active_logger via experiments.runner": runner.clear_active_logger,
     }
     logger["shares_holder_globals"] = {label: fn.__globals__ is vars(holder) for label, fn in users.items()}
-    state = {"initially_none": fitness_functions.get_active_logger() is None}
+    state = {"initially_none": get_active_logger_via_fitness() is None}
     sentinel = object()
     so_module.set_active_logger(sentinel)
-    state["get_sees_set"] = fitness_functions.get_active_logger() is sentinel
+    state["get_sees_set"] = get_active_logger_via_fitness() is sentinel
     state["holder_state_set"] = vars(holder)["_active_logger"] is sentinel
     runner.clear_active_logger()
-    state["get_sees_clear"] = fitness_functions.get_active_logger() is None
+    state["get_sees_clear"] = get_active_logger_via_fitness() is None
     state["holder_state_cleared"] = vars(holder)["_active_logger"] is None
     logger["state"] = state
     logger["api_ast"] = {name: ast_sha256(getattr(holder, name))
@@ -235,17 +247,18 @@ report["attr"] = {
 
 # 3. D4 definitions reached by every consumer
 consumers = {
-    "package": package,
-    "single_objective_module": so_module,
-    "multi_objective_module": mo_module,
-    "FitnessFunctions": fitness_functions,
-    "BinaryLON_module": lon_module,
-    "BinaryCoLON_module": colon_module,
+    "package": vars(package),
+    "single_objective_module": vars(so_module),
+    "multi_objective_module": vars(mo_module),
+    "OneMax_prior_mult_bitflip_fitness_globals": fitness_globals["OneMax_prior_mult_bitflip_fitness"],
+    "eval_noisy_kp_prior_mult_bitflip_globals": fitness_globals["eval_noisy_kp_prior_mult_bitflip"],
+    "BinaryLON_module": vars(lon_module),
+    "BinaryCoLON_module": vars(colon_module),
 }
 report["d4"] = {
-    role: {"module": module.__name__,
-           "names": {name: describe(getattr(module, name, None)) for name in D4_NAMES if hasattr(module, name)}}
-    for role, module in consumers.items()
+    role: {"module": namespace["__name__"],
+           "names": {name: describe(namespace[name]) for name in D4_NAMES if name in namespace}}
+    for role, namespace in consumers.items()
 }
 
 # 4/5. forwarders
