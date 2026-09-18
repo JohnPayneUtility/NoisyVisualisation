@@ -247,3 +247,67 @@ def filter_local_optima(converted_data, fitness_percent):
         "fitness_values": new_fitness_values,
         "edges": new_edges,
     }
+
+
+def _filter_penalty(plot_df, penalty_value):
+    if penalty_value is not None and 'penalty' in plot_df.columns:
+        plot_df = plot_df[plot_df['penalty'] == penalty_value]
+    return plot_df
+
+
+# ---------- Fit function -> x-axis label mapping ----------
+FIT_FUNC_XAXIS_LABELS = {
+    'OneMax_fitness': 'sigma (s.d. of gaussian Noise N(0, sigma))',
+    'OneMax_prior_bitflip_fitness': 'p (probability of single bit flip (p/n))',
+    'OneMax_prior_mult_bitflip_fitness': 'k (number of bit flips)',
+    'OneMax_prior_pq_bitwise_fitness': 'q (bitwise flip probability q/n), probability of applying noise 1/n',
+    'OneMax_prior_1q_bitwise_fitness': 'q (bitwise flip probability q/n)',
+    'eval_noisy_kp_v1': 'd, where d x mean(W) is s.d. of noise',
+    'eval_noisy_kp_v1_penalty': 'd, where d x mean(W) is s.d. of noise',
+    'eval_noisy_kp_v2': 'd, where d x mean(W) is s.d. of noise',
+    'eval_noisy_kp_v2_penalty': 'd, where d x mean(W) is s.d. of noise',
+    'eval_noisy_kp_v3': 'd, where d x mean(W) is s.d. of noise',
+    'eval_noisy_kp_prior_bitflip': 'p (probability of single bit flip (p/n))',
+    'eval_noisy_kp_prior_mult_bitflip': 'k (number of bit flips)',
+    'eval_noisy_kp_pq_prior_bitwise': 'q (bitwise flip probability q/n), probability of applying noise 1/n',
+    'eval_noisy_kp_1q_prior_bitwise': 'q (bitwise flip probability q/n)',
+    'rastrigin_eval': 'sigma (s.d. of gaussian Noise N(0, sigma))',
+    'birastrigin_eval': 'sigma (s.d. of gaussian Noise N(0, sigma))',
+}
+
+# ---------- Fit function -> short noise parameter name (for series labels) ----------
+FIT_FUNC_NOISE_PARAM_LABEL = {
+    'OneMax_fitness': 'sigma',
+    'OneMax_prior_bitflip_fitness': 'p',
+    'OneMax_prior_mult_bitflip_fitness': 'k',
+    'OneMax_prior_pq_bitwise_fitness': 'q',
+    'OneMax_prior_1q_bitwise_fitness': 'q',
+    'eval_noisy_kp_v1': 'd',
+    'eval_noisy_kp_v1_penalty': 'd',
+    'eval_noisy_kp_v2': 'd',
+    'eval_noisy_kp_v2_penalty': 'd',
+    'eval_noisy_kp_v3': 'd',
+    'eval_noisy_kp_prior_bitflip': 'p',
+    'eval_noisy_kp_prior_mult_bitflip': 'k',
+    'eval_noisy_kp_pq_prior_bitwise': 'q',
+    'eval_noisy_kp_1q_prior_bitwise': 'q',
+    'rastrigin_eval': 'sigma',
+    'birastrigin_eval': 'sigma',
+}
+
+def _get_so_xaxis_label(fit_func):
+    """Return the x-axis label for the given fit_func, or None if unset."""
+    if not fit_func:
+        return None
+    return FIT_FUNC_XAXIS_LABELS.get(fit_func, fit_func)
+
+def _get_noise_param_label(fit_func):
+    """Return the short noise parameter name for series labels (e.g. 'sigma', 'd'), defaulting to 'noise'."""
+    if not fit_func:
+        return 'noise'
+    return FIT_FUNC_NOISE_PARAM_LABEL.get(fit_func, 'noise')
+
+
+def _get_problem_goal(opt_goal):
+    """Return the problem_goal ('maximise' or 'minimise') from the opt_goal store."""
+    return opt_goal or 'maximise'
