@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 from typing import List
 
-from .column_config import (
+from ..dashboard.columns import (
     LIST_COLUMNS,
     DISPLAY1_COLUMNS,
     DISPLAY2_DROP_COLUMNS,

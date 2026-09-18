@@ -77,7 +77,7 @@ from ..dataio.transformers import (
     comparison_misjudgement_step_indices,
     constraint_misjudgement_step_indices,
 )
-from ..dataio.column_config import DISPLAY1_COLUMNS
+from .columns import DISPLAY1_COLUMNS
 
 # Load all dashboard data using the data module
 data = DashboardData.load()

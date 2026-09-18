@@ -36,7 +36,7 @@ from .transformers import (
     create_display2_df,
     get_lon_display_columns,
 )
-from .column_config import (
+from ..dashboard.columns import (
     LON_HIDDEN_COLUMNS,
     DISPLAY2_HIDDEN_COLUMNS,
     DISPLAY1_COLUMNS,
