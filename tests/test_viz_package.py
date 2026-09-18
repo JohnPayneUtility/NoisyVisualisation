@@ -67,7 +67,14 @@ import pytest
 
 from harness.run_isolated import HARNESS_DIR, WORKSPACE, child_env, make_temp_root
 
+# The frozen PRE_STAGE_11 statement order of the two dashboard files, owned by the Stage-11
+# characterization. Stage 11 moves those statements, so the bodies below are rebuilt from it rather
+# than read from one file; the expected BODIES hashes are unchanged (plan §15.1).
+from test_dashboard_package import STATEMENTS as _STAGE_11_STATEMENTS
+
 PRE_STAGE_10_COMMIT = "4530785ccae448365800cce88bb96a556d98e75a"
+BODY_KEYS = {key: _STAGE_11_STATEMENTS[key]
+             for key in ("dashboard/Dashboard.py", "dashboard/DashboardHelpers.py")}
 
 # Checkpoint E tightened this to False: the pre-move locations under `visualization/` and `plotting/`
 # are no longer accepted, so every definition must live at its final Stage-10 location.
@@ -2797,6 +2804,14 @@ fence = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fence)
 fence.install(str(WORKSPACE))
 
+# Stage 11 redistributes Dashboard.py and DashboardHelpers.py, so their statements are found through
+# the shared inventory rather than by path (plan §15.1). BODY_KEYS is their frozen PRE_STAGE_11
+# statement order, which `reassemble` walks to rebuild each file as it read before the split.
+spec = importlib.util.spec_from_file_location("_dashboard_inventory", __INVENTORY__)
+INV = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(INV)
+BODY_KEYS = __BODY_KEYS__
+
 import numpy as np
 import networkx as nx
 import pandas as pd
@@ -3381,9 +3396,30 @@ MO_LABELS = [["NSGA2", 1.0], ["SEMO", 2.0]]
 
 # ------------------------------------------------------------------ 5. the Dashboard orchestrator
 
-DASHBOARD_PY = PKG / "dashboard" / "Dashboard.py"
-HELPERS_PY = PKG / "dashboard" / "DashboardHelpers.py"
+# The three files are located by what they define, not by where they live, so the same contracts hold
+# before and after the Stage 11 split. `layout/components.py` does not move.
+LOGICAL_DASHBOARD = "dashboard/Dashboard.py"
+LOGICAL_HELPERS = "dashboard/DashboardHelpers.py"
 LAYOUT_COMPONENTS_PY = PKG / "dashboard" / "layout" / "components.py"
+
+# Every module of the dashboard package except the layout package and the Stage-10 table builders.
+def dashboard_modules():
+    return [path for path in sorted((PKG / "dashboard").rglob("*.py"))
+            if not module_key(path).startswith("dashboard/layout/")
+            and module_key(path) != "dashboard/components.py"]
+
+
+def module_defining(name):
+    """The one dashboard module with a top-level `def name`."""
+    found = [path for path in dashboard_modules()
+             if any(isinstance(node, ast.FunctionDef) and node.name == name
+                    for node in ast.parse(path.read_text()).body)]
+    assert len(found) == 1, f"expected exactly one module defining {name}, found {found}"
+    return found[0]
+
+
+DASHBOARD_PY = module_defining("update_plot")
+HELPERS_PY = module_defining("select_top_runs_by_fitness")
 
 KEEP_DEFS = {
     "_add_guide_nodes", "_get_noise_param_label", "_get_so_xaxis_label", "_get_problem_goal",
@@ -3444,8 +3480,8 @@ def load_update_plot():
             keep.append(node)
 
     namespace = {
-        "__name__": "noisyvis.dashboard._probe",
-        "__package__": "noisyvis.dashboard",
+        "__name__": package_of(DASHBOARD_PY) + "._probe",
+        "__package__": package_of(DASHBOARD_PY),
         "__file__": str(DASHBOARD_PY),
         "__builtins__": builtins,
     }
@@ -3799,19 +3835,37 @@ def resolve_module(node, package):
     return ".".join([*base, node.module] if node.module else base)
 
 
+def import_sources():
+    """Which modules carry each logical file's imports, before and after the Stage 11 split.
+
+    Stage 11 spreads Dashboard.py's imports over the modules that replace it, so the names are
+    aggregated over that group; the values they resolve to are unchanged (amendment A1 keeps every
+    existing explicit import, so the pinned IMPORTS surface does not shrink).
+    """
+    helpers = HELPERS_PY
+    dashboard_group = [path for path in dashboard_modules() if path != helpers]
+    return {
+        LOGICAL_DASHBOARD: dashboard_group,
+        LOGICAL_HELPERS: [helpers],
+        module_key(LAYOUT_COMPONENTS_PY): [LAYOUT_COMPONENTS_PY],
+    }
+
+
 def import_report():
     report = {}
-    for path in (DASHBOARD_PY, HELPERS_PY, LAYOUT_COMPONENTS_PY):
-        package = package_of(path)
-        tree = ast.parse(path.read_text())
+    for logical_key, paths in import_sources().items():
         names, modules = [], []
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.ImportFrom):
-                continue
-            module = resolve_module(node, package)
-            if module and module.startswith(VIZ_MODULE_PREFIXES):
-                modules.append(module)
-                names.extend(alias.name for alias in node.names)
+        for path in paths:
+            package = package_of(path)
+            tree = ast.parse(path.read_text())
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.ImportFrom):
+                    continue
+                module = resolve_module(node, package)
+                if module and module.startswith(VIZ_MODULE_PREFIXES):
+                    modules.append(module)
+                    names.extend(alias.name for alias in node.names)
+        names = sorted(set(names))
         resolved = {}
         for name in sorted(set(names)):
             owner = None
@@ -3829,7 +3883,7 @@ def import_report():
                 resolved[name] = {"kind": "class", "name": value.__name__, "ast": obj_ast_sha256(value)}
             else:
                 resolved[name] = {"kind": "value", "canon": canon(value)}
-        report[module_key(path)] = {
+        report[logical_key] = {
             "names": sorted(names), "name_count": len(names),
             "modules": sorted(set(modules)), "resolved": resolved,
         }
@@ -3872,8 +3926,17 @@ def main():
         report["registry"] = timed("registry", registry_report)
         report["performance"] = timed("performance", performance_report)
         report["lon_stats"] = timed("lon_stats", lon_stats_report)
-        report["bodies"] = {module_key(p): body_hash(p)
-                            for p in (DASHBOARD_PY, HELPERS_PY, LAYOUT_COMPONENTS_PY)}
+        # Dashboard.py and DashboardHelpers.py are rebuilt from wherever their statements now live,
+        # in their frozen PRE order, with the Stage-11 transformations inverted; the hashes below are
+        # therefore still the Stage-10 values, computed over the same body.
+        constants = INV.store_constants(PKG)
+        report["bodies"] = {
+            LOGICAL_DASHBOARD: INV.reassemble(PKG, LOGICAL_DASHBOARD,
+                                              BODY_KEYS[LOGICAL_DASHBOARD], constants),
+            LOGICAL_HELPERS: INV.reassemble(PKG, LOGICAL_HELPERS,
+                                            BODY_KEYS[LOGICAL_HELPERS], constants),
+            module_key(LAYOUT_COMPONENTS_PY): body_hash(LAYOUT_COMPONENTS_PY),
+        }
         report["imports"] = timed("imports", import_report)
         report["obsolete_import_references"] = obsolete_import_references()
 
@@ -3901,6 +3964,8 @@ def build_probe(source_root, sections) -> str:
         "__SOURCE_ROOT__": repr(str(source_root)),
         "__WORKSPACE__": repr(str(WORKSPACE)),
         "__FENCE__": repr(str(HARNESS_DIR / "fence.py")),
+        "__INVENTORY__": repr(str(HARNESS_DIR / "dashboard_inventory.py")),
+        "__BODY_KEYS__": repr(BODY_KEYS),
         "__SECTIONS__": repr(list(sections)),
     }
     probe = _PROBE

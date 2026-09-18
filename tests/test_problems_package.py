@@ -1435,11 +1435,56 @@ src_pkg = SOURCE_ROOT / "src" / "noisyvis"
 lon_path, lon_package = src_pkg / "viz" / "graph" / "lon.py", "noisyvis.viz.graph"
 assert lon_path.is_file(), f"expected the LON graph-population module at {lon_path}"
 
+# Stage 11 splits Dashboard.py across the dashboard package and removes its problem wildcards, so the
+# dashboard site is the whole package rather than one file: the explicitly imported names must stay
+# the same objects, and the star names must stop being imported without ever having been referenced.
+def dashboard_problem_imports():
+    found = []
+    for path in sorted((src_pkg / "dashboard").rglob("*.py")):
+        package = "noisyvis." + str(path.parent.relative_to(src_pkg)).replace("/", ".")
+        found.extend(problem_imports(path, package.rstrip(".")))
+    return found
+
+
+def dashboard_referenced_names():
+    """Names the dashboard reads that nothing in its own module binds: the wildcards' real payload.
+
+    A name that the module imports explicitly or defines itself is bound whether or not a wildcard
+    also injects it, so only these unbound reads would change meaning if a wildcard were removed.
+    """
+    unbound = set()
+    for path in sorted((src_pkg / "dashboard").rglob("*.py")):
+        tree = ast.parse(path.read_text())
+        loads, bound = set(), set(dir(builtins))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name):
+                (loads if isinstance(node.ctx, ast.Load) else bound).add(node.id)
+            elif isinstance(node, (ast.Import, ast.ImportFrom)):
+                bound.update((alias.asname or alias.name).split(".")[0] for alias in node.names)
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                bound.add(node.name)
+                spec = getattr(node, "args", None)
+                if spec is not None:
+                    bound.update(a.arg for a in spec.posonlyargs + spec.args + spec.kwonlyargs)
+                    if spec.vararg:
+                        bound.add(spec.vararg.arg)
+                    if spec.kwarg:
+                        bound.add(spec.kwarg.arg)
+            elif isinstance(node, ast.Lambda):
+                spec = node.args
+                bound.update(a.arg for a in spec.posonlyargs + spec.args + spec.kwonlyargs)
+            elif isinstance(node, ast.ExceptHandler) and node.name:
+                bound.add(node.name)
+        unbound.update(loads - bound)
+    return sorted(unbound)
+
+
 report["imports"] = {
-    "dashboard": resolve_imports(problem_imports(src_pkg / "dashboard" / "Dashboard.py", "noisyvis.dashboard")),
+    "dashboard": resolve_imports(dashboard_problem_imports()),
     "graph_builder.add_lon_nodes": resolve_imports(problem_imports(
         lon_path, lon_package, function="add_lon_nodes")),
 }
+report["dashboard_referenced_names"] = dashboard_referenced_names()
 
 
 # 11. the knapsack instance tree, byte for byte
@@ -1682,12 +1727,27 @@ def test_visualization_problem_imports_resolve(probe):
         assert found["explicit_is_package_object"] == expected["explicit_is_package_object"], (
             f"{site}: explicitly imported names changed or are not the package's objects"
         )
-        assert found["star_names"] == expected["star_names"], (
+        # Stage 11 removes the dashboard's four `problems` wildcards, which is the one intended
+        # change here: amendment A1 keeps every explicit import, including the unused
+        # `load_problem_KP`, so the set above is unchanged either way.
+        allowed_star = [expected["star_names"]]
+        if site == "dashboard":
+            allowed_star.append([])
+        assert found["star_names"] in allowed_star, (
             f"{site}: star-imported problems namespace changed:\n"
             f"  missing: {sorted(set(expected['star_names']) - set(found['star_names']))}\n"
             f"  added:   {sorted(set(found['star_names']) - set(expected['star_names']))}"
         )
         assert found["star_evaluators_are_package_objects"], f"{site}: star import provides non-canonical evaluators"
+
+    # The wildcards are removable precisely because nothing reads what they inject: no name they
+    # supplied is referenced anywhere in the dashboard package, before or after the removal.
+    referenced = set(probe["dashboard_referenced_names"])
+    leaked = sorted(set(IMPORT_PINS["dashboard"]["star_names"]) & referenced)
+    assert not leaked, (
+        "the dashboard reads names that only the `problems` wildcards supply, so removing them "
+        f"would change resolution: {leaked}"
+    )
 
 
 def test_instance_tree_manifest_unchanged(probe):
