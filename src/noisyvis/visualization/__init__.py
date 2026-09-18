@@ -14,7 +14,7 @@ Main entry points:
 """
 
 # Configuration
-from .config import (
+from ..viz.config import (
     PlotConfig,
     NodeSizeConfig,
     OpacityConfig,
@@ -38,7 +38,7 @@ from ..common import (
 )
 
 # Graph building
-from .graph_builder import (
+from ..viz.graph.stn import (
     generate_run_summary_string,
     print_hamming_transitions,
     add_stn_trajectories,
@@ -46,13 +46,15 @@ from .graph_builder import (
     add_prior_noise_stn_v4,
     add_prior_noise_stn_v5,
     add_prior_noise_stn_algo_pov,
+    debug_mo_counts,
+)
+from ..viz.graph.lon import (
     add_lon_nodes,
     add_lon_edges,
-    debug_mo_counts,
 )
 
 # Node styling
-from .node_styling import (
+from ..viz.styling import (
     apply_generation_coloring,
     apply_node_sizes,
     apply_node_colors,
@@ -60,7 +62,7 @@ from .node_styling import (
 )
 
 # Node positioning
-from .node_positioning import (
+from ..viz.layout import (
     calculate_positions_mo,
     calculate_positions_so,
     calculate_positions,
@@ -82,7 +84,7 @@ from ..viz.plots.lon_stats import (
 )
 
 # Trace building
-from .trace_builder import (
+from ..viz.traces import (
     create_edge_traces,
     create_edge_label_trace,
     create_node_traces,
