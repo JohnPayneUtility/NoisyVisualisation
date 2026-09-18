@@ -8,8 +8,9 @@ layering rules only scan imports. These tests pin what neither can see:
 
  1. every top-level definition of the 19 visualisation/plotting modules, by normalised AST and by its
     string-literal multiset, each existing exactly once and only in its pre- or intended post-move module;
- 2. the plot registry: key order, callable identity, the Dashboard dropdown values that reach it, and
-    the backward-compatible aliases;
+ 2. the plot registry: key order, callable identity, the Dashboard dropdown values that reach it, the
+    live `plot2d_*` performance aliases, and the absence of the 12 camelCase Pareto aliases and the
+    legacy monolith that Checkpoint F removed;
  3. every reachable Pareto plot with the Dashboard's own argument variants;
  4. both performance-plot families, including their missing-column fallbacks;
  5. the LON-stats figures, the graph-statistics correlations and both Dash table builders;
@@ -735,7 +736,26 @@ ALLOWED_DUPLICATE_MODULES = {
 DUPLICATE_BASENAMES = {"_viridis_colors": ["box_plots.py", "line_plots.py"]}
 
 # The legacy Pareto monolith, excluded from the inventory until Checkpoint F deletes it.
-ALLOWED_MONOLITHS = ("viz/plots/plotParetoFrontMain.py",)
+# Checkpoint F deleted the legacy Pareto monolith, so no module may be excluded from the inventory
+# any more.
+ALLOWED_MONOLITHS = ()
+
+# The 12 camelCase Pareto aliases Checkpoint F removed, in their exact historical spelling, with the
+# canonical function each one pointed at. Both must stay gone; the targets must stay reachable.
+REMOVED_PARETO_ALIASES = {
+    "plotParetoFront": "plot_basic",
+    "plotParetoFrontSubplots": "plot_subplots",
+    "plotParetoFrontSubplotsMulti": "plot_subplots_multi",
+    "PlotparetoFrontSubplotsHighlighted": "plot_subplots_highlighted",
+    "plotParetoFrontAnimation": "plot_animation",
+    "plotParetoFrontNoisy": "plot_noisy",
+    "plotParetoFrontIndVsDist": "plot_ind_vs_dist",
+    "plotParetoFrontIGDVsDist": "plot_igd_vs_dist",
+    "plotProgressPerMovementRatio": "plot_progress_per_movement",
+    "plotMovementCorrelation": "plot_movement_correlation",
+    "plotMoveDeltaHistograms": "plot_move_delta_histograms",
+    "plotObjectiveVsDecisionScatter": "plot_objective_vs_decision",
+}
 
 # The pre-move packages, which Checkpoint E removed. They must not be importable and must not be
 # imported by any source file; documentation prose about them is unaffected.
@@ -3055,11 +3075,24 @@ def registry_report():
         for key, fn in PLOTS.PERFORMANCE_PLOTS.items()
     }
     report["unknown_key_is_none"] = PLOTS.get_pareto_plot("__no_such_plot__") is None
-    report["aliases"] = {
-        alias: (getattr(PLOTS, alias, None) is getattr(PLOTS, target, None))
-        for alias, target in PARETO_ALIASES.items()
+    # Checkpoint F removed these. Report where each one still appears, rather than comparing
+    # getattr(..., None) with getattr(..., None), which would be vacuously True once both are gone.
+    pareto_pkg = import_first("noisyvis.viz.plots.pareto", "noisyvis.plotting.pareto")
+    report["removed_aliases_present"] = {
+        alias: sorted(
+            where for where, present in (
+                ("plots.__dict__", alias in vars(PLOTS)),
+                ("pareto.__dict__", alias in vars(pareto_pkg)),
+                ("plots.__all__", alias in getattr(PLOTS, "__all__", ())),
+                ("pareto.__all__", alias in getattr(pareto_pkg, "__all__", ())),
+            ) if present
+        )
+        for alias in PARETO_ALIASES
     }
+    report["removed_aliases_present"] = {a: w for a, w in report["removed_aliases_present"].items() if w}
     report["alias_names_present"] = sorted(a for a in PARETO_ALIASES if hasattr(PLOTS, a))
+    report["canonical_targets_present"] = sorted(
+        t for t in set(PARETO_ALIASES.values()) if hasattr(PLOTS, t) and hasattr(pareto_pkg, t))
     report["performance_aliases"] = {
         alias: (getattr(PERF, alias) is getattr(PERF, target))
         for alias, target in PERF_ALIASES.items()
@@ -3981,8 +4014,8 @@ def test_viz_definitions_pinned_and_unique(probe):
 
     # The legacy monolith is the only module excluded from the inventory, and only while it exists.
     monoliths = probe["monoliths"]
-    assert all(module in ALLOWED_MONOLITHS for module in monoliths), monoliths
-    assert len(monoliths) == (1 if probe["registry"]["monolith_present"] else 0), monoliths
+    assert monoliths == [], f"Checkpoint F removed the legacy monolith, but found: {monoliths}"
+    assert ALLOWED_MONOLITHS == (), ALLOWED_MONOLITHS
 
     # Checkpoint E: the pre-move packages are gone. No source file may import them, and neither may
     # be importable at all. The import check runs in its own fresh subprocess so that nothing already
@@ -4017,11 +4050,21 @@ def test_plot_registry_pinned(probe):
         )
         assert all(entry["lookup_is_same"] for entry in observed[family].values())
     assert observed["unknown_key_is_none"] is True
-    assert all(observed["aliases"].values()), observed["aliases"]
+    # The 9 plot2d_* performance aliases are live and must keep pointing at their targets.
     assert all(observed["performance_aliases"].values()), observed["performance_aliases"]
-    # The legacy Pareto monolith and its aliases may still exist (Checkpoint F removes them).
-    assert observed["alias_names_present"] == REGISTRY["alias_names_present"]
-    assert isinstance(observed["monolith_present"], bool)
+
+    # Checkpoint F: the 12 camelCase Pareto aliases and the legacy monolith are gone. Absence is
+    # checked positively — in both modules' __dict__ and both modules' __all__ — so that nothing can
+    # pass vacuously.
+    assert observed["removed_aliases_present"] == {}, (
+        "removed Pareto aliases are still exposed: " + repr(observed["removed_aliases_present"])
+    )
+    assert observed["alias_names_present"] == [], observed["alias_names_present"]
+    assert sorted(observed["canonical_targets_present"]) == sorted(set(REMOVED_PARETO_ALIASES.values())), (
+        "a canonical Pareto function disappeared with its alias: "
+        + repr(observed["canonical_targets_present"])
+    )
+    assert observed["monolith_present"] is False, "the legacy Pareto monolith is still present"
 
 
 def test_pareto_figures_pinned(pareto_probe):

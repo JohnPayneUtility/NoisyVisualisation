@@ -22,9 +22,6 @@ Quick Start:
     from src.plotting.pareto import plot_basic, plot_subplots
     from src.plotting.performance import plot_line, plot_box
 
-Backward Compatibility:
-    All original function names from plotParetoFrontMain.py are preserved
-    as aliases. Existing code will continue to work unchanged.
 """
 
 # Registry functions for dynamic dispatch
@@ -53,22 +50,6 @@ from .pareto import (
     plot_movement_correlation,
     plot_move_delta_histograms,
     plot_objective_vs_decision,
-)
-
-# Pareto plot functions (backward-compatible aliases)
-from .pareto import (
-    plotParetoFront,
-    plotParetoFrontSubplots,
-    plotParetoFrontSubplotsMulti,
-    PlotparetoFrontSubplotsHighlighted,
-    plotParetoFrontAnimation,
-    plotParetoFrontNoisy,
-    plotParetoFrontIndVsDist,
-    plotParetoFrontIGDVsDist,
-    plotProgressPerMovementRatio,
-    plotMovementCorrelation,
-    plotMoveDeltaHistograms,
-    plotObjectiveVsDecisionScatter,
 )
 
 # Performance plot functions (new consistent names)
@@ -126,20 +107,6 @@ __all__ = [
     'plot_movement_correlation',
     'plot_move_delta_histograms',
     'plot_objective_vs_decision',
-
-    # Pareto plots (backward-compatible)
-    'plotParetoFront',
-    'plotParetoFrontSubplots',
-    'plotParetoFrontSubplotsMulti',
-    'PlotparetoFrontSubplotsHighlighted',
-    'plotParetoFrontAnimation',
-    'plotParetoFrontNoisy',
-    'plotParetoFrontIndVsDist',
-    'plotParetoFrontIGDVsDist',
-    'plotProgressPerMovementRatio',
-    'plotMovementCorrelation',
-    'plotMoveDeltaHistograms',
-    'plotObjectiveVsDecisionScatter',
 
     # Performance plots (new names)
     'plot_line',

@@ -237,7 +237,7 @@ docker exec -w /workspace -e PYTHONPATH=/workspace/tests/.deps evovis-runner-1 \
 | D1 (viz core + graph-population split) | **Full expensive gate**: this is where population, layout, styling and traces move |
 | D2 (facade + consumer imports) | Fast/targeted, plus the full `heavy` test once as the mixed smoke. The heavy probe is all-or-nothing, so there is no cheaper single-case variant; skip it here only if D1 was clean and E is imminent |
 | E (tighten + structural acceptance) | Full expensive gate **and** the full repository acceptance: the harness is tightened to post-only locations, the cache-only `visualization/` and `plotting/` directories are removed inside the runner, the focused suite and the full suite (twice) run, then the dashboard is restarted once for the runtime/manual acceptance |
-| F (Pareto legacy removal) | Pareto half of the expensive gate, plus fast/targeted |
+| F (Pareto legacy removal) | Pareto half of the expensive gate, plus fast/targeted. After F the characterization requires the legacy monolith `plotParetoFrontMain.py` and the 12 camelCase Pareto aliases to be **absent** from both `viz/plots/__init__.py` and `viz/plots/pareto/__init__.py` (`__dict__` and `__all__`), while the 12 canonical `plot_*` functions and the 9 live `plot2d_*` performance aliases must remain |
 | G (final) | Full expensive gate and the full acceptance, full suite twice |
 
 Pytest markers (`slow`, `viz_expensive`) were considered and deliberately not added: registering a
