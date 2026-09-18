@@ -411,7 +411,7 @@ def update_table2(data):
      Input(LON_TABLE_SELECTED_PID_STORE, "data")],
     State("table1-selected-store", "data"),
 )
-def update_table2(data, lon_table_pid, table1_selection):
+def update_problem_stores(data, lon_table_pid, table1_selection):
     # Primary: use problem table selection if available
     if data is not None and table1_selection:
         df = pd.DataFrame(data)
@@ -603,7 +603,7 @@ def display_stored_data(data):
     Input('noise-cap-input', 'value'),
     Input('hide-series-dropdown', 'value'),
 )
-def display_stored_data(data, fitness_mode, fit_func, opt_goal, plot_theme, noise_cap, hidden_series):
+def display_line_so(data, fitness_mode, fit_func, opt_goal, plot_theme, noise_cap, hidden_series):
     xaxis_label = _get_so_xaxis_label(fit_func)
     if xaxis_label is None:
         return go.Figure()
@@ -621,7 +621,7 @@ def display_stored_data(data, fitness_mode, fit_func, opt_goal, plot_theme, nois
     Input('noise-cap-input', 'value'),
     Input('hide-series-dropdown', 'value'),
 )
-def display_stored_data(data, fitness_mode, fit_func, opt_goal, plot_theme, noise_cap, hidden_series):
+def display_box_so(data, fitness_mode, fit_func, opt_goal, plot_theme, noise_cap, hidden_series):
     xaxis_label = _get_so_xaxis_label(fit_func)
     if xaxis_label is None:
         return go.Figure()
@@ -1253,7 +1253,7 @@ def update_lon_table_selected_pid(selected_rows, lon_table_data):
     Input("LON_table", "selected_rows"),
     State("LON_table", "data")
 )
-def update_filtered_view(selected_rows, LON_table_data):
+def update_lon_data(selected_rows, LON_table_data):
     if not selected_rows:
         blank_df = pd.DataFrame(columns=df_LONs.columns)
         return blank_df.to_dict('records')
@@ -1342,7 +1342,7 @@ def update_filtered_view(selected_rows, LON_table_data):
     Input('penalty-filter-dropdown', 'value'),
     State("table2", "data")
 )
-def update_filtered_view(selected_rows, penalty_value, table2_data):
+def update_stn_data(selected_rows, penalty_value, table2_data):
     if not selected_rows:
         blank_df = pd.DataFrame(columns=df.columns)
         return blank_df.to_dict('records')
@@ -1547,7 +1547,7 @@ def toggle_run_print_info(value):
     Output('print_STN_series_labels', "children"),
     Input('STN_series_labels', 'data')
 )
-def update_table2_selected(series_list):
+def update_plotted_series_labels(series_list):
     if not series_list:
         return "No rows selected in Table 2."
     # series_labels = [series_list[i] for i in series_list]
