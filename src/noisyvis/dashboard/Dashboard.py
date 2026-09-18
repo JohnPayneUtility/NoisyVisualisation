@@ -15,13 +15,16 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace as dataclass_replace
 import os
 
-from .DashboardHelpers import *
-from ..problems.onemax import *
-from ..problems.jump import *
-from ..problems.knapsack import *
-from ..problems.continuous import *
+from .helpers import (
+    convert_to_single_edges_format,
+    convert_to_split_edges_format,
+    filter_local_optima,
+    filter_negative_LO,
+    get_mean_run,
+    get_median_run,
+    select_top_runs_by_fitness,
+)
 from ..problems.instances import load_problem_KP, get_knapsack_problem_stats, interpret_correlation
-from ..common.embedding import *
 from .layout import create_layout, TAB_STYLE, TAB_SELECTED_STYLE, _build_schematic_figure, _build_schematic_legend
 from .layout.stores import LON_TABLE_SELECTED_PID_STORE
 
