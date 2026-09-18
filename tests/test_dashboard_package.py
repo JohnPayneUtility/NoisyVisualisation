@@ -40,8 +40,9 @@ The probe writes a small synthetic warehouse into the harness temp root and lets
 warehouse is never opened. The knapsack PID is a real instance, so the LON half of the pipeline runs
 for real. `PYTHONHASHSEED` is pinned to 0 for the probe subprocess only, as in test_viz_package.
 
-Locations are accepted at their PRE or their intended POST module while `ALLOW_PRE_LOCATIONS` is
-True, exactly as the Stage-10 harness did; checkpoints 11-I and 11-J tighten it to POST only.
+Locations were accepted at their PRE or their intended POST module while `ALLOW_PRE_LOCATIONS` was
+True, exactly as the Stage-10 harness did. Checkpoint 11-I tightened the dashboard side to POST only;
+the MLflow app keeps its own `ALLOW_PRE_MLFLOW_LOCATIONS` until 11-J.
 """
 
 from __future__ import annotations
@@ -61,8 +62,10 @@ from harness.run_isolated import HARNESS_DIR, WORKSPACE, child_env, make_temp_ro
 
 PRE_STAGE_11_COMMIT = "fa8d250c65fb9b778a18262f165967476f824f98"
 
-# Checkpoints 11-I and 11-J set this to False: only the final Stage-11 locations are then accepted.
-ALLOW_PRE_LOCATIONS = True
+# The dashboard side (Dashboard.py, DashboardHelpers.py, dataio/): final locations only from 11-I.
+ALLOW_PRE_LOCATIONS = False
+# The MLflow browser app (app/ -> mlflow_app/): checkpoint 11-J sets this to False.
+ALLOW_PRE_MLFLOW_LOCATIONS = True
 
 PKG = WORKSPACE / "src" / "noisyvis"
 INVENTORY_PATH = HARNESS_DIR / "dashboard_inventory.py"
@@ -3591,7 +3594,9 @@ def allowed_statement_modules(pre_file: str, key) -> tuple:
     post = STATEMENT_DESTINATIONS[pre_file][key_str(key)]
     if post is None:  # a structural deletion: it exists only while the PRE file does
         return (pre_file,)
-    return (pre_file, post) if ALLOW_PRE_LOCATIONS else (post,)
+    allow_pre = (ALLOW_PRE_MLFLOW_LOCATIONS if pre_file in (inv.MLFLOW_APP_PY, inv.MLFLOW_PAGE_PY)
+                 else ALLOW_PRE_LOCATIONS)
+    return (pre_file, post) if allow_pre else (post,)
 
 
 # --------------------------------------------------------------- the probe
@@ -4585,13 +4590,18 @@ def test_entrypoints_and_console_scripts(app_probe):
         (ENTRY_MODULES["pre"], ENTRY_MODULES["post"]) if ALLOW_PRE_LOCATIONS
         else (ENTRY_MODULES["post"],))
 
+    # Each console script is checked against its own app's stage. SCRIPTS is the PRE state, in which
+    # neither target module existed yet.
+    expected_scripts = dict(SCRIPTS)
     if entry["module_file"] == ENTRY_MODULES["post"]:
         assert entry["has_main"], "noisyvis.dashboard.app must expose main()"
-        assert app_probe["scripts"] == {name: "callable" for name in SCRIPTS}, app_probe["scripts"]
-    else:
-        assert app_probe["scripts"] == SCRIPTS, (
-            "the console-script targets changed before the modules they name exist"
-        )
+        expected_scripts["noisyvis-dashboard"] = "callable"
+    if not ALLOW_PRE_MLFLOW_LOCATIONS:
+        expected_scripts["noisyvis-mlflow"] = "callable"
+    assert app_probe["scripts"] == expected_scripts, (
+        "a console-script target does not match its app's stage: "
+        f"expected {expected_scripts}, observed {app_probe['scripts']}"
+    )
 
     # Every `python -m ...` a committed Compose file runs must exist in this tree.
     for compose in sorted((WORKSPACE / "docker").glob("compose.*.yaml")):
@@ -4642,10 +4652,10 @@ def test_mlflow_app_contract(mlflow_probe):
     observed = mlflow_probe["mlflow"]
 
     assert observed["module"] in (
-        (MLFLOW_MODULES["pre"], MLFLOW_MODULES["post"]) if ALLOW_PRE_LOCATIONS
+        (MLFLOW_MODULES["pre"], MLFLOW_MODULES["post"]) if ALLOW_PRE_MLFLOW_LOCATIONS
         else (MLFLOW_MODULES["post"],))
     assert observed["page_file"] in (
-        (MLFLOW_PAGE["pre"], MLFLOW_PAGE["post"]) if ALLOW_PRE_LOCATIONS
+        (MLFLOW_PAGE["pre"], MLFLOW_PAGE["post"]) if ALLOW_PRE_MLFLOW_LOCATIONS
         else (MLFLOW_PAGE["post"],))
 
     for field in ("index_status", "registry", "dependencies", "dependencies_digest",

@@ -1729,10 +1729,9 @@ def test_visualization_problem_imports_resolve(probe):
         )
         # Stage 11 removes the dashboard's four `problems` wildcards, which is the one intended
         # change here: amendment A1 keeps every explicit import, including the unused
-        # `load_problem_KP`, so the set above is unchanged either way.
-        allowed_star = [expected["star_names"]]
-        if site == "dashboard":
-            allowed_star.append([])
+        # `load_problem_KP`, so the set above is unchanged either way. From 11-I only the
+        # post-removal state is accepted for the dashboard.
+        allowed_star = [[]] if site == "dashboard" else [expected["star_names"]]
         assert found["star_names"] in allowed_star, (
             f"{site}: star-imported problems namespace changed:\n"
             f"  missing: {sorted(set(expected['star_names']) - set(found['star_names']))}\n"

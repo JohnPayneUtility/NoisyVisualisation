@@ -7,7 +7,7 @@ services:
     working_dir: /workspace
     # Stage 4: editable-installs the repo into `exp`, then execs the command in that environment.
     entrypoint: ["/workspace/docker/entrypoint.sh"]
-    command: ["python","-m","noisyvis.dashboard.Dashboard"]
+    command: ["python","-m","noisyvis.dashboard.app"]
     environment:
       - PYTHONUNBUFFERED=1
       - TZ=Europe/London

@@ -29,6 +29,7 @@ still hashes to its PRE_STAGE_11 value:
 and one is reconstructed:
 
     T3  `if __name__ == "__main__": app.run(...)` becoming `def main(): app.run(...)` plus a guard
+        that does nothing but call `main()`
 
 Nothing else may differ. Module docstrings are recorded separately: `DashboardHelpers`' docstring is
 pinned, because A1 keeps that file's header verbatim; the `dataio` ones may change with the package's
@@ -307,8 +308,8 @@ def locate(pkg: Path, pre_file: str, frozen_entries: list, constants) -> list:
         if key == ("doc",):
             matches = _docstring_of(pkg, anchor[0]) if anchor else []
         record = {"key": list(key), "count": len(matches)}
-        if key == ("main",) and not matches:
-            matches = _reconstructed_main(found)
+        if key == ("main",) and _main_matches(found, matches) is not matches:
+            matches = _main_matches(found, matches)
             record["count"] = len(matches)
             record["reconstructed"] = True
         if len(matches) == 1:
@@ -327,8 +328,24 @@ def locate(pkg: Path, pre_file: str, frozen_entries: list, constants) -> list:
     return report
 
 
+def _guard_calls_main(guard, module) -> bool:
+    """Is this the T3 guard: exactly `if __name__ == "__main__": main()`, beside `def main()`?"""
+    if len(guard) != 1:
+        return False
+    guard_module, _, node = guard[0]
+    return (guard_module == module and not node.orelse and len(node.body) == 1
+            and isinstance(node.body[0], ast.Expr) and isinstance(node.body[0].value, ast.Call)
+            and isinstance(node.body[0].value.func, ast.Name)
+            and node.body[0].value.func.id == "main"
+            and not node.body[0].value.args and not node.body[0].value.keywords)
+
+
 def _reconstructed_main(found):
-    """T3: rebuild `if __name__ == "__main__": <main body>` from a `def main()` entrypoint."""
+    """T3: rebuild `if __name__ == "__main__": <main body>` from a `def main()` entrypoint.
+
+    The approved final form is `def main(): app.run(...)` plus a guard that does nothing but call
+    `main()`; any other guard is compared as it stands and so fails against the frozen block.
+    """
     matches = found.get(("def", "main"), [])
     if len(matches) != 1:
         return []
@@ -340,9 +357,17 @@ def _reconstructed_main(found):
         orelse=[],
     )
     ast.fix_missing_locations(rebuilt)
-    if guard:
+    if guard and not _guard_calls_main(guard, module):
         return []
     return [(module, package, rebuilt)]
+
+
+def _main_matches(found, matches):
+    """The ("main",) statement: as found, or rebuilt by T3 when absent or when it only calls main()."""
+    defs = found.get(("def", "main"), [])
+    if not matches or (len(defs) == 1 and _guard_calls_main(matches, defs[0][0])):
+        return _reconstructed_main(found)
+    return matches
 
 
 def reassemble(pkg: Path, pre_file: str, frozen_entries: list, constants):
@@ -360,8 +385,8 @@ def reassemble(pkg: Path, pre_file: str, frozen_entries: list, constants):
         matches = found.get(key, [])
         if key == ("doc",):
             matches = _docstring_of(pkg, anchor[0]) if anchor else []
-        if key == ("main",) and not matches:
-            matches = _reconstructed_main(found)
+        if key == ("main",):
+            matches = _main_matches(found, matches)
         if len(matches) != 1:
             raise AssertionError(
                 f"{pre_file}: statement {key} found {len(matches)} times "

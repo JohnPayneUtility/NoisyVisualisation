@@ -138,7 +138,11 @@ from .callbacks import pareto  # noqa: E402,F401
 # RUN
 # ==========
 
-if __name__ == '__main__':
+def main():
     # app.run_server(debug=True)
     # app.run(debug=True)
     app.run(host="0.0.0.0", port=8050, debug=True, use_reloader=False)
+
+
+if __name__ == '__main__':
+    main()
