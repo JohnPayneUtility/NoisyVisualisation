@@ -16,8 +16,8 @@ only checks that a name resolves. These tests pin what they cannot see:
  7. the `knap_violation` behavioural divergence (D7) between the module-level and nested copies;
  8. the two `mean_weight` copies: equivalent, but distinct definitions;
  9. the problem imports of `Dashboard.py` and of `add_lon_nodes` (no config reaches four of them); the
-    latter is located in whichever of visualization/graph_builder.py or viz/graph/lon.py exists, so the
-    pins survive the Stage 10 graph-population split unchanged;
+    latter is read from viz/graph/lon.py, its post-Stage-10 location, with the pins unchanged across
+    the graph-population split;
 10. the byte content of the knapsack instance tree;
 11. each definition lives in its pre-Stage-9 module or its intended Stage 9 module.
 
@@ -1428,16 +1428,12 @@ def resolve_imports(found):
 
 src_pkg = SOURCE_ROOT / "src" / "noisyvis"
 
-# Stage 10 moves `add_lon_nodes` from visualization/graph_builder.py to the LON graph-population
-# module viz/graph/lon.py. Exactly one of the two must exist; the pins below are unchanged either way,
-# because `problem_imports` resolves the relative import against the module's own package.
-ADD_LON_NODES_SITES = [
-    (src_pkg / "viz" / "graph" / "lon.py", "noisyvis.viz.graph"),
-    (src_pkg / "visualization" / "graph_builder.py", "noisyvis.visualization"),
-]
-lon_sites = [(path, package) for path, package in ADD_LON_NODES_SITES if path.is_file()]
-assert len(lon_sites) == 1, f"expected exactly one add_lon_nodes module: {[str(p) for p, _ in lon_sites]}"
-lon_path, lon_package = lon_sites[0]
+# Stage 10 moved `add_lon_nodes` from visualization/graph_builder.py to the LON graph-population
+# module viz/graph/lon.py. Checkpoint E tightened this to the post-move location only; the pins below
+# are unchanged, because `problem_imports` resolves the relative import against the module's own
+# package.
+lon_path, lon_package = src_pkg / "viz" / "graph" / "lon.py", "noisyvis.viz.graph"
+assert lon_path.is_file(), f"expected the LON graph-population module at {lon_path}"
 
 report["imports"] = {
     "dashboard": resolve_imports(problem_imports(src_pkg / "dashboard" / "Dashboard.py", "noisyvis.dashboard")),

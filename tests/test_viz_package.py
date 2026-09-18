@@ -20,9 +20,14 @@ layering rules only scan imports. These tests pin what neither can see:
     shown to change imports only;
  8. the visualisation names those three files import, resolved to the objects they name.
 
-Everything is location-agnostic: modules are found through the facades and through a file scan whose
-allowed locations cover the pre- and the post-move tree, so the same tests hold before, during and
-after every Stage 10 checkpoint. Checkpoint E tightens ALLOW_PRE_LOCATIONS to the post-move set.
+Locations are pinned through the facades and through a file scan. Checkpoints 0-D2 accepted both the
+pre- and the post-move tree, so the same tests held at every intermediate step; **Checkpoint E set
+ALLOW_PRE_LOCATIONS to False**, so only the final Stage 10 locations are accepted: `noisyvis.viz.*`,
+`noisyvis.viz.graph.{stn,lon}`, `noisyvis.viz.plots.*`, `noisyvis.analysis.graph_stats` and
+`noisyvis.dashboard.components`. The pre-move packages `noisyvis.visualization` and
+`noisyvis.plotting` no longer exist: no source file may import them, and neither may be importable.
+Only the location contract was tightened at E; every behavioural expectation below is still the value
+frozen from PRE_STAGE_10.
 
 The EXPECTED values are frozen literals captured from a `git archive` of the untouched PRE_STAGE_10
 commit, under the runner's Python 3.11, in fresh subprocesses. They were never derived from the
@@ -63,8 +68,9 @@ from harness.run_isolated import HARNESS_DIR, WORKSPACE, child_env, make_temp_ro
 
 PRE_STAGE_10_COMMIT = "4530785ccae448365800cce88bb96a556d98e75a"
 
-# Checkpoint E flips this to False, which forbids the pre-move locations.
-ALLOW_PRE_LOCATIONS = True
+# Checkpoint E tightened this to False: the pre-move locations under `visualization/` and `plotting/`
+# are no longer accepted, so every definition must live at its final Stage-10 location.
+ALLOW_PRE_LOCATIONS = False
 
 # --------------------------------------------------------------- frozen at PRE_STAGE_10
 DEFINITIONS = {'AXIS_LABELS': {'ast': '00451c08df9142812bfad4b670d56466a3ad5c898d460b9edea53b91e8ca3505',
@@ -722,7 +728,6 @@ DUPLICATE_DEFINITIONS = {"_viridis_colors": 2}
 
 ALLOWED_DUPLICATE_MODULES = {
     "_viridis_colors": (
-        "plotting/performance/box_plots.py", "plotting/performance/line_plots.py",
         "viz/plots/performance/box_plots.py", "viz/plots/performance/line_plots.py",
     ),
 }
@@ -730,7 +735,11 @@ ALLOWED_DUPLICATE_MODULES = {
 DUPLICATE_BASENAMES = {"_viridis_colors": ["box_plots.py", "line_plots.py"]}
 
 # The legacy Pareto monolith, excluded from the inventory until Checkpoint F deletes it.
-ALLOWED_MONOLITHS = ("plotting/plotParetoFrontMain.py", "viz/plots/plotParetoFrontMain.py")
+ALLOWED_MONOLITHS = ("viz/plots/plotParetoFrontMain.py",)
+
+# The pre-move packages, which Checkpoint E removed. They must not be importable and must not be
+# imported by any source file; documentation prose about them is unaffected.
+OBSOLETE_PACKAGES = ("noisyvis.visualization", "noisyvis.plotting")
 
 REGISTRY = {'alias_names_present': ['PlotparetoFrontSubplotsHighlighted',
                          'plotMoveDeltaHistograms',
@@ -2912,15 +2921,18 @@ def import_first(*names):
 
 PKG = SOURCE_ROOT / "src" / "noisyvis"
 
-SCAN_DIRS = ["visualization", "plotting", "viz", "analysis"]
+# Checkpoint E: the final Stage-10 locations only. The pre-move packages `visualization` and
+# `plotting` no longer exist and are no longer accepted.
+SCAN_DIRS = ["viz", "analysis"]
 SCAN_FILES = ["dashboard/components.py"]
+OBSOLETE_PACKAGES = ("noisyvis.visualization", "noisyvis.plotting")
 
 # The legacy Pareto monolith is excluded from the definition inventory until Checkpoint F deletes it.
-# It is identified by basename under either plotting tree, and nowhere else: a file with any other
-# name, or this name outside those two trees, is scanned like every other module.
+# It is identified by basename under the plots tree, and nowhere else: a file with any other name, or
+# this name outside that tree, is scanned like every other module.
 MONOLITH_BASENAME = "plotParetoFrontMain.py"
-MONOLITH_DIRS = ("plotting/", "viz/plots/")
-MONOLITH_MODULES = ("plotting/" + MONOLITH_BASENAME, "viz/plots/" + MONOLITH_BASENAME)
+MONOLITH_DIRS = ("viz/plots/",)
+MONOLITH_MODULES = ("viz/plots/" + MONOLITH_BASENAME,)
 
 
 def is_monolith(key, path):
@@ -2971,6 +2983,31 @@ def scan_definitions():
                     duplicates.setdefault(name, [found[name]["module"]]).append(key)
                 found[name] = record
     return found, {name: sorted(modules) for name, modules in duplicates.items()}, sorted(monoliths)
+
+
+def obsolete_import_references():
+    """Executable imports of the pre-move packages anywhere under src/noisyvis (never prose)."""
+    found = []
+    for path in sorted(PKG.rglob("*.py")):
+        package = package_of(path)
+        for node in ast.walk(ast.parse(path.read_text())):
+            if isinstance(node, ast.ImportFrom):
+                if node.level:
+                    parts = package.split(".")
+                    base = parts[: len(parts) - (node.level - 1)] if node.level > 1 else parts
+                    module = ".".join([*base, node.module] if node.module else base)
+                else:
+                    module = node.module or ""
+                modules = [module]
+            elif isinstance(node, ast.Import):
+                modules = [alias.name for alias in node.names]
+            else:
+                continue
+            for module in modules:
+                if any(module == obsolete or module.startswith(obsolete + ".")
+                       for obsolete in OBSOLETE_PACKAGES):
+                    found.append(f"{module_key(path)}:{node.lineno}: {module}")
+    return found
 
 
 # ------------------------------------------------------------------ 2. registry and aliases
@@ -3805,6 +3842,7 @@ def main():
         report["bodies"] = {module_key(p): body_hash(p)
                             for p in (DASHBOARD_PY, HELPERS_PY, LAYOUT_COMPONENTS_PY)}
         report["imports"] = timed("imports", import_report)
+        report["obsolete_import_references"] = obsolete_import_references()
 
     if "pareto" in SECTIONS:
         report["pareto"] = timed("pareto", pareto_report)
@@ -3879,6 +3917,25 @@ def heavy_probe() -> dict:
     return _run_probe(["heavy"])
 
 
+def _import_fails(module: str) -> str:
+    """Import `module` in a fresh interpreter; return the exception class name, or "IMPORTED".
+
+    A separate process, so nothing already in this process's sys.modules can mask the result.
+    """
+    lines = [
+        "import importlib",
+        "try:",
+        f"    importlib.import_module({module!r})",
+        "    print('IMPORTED')",
+        "except Exception as exc:",
+        "    print(type(exc).__name__)",
+    ]
+    completed = subprocess.run([sys.executable, "-c", chr(10).join(lines)],
+                               capture_output=True, text=True, timeout=120)
+    assert completed.returncode == 0, completed.stderr[-2000:]
+    return completed.stdout.strip()
+
+
 def _mismatches(observed: dict, expected: dict) -> list:
     keys = sorted(set(observed) | set(expected))
     return [f"{key}:\n    expected {expected.get(key)!r}\n    observed {observed.get(key)!r}"
@@ -3921,14 +3978,23 @@ def test_viz_definitions_pinned_and_unique(probe):
             f"{name} is defined at an unapproved location: {modules}"
         )
         assert sorted(module.rsplit("/", 1)[1] for module in modules) == DUPLICATE_BASENAMES[name], modules
-        assert len({module.startswith("viz/plots/") for module in modules}) == 1, (
-            f"{name}: the two copies straddle the pre- and post-move trees: {modules}"
-        )
 
     # The legacy monolith is the only module excluded from the inventory, and only while it exists.
     monoliths = probe["monoliths"]
     assert all(module in ALLOWED_MONOLITHS for module in monoliths), monoliths
     assert len(monoliths) == (1 if probe["registry"]["monolith_present"] else 0), monoliths
+
+    # Checkpoint E: the pre-move packages are gone. No source file may import them, and neither may
+    # be importable at all. The import check runs in its own fresh subprocess so that nothing already
+    # in this process's sys.modules can mask the result.
+    assert probe["obsolete_import_references"] == [], (
+        "source still imports a pre-move package: "
+        + "; ".join(probe["obsolete_import_references"])
+    )
+    for package in OBSOLETE_PACKAGES:
+        assert _import_fails(package) == "ModuleNotFoundError", (
+            f"{package} is still importable: {_import_fails(package)}"
+        )
 
     # The graph-population split keeps every definition on exactly one side.
     for name in STN_POPULATION:
