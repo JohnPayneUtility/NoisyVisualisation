@@ -3471,8 +3471,14 @@ def load_update_plot():
     source = DASHBOARD_PY.read_text()
     tree = ast.parse(source, filename=str(DASHBOARD_PY))
 
+    # Stage 11 (11-E) moved the eager warehouse load to module scope in `noisyvis.dashboard.data`, so
+    # importing it would load data. `update_plot` reads none of its names; the free-name check below
+    # still fails if it ever starts to.
     keep = []
     for node in tree.body:
+        if isinstance(node, ast.ImportFrom) \
+                and resolve_module(node, package_of(DASHBOARD_PY)) == "noisyvis.dashboard.data":
+            continue
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             keep.append(node)
         elif isinstance(node, ast.FunctionDef) and not node.decorator_list and node.name in KEEP_DEFS:

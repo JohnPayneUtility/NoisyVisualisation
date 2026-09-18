@@ -117,3 +117,32 @@ class DashboardData:
             display2_df=display2_df,
             lon_display_columns=lon_display_columns,
         )
+
+
+# Load all dashboard data using the data module
+data = DashboardData.load()
+
+# Unpack for backward compatibility with existing callbacks
+# These variable names are used throughout the dashboard code
+df = data.df                              # Full algorithm results
+df_LONs = data.df_lon                     # LON results
+df_no_lists = data.df_no_lists            # Algorithm results without list columns
+display1_df = data.display1_df            # Problem selection table
+display2_df = data.display2_df            # Algorithm selection table
+LON_display_columns = data.lon_display_columns  # Columns to show in LON table
+
+# Column configuration for table displays
+display2_hidden_cols = DISPLAY2_HIDDEN_COLUMNS
+LON_hidden_cols = LON_HIDDEN_COLUMNS
+
+# Unique experiment names for the top-level filter dropdown
+experiment_names = sorted(df['experiment_name'].dropna().unique().tolist()) if 'experiment_name' in df.columns else []
+
+# Map experiment_name -> description (first non-empty value found per name)
+experiment_descriptions = {}
+if 'experiment_description' in df.columns and 'experiment_name' in df.columns:
+    for name in experiment_names:
+        desc = df.loc[df['experiment_name'] == name, 'experiment_description'].dropna()
+        desc = desc[desc != '']
+        if not desc.empty:
+            experiment_descriptions[name] = desc.iloc[0]
