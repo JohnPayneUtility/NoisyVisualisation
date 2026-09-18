@@ -70,9 +70,9 @@ from ..viz.plots.performance import plot2d_line, plot2d_box, plot2d_line_mo, plo
 # ==========
 # Data Loading
 # ==========
-from ..dataio import DashboardData, DISPLAY2_HIDDEN_COLUMNS, LON_HIDDEN_COLUMNS
-from ..dataio.transformers import (
-    create_display2_df,
+from .data import DashboardData, DISPLAY2_HIDDEN_COLUMNS, LON_HIDDEN_COLUMNS
+from .tables import create_display2_df
+from ..analysis.misjudgements import (
     increasing_noise_step_indices,
     comparison_misjudgement_step_indices,
     constraint_misjudgement_step_indices,

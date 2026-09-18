@@ -6,7 +6,7 @@ the data needed by the dashboard. It separates data concerns from
 the dashboard presentation logic.
 
 Usage:
-    from src.data import DashboardData
+    from noisyvis.dashboard.data import DashboardData
 
     # Load all data with default paths
     data = DashboardData.load()
@@ -30,13 +30,13 @@ import pandas as pd
 
 from ..results.paths import WAREHOUSE_DIR
 from ..results.store import load_algo_results, load_lon_results, DataLoadError
-from .transformers import (
+from .tables import (
     create_df_no_lists,
     create_display1_df,
     create_display2_df,
     get_lon_display_columns,
 )
-from ..dashboard.columns import (
+from .columns import (
     LON_HIDDEN_COLUMNS,
     DISPLAY2_HIDDEN_COLUMNS,
     DISPLAY1_COLUMNS,
@@ -117,27 +117,3 @@ class DashboardData:
             display2_df=display2_df,
             lon_display_columns=lon_display_columns,
         )
-
-
-# Public API
-__all__ = [
-    # Main data container
-    'DashboardData',
-    # Exception
-    'DataLoadError',
-    # Column configuration constants
-    'LON_HIDDEN_COLUMNS',
-    'DISPLAY2_HIDDEN_COLUMNS',
-    'DISPLAY1_COLUMNS',
-    'LIST_COLUMNS',
-    'DISPLAY2_DROP_COLUMNS',
-    'DISPLAY2_DEDUP_KEYS',
-    # Individual loader functions (for advanced use)
-    'load_algo_results',
-    'load_lon_results',
-    # Individual transformer functions (for advanced use)
-    'create_df_no_lists',
-    'create_display1_df',
-    'create_display2_df',
-    'get_lon_display_columns',
-]

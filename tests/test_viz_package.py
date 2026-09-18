@@ -2958,8 +2958,10 @@ PKG = SOURCE_ROOT / "src" / "noisyvis"
 
 # Checkpoint E: the final Stage-10 locations only. The pre-move packages `visualization` and
 # `plotting` no longer exist and are no longer accepted.
-SCAN_DIRS = ["viz", "analysis"]
-SCAN_FILES = ["dashboard/components.py"]
+# `analysis/` is scanned by file, not as a directory: the Stage-10 surface there is `graph_stats.py`
+# alone. Stage 11 adds `analysis/misjudgements.py`, which is not visualisation code.
+SCAN_DIRS = ["viz"]
+SCAN_FILES = ["analysis/graph_stats.py", "dashboard/components.py"]
 OBSOLETE_PACKAGES = ("noisyvis.visualization", "noisyvis.plotting")
 
 # The legacy Pareto monolith is excluded from the definition inventory until Checkpoint F deletes it.
@@ -3816,8 +3818,10 @@ def layout_report(namespace):
 
 # ------------------------------------------------------------------ 7. dashboard bodies and imports
 
+# `noisyvis.analysis.graph_stats`, not the whole package: `analysis.misjudgements` (Stage 11) is not
+# a visualisation import.
 VIZ_MODULE_PREFIXES = ("noisyvis.visualization", "noisyvis.plotting", "noisyvis.viz",
-                       "noisyvis.analysis", "noisyvis.dashboard.components")
+                       "noisyvis.analysis.graph_stats", "noisyvis.dashboard.components")
 
 
 def body_hash(path):

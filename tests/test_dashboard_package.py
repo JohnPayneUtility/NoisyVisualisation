@@ -3521,6 +3521,16 @@ MODULE_RENAMES = {
     "noisyvis.dashboard.DashboardHelpers": "noisyvis.dashboard.helpers",
 }
 
+# `dataio.transformers` is split rather than moved (plan §6): its misjudgement analysis goes to
+# `analysis.misjudgements`, the rest to `dashboard.tables`. These names override MODULE_RENAMES.
+NAME_RENAMES = {
+    ("noisyvis.dataio.transformers", name): "noisyvis.analysis.misjudgements"
+    for name in ("_compute_n_misjudgements", "increasing_noise_step_indices",
+                 "comparison_misjudgement_step_indices", "constraint_misjudgement_step_indices",
+                 "_compute_n_increasing_noise", "_compute_n_comparison_misjudgements",
+                 "_compute_n_constraint_misjudgements")
+}
+
 # The only imports Stage 11 removes: the seven wildcards. Every other existing explicit import is
 # preserved, including the ones that are already unused (amendment A1).
 REMOVED_IMPORTS = (
@@ -4505,6 +4515,8 @@ def test_import_surface_pinned(app_probe):
 
     def rename(statement):
         kind, module, *rest = statement
+        if kind == "from" and (module, rest[0]) in NAME_RENAMES:
+            return tuple([kind, NAME_RENAMES[(module, rest[0])], *rest])
         return tuple([kind, MODULE_RENAMES.get(module, module), *rest])
 
     expected = ({rename(statement) for statements in IMPORT_SURFACE["statements"].values()
