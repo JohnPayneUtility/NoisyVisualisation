@@ -26,7 +26,7 @@ from .layout import create_layout, TAB_STYLE, TAB_SELECTED_STYLE, _build_schemat
 from .layout.stores import LON_TABLE_SELECTED_PID_STORE
 
 # Visualization module imports
-from ..visualization import (
+from ..viz import (
     parse_callback_inputs,
     PlotConfig,
     generate_run_summary_string,

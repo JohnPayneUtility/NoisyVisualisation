@@ -25,7 +25,7 @@ from .styles import (
     FULL_WIDTH_INLINE_STYLE,
     MONOSPACE_STYLE,
 )
-from ...visualization import (
+from ...viz import (
     LON_SCATTER_AXIS_OPTIONS,
     LON_SCATTER_DEFAULT_X_AXIS,
     LON_SCATTER_DEFAULT_Y_AXIS,
