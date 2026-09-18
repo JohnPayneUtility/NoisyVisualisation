@@ -271,7 +271,7 @@ docker exec -w /workspace -e PYTHONPATH=/workspace/tests/.deps evovis-runner-1 \
 | 11-E (instance + data extraction) | Stage-11 gate |
 | 11-F1..F6 (one callback group each) | Stage-11 gate; F3 also fast/targeted, F5 also the heavy test |
 | 11-I (`app.py`, Dashboard.py removed, compose retargeted) | Everything, plus the runtime acceptance; `ALLOW_PRE_LOCATIONS` (dashboard) goes to False, `ALLOW_PRE_MLFLOW_LOCATIONS` stays True until 11-J |
-| 11-J (MLflow app renamed, `MLRUNS_DIR`) | Stage-11 gate plus the runtime acceptance |
+| 11-J (MLflow app renamed, `MLRUNS_DIR`) | Stage-11 gate plus the runtime acceptance; `ALLOW_PRE_MLFLOW_LOCATIONS` goes to False, so no PRE location is accepted anywhere |
 | 11-final | Full expensive gate, focused suite, full suite twice |
 
 **Re-capturing the frozen values** (only ever from PRE_STAGE_11, and only if the runner's Python

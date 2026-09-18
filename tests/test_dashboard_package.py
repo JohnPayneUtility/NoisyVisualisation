@@ -41,8 +41,8 @@ warehouse is never opened. The knapsack PID is a real instance, so the LON half 
 for real. `PYTHONHASHSEED` is pinned to 0 for the probe subprocess only, as in test_viz_package.
 
 Locations were accepted at their PRE or their intended POST module while `ALLOW_PRE_LOCATIONS` was
-True, exactly as the Stage-10 harness did. Checkpoint 11-I tightened the dashboard side to POST only;
-the MLflow app keeps its own `ALLOW_PRE_MLFLOW_LOCATIONS` until 11-J.
+True, exactly as the Stage-10 harness did. Checkpoint 11-I tightened the dashboard side to POST only
+and 11-J the MLflow app (`ALLOW_PRE_MLFLOW_LOCATIONS`): only the final Stage-11 locations are accepted.
 """
 
 from __future__ import annotations
@@ -64,8 +64,8 @@ PRE_STAGE_11_COMMIT = "fa8d250c65fb9b778a18262f165967476f824f98"
 
 # The dashboard side (Dashboard.py, DashboardHelpers.py, dataio/): final locations only from 11-I.
 ALLOW_PRE_LOCATIONS = False
-# The MLflow browser app (app/ -> mlflow_app/): checkpoint 11-J sets this to False.
-ALLOW_PRE_MLFLOW_LOCATIONS = True
+# The MLflow browser app (app/ -> mlflow_app/): final locations only from 11-J.
+ALLOW_PRE_MLFLOW_LOCATIONS = False
 
 PKG = WORKSPACE / "src" / "noisyvis"
 INVENTORY_PATH = HARNESS_DIR / "dashboard_inventory.py"
@@ -3556,16 +3556,18 @@ WILDCARD_REPLACEMENTS = {
 ALLOWED_CHANGES = {
     ("dataio/__init__.py", "doc|"): "the package docstring becomes dashboard/data.py's",
     ("dataio/transformers.py", "doc|"): "the module docstring follows the split",
-    ("app/pages/mlflow_browser.py", "cb|..tracking-uri.children...experiments-table-wrap.children.."):
-        "parents[4] is replaced by results.paths.MLRUNS_DIR (plan §9)",
 }
 
 # `dataio.__all__` is the one structural deletion: a package export list, with no consumer, for a
 # package that Stage 11 dissolves.
 STRUCTURAL_DELETIONS = (("dataio/__init__.py", "assign|__all__"),)
 
-# Files allowed to anchor a path by counting parents. `mlflow_browser.py` leaves this set at 11-J.
-PARENTS_ANCHORS = ("results/paths.py", "app/pages/mlflow_browser.py")
+# The MLflow page's one new module global: plan §9 imports `results.paths.MLRUNS_DIR`. Its one body
+# change is inverted exactly by the inventory's T4 (`invert_mlruns_dir`), not skipped.
+PAGE_GLOBALS_ADDED = ["MLRUNS_DIR"]
+
+# Files allowed to anchor a path by counting parents. `mlflow_browser.py` left this set at 11-J.
+PARENTS_ANCHORS = ("results/paths.py",)
 
 # The one orchestrator: the outputs that must stay on a single callback over the shared graph (I-10c).
 ORCHESTRATOR_OUTPUTS = ("trajectory-plot.figure", "run-print-info.children",
@@ -4659,10 +4661,14 @@ def test_mlflow_app_contract(mlflow_probe):
         else (MLFLOW_PAGE["post"],))
 
     for field in ("index_status", "registry", "dependencies", "dependencies_digest",
-                  "layout_digest", "page_globals"):
+                  "layout_digest"):
         assert observed[field] == MLFLOW[field], (
             f"{field} changed\n    expected {MLFLOW[field]!r}\n    observed {observed[field]!r}"
         )
+    expected_globals = sorted(MLFLOW["page_globals"] + PAGE_GLOBALS_ADDED)
+    assert observed["page_globals"] == expected_globals, (
+        f"page_globals changed\n    expected {expected_globals!r}\n    observed {observed['page_globals']!r}"
+    )
 
     # The pages folder follows the package, so only its prefix may change.
     assert observed["config"]["use_pages"] is True

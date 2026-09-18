@@ -11,5 +11,9 @@ app.layout = html.Div([
     dash.page_container,
 ])
 
-if __name__ == "__main__":
+def main():
     app.run(host="0.0.0.0", port=8051, debug=True, use_reloader=False)
+
+
+if __name__ == "__main__":
+    main()

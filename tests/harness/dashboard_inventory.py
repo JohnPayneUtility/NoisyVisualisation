@@ -30,6 +30,8 @@ and one is reconstructed:
 
     T3  `if __name__ == "__main__": app.run(...)` becoming `def main(): app.run(...)` plus a guard
         that does nothing but call `main()`
+    T4  the MLflow page's `render_experiments` using `MLRUNS_DIR` instead of counting `parents[4]`
+        (`invert_mlruns_dir`)
 
 Nothing else may differ. Module docstrings are recorded separately: `DashboardHelpers`' docstring is
 pinned, because A1 keeps that file's header verbatim; the `dataio` ones may change with the package's
@@ -86,6 +88,17 @@ RENAMES = {
 }
 
 MAIN_TEST = "__name__ == '__main__'"
+
+# T4 (plan §9): in the moved MLflow page, `render_experiments` stops counting parents and uses
+# `results.paths.MLRUNS_DIR`. Only this function, only at its final location, and only this exact form.
+T4_MODULE = "mlflow_app/pages/mlflow_browser.py"
+T4_KEY = ("def", "render_experiments")
+T4_NEW = 'mlflow.set_tracking_uri(f"file:{MLRUNS_DIR}")'
+T4_OLD = (
+    "repo_root = Path(__file__).resolve().parents[4]",
+    'mlruns_dir = repo_root / "data" / "mlruns"',
+    'mlflow.set_tracking_uri(f"file:{mlruns_dir}")',
+)
 
 
 # --------------------------------------------------------------------------- digests
@@ -315,6 +328,7 @@ def locate(pkg: Path, pre_file: str, frozen_entries: list, constants) -> list:
         if len(matches) == 1:
             module, package, node = matches[0]
             node = relevel(node, package, pre_package)
+            node = invert_mlruns_dir(key, module, node)
             record["found_in"] = module
             record["name"] = getattr(node, "name", None)
             if key[0] == "cb" and key[1] in RENAMES:
@@ -326,6 +340,24 @@ def locate(pkg: Path, pre_file: str, frozen_entries: list, constants) -> list:
             record["found_in"] = sorted(module for module, _, _ in matches)
         report.append(record)
     return report
+
+
+def invert_mlruns_dir(key, module, node):
+    """T4: restore the historical `parents[4]` derivation in the moved `render_experiments`.
+
+    Applies only to that function at its final module, and only when its body holds exactly one
+    `mlflow.set_tracking_uri(f"file:{MLRUNS_DIR}")` statement. That statement is replaced by the three
+    historical ones; anything else about the function is left as it stands and so must hash equal.
+    """
+    if key != T4_KEY or module != T4_MODULE:
+        return node
+    new = ast.dump(ast.parse(T4_NEW).body[0])
+    at = [i for i, stmt in enumerate(node.body) if ast.dump(stmt) == new]
+    if len(at) != 1:
+        return node
+    node = copy.deepcopy(node)
+    node.body[at[0]:at[0] + 1] = [ast.parse(stmt).body[0] for stmt in T4_OLD]
+    return ast.fix_missing_locations(node)
 
 
 def _guard_calls_main(guard, module) -> bool:

@@ -8,6 +8,7 @@ import mlflow
 
 from noisyvis.results.mlflow_query import list_experiments_df
 from noisyvis.results.mlflow_query import list_runs_df, select_present_columns  # <-- new imports
+from noisyvis.results.paths import MLRUNS_DIR
 
 dash.register_page(__name__, path="/experiments", name="Experiments")
 
@@ -63,10 +64,8 @@ RUN_COLS_DEFAULT = [
     Input("tracking-uri", "id"),   # fires once when page loads
 )
 def render_experiments(_):
-    # Ensure your file-store tracking URI (adjust depth if your path is different)
-    repo_root = Path(__file__).resolve().parents[4]
-    mlruns_dir = repo_root / "data" / "mlruns"
-    mlflow.set_tracking_uri(f"file:{mlruns_dir}")
+    # The file-store tracking URI: the project's canonical mlruns directory
+    mlflow.set_tracking_uri(f"file:{MLRUNS_DIR}")
     tracking_uri = mlflow.get_tracking_uri()
 
     df = list_experiments_df()
