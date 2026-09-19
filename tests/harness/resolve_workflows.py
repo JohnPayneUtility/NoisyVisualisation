@@ -2,8 +2,9 @@
 
 Child process of `test_config_workflows.py`. Like `resolve_in_runner.py`, it runs with its cwd in a
 harness temp root (knapsack loaders resolve instances through NOISYVIS_ROOT), puts /workspace first
-on sys.path so `run_helpers.*` and `src.*` config targets resolve exactly as they do for
-`python run.py`, and installs the write fence.
+on sys.path exactly as `python run.py` has it, and installs the write fence. After resolving, it
+reports which compatibility modules got loaded; since Stage 12 the config targets are canonical
+`noisyvis.*` paths and none may be.
 
 A resolver is named by a spec:
     run.py:resolve_config_dependencies          a function in a run script, loaded with a

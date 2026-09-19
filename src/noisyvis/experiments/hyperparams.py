@@ -1,8 +1,8 @@
 """Hyperparameter helpers referenced by Hydra configs and the config resolvers.
 
-Moved verbatim from the repository-root `run_helpers.py` in Stage 7. The root `run_helpers.py` is
-now a temporary forwarder that serves only the config dotted paths `_target_: run_helpers.*`
-until Stage 12 rewrites them; Python code imports this module directly.
+Moved verbatim from the repository-root `run_helpers.py` in Stage 7. Stage 12 rewrote the config
+dotted paths to `noisyvis.experiments.hyperparams.*` and deleted the root forwarder; configs and
+Python code both reach this module directly.
 """
 
 import numpy as np

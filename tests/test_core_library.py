@@ -14,8 +14,8 @@ that could cause, but not these:
    definition, whichever copy survives the dedupe.
 4. Every configured algorithm target must resolve to its canonical module's object, whichever spelling
    (`src.algorithms.*` or `noisyvis.algorithms.*`) the config uses, and the canonical modules must keep
-   the frozen namespace. Until Stage 12 Checkpoint C deletes them, a separate temporary test and probe
-   also pin that the two `src.algorithms.*` forwarders re-export exactly those canonical objects.
+   the frozen namespace. (Until Stage 12 deleted them, a temporary test also pinned that the two
+   `src.algorithms.*` forwarders re-exported exactly those canonical objects.)
 5. The LON, CoLON and compression entry points must move without any edit to their bodies.
 
 Every test is location-agnostic: modules are found through the objects runtime code actually uses,
@@ -120,7 +120,7 @@ FORWARDER_UNRESOLVABLE_TARGETS = {
 
 # ------------------------------------------------------------------------------ the probe
 
-# Shared by the main probe and the temporary forwarder probe. It imports no compatibility module.
+# The probe's shared setup. It imports no compatibility module.
 _PROBE_PRELUDE = """
 import ast
 import hashlib
@@ -191,7 +191,7 @@ def config_values(key):
     return found
 """
 
-# The main probe never imports a compatibility module, so it keeps working once Stage 12 deletes them.
+# The main probe never imports a compatibility module; Stage 12 deleted them.
 _PROBE_MAIN = """
 # Every current consumer, imported the way runtime code imports it.
 import noisyvis.problems
@@ -305,50 +305,6 @@ report["lon"] = {name: describe(getattr(lon_runner, name, None))
 print(json.dumps(report))
 """
 
-# TEMPORARY (Stage 12): the `src.algorithms.*` forwarders, imported only here. Deleted with the
-# forwarders in Stage 12 Checkpoint C.
-_FORWARDER_PROBE_BODY = """
-import noisyvis.algorithms
-
-package = sys.modules["noisyvis.algorithms"]
-forwarders = {name: importlib.import_module("src.algorithms." + name) for name in FORWARDER_ANCHOR}
-
-targets = config_values("_target_")
-report = {}
-for name, forwarder in forwarders.items():
-    anchor = FORWARDER_ANCHOR[name]
-    canonical = sys.modules[getattr(forwarder, anchor).__module__]
-    public = sorted(n for n in vars(forwarder) if not n.startswith("_"))
-    prefix = "src.algorithms." + name + "."
-    canonical_prefix = legacy.LEGACY_TO_CANONICAL[prefix]
-    # Every configured target of this family, in its legacy spelling, whichever spelling the config uses.
-    mine = {where: [prefix + t[len(canonical_prefix):] for t in map(legacy.canonicalise, values)
-                    if t.startswith(canonical_prefix)]
-            for where, values in targets.items()}
-    resolution = {}
-    for target in sorted({t for values in mine.values() for t in values}):
-        attribute = target.rsplit(".", 1)[1]
-        try:
-            obj = _locate(target)
-        except Exception as exc:
-            resolution[target] = "unresolvable: " + type(exc).__name__
-            continue
-        resolution[target] = ("canonical" if obj is getattr(canonical, attribute, object())
-                              and obj is getattr(forwarder, attribute, object()) else "different object")
-    report[name] = {
-        "file": forwarder.__file__,
-        "canonical_module": canonical.__name__,
-        "public": public,
-        "canonical_public": sorted(n for n in vars(canonical) if not n.startswith("_")),
-        "not_identical": [n for n in public if getattr(forwarder, n) is not getattr(canonical, n, object())],
-        "package_exports_canonical_anchor": getattr(package, anchor) is getattr(canonical, anchor),
-        "target_counts": {where: len(values) for where, values in mine.items()},
-        "resolution": resolution,
-    }
-
-print(json.dumps(report))
-"""
-
 _SUBSTITUTIONS = {
     "fence": str(HARNESS_DIR / "fence.py"),
     "legacy_paths": str(HARNESS_DIR.parent / "legacy_paths.py"),
@@ -357,7 +313,6 @@ _SUBSTITUTIONS = {
     "d4_names": sorted(D4_AST),
 }
 _PROBE = (_PROBE_PRELUDE + _PROBE_MAIN) % _SUBSTITUTIONS
-_FORWARDER_PROBE = (_PROBE_PRELUDE + _FORWARDER_PROBE_BODY) % _SUBSTITUTIONS
 
 
 def _run_probe(code: str, label: str) -> dict:
@@ -382,12 +337,6 @@ def _run_probe(code: str, label: str) -> dict:
 def probe() -> dict:
     """Run the main probe once; it imports no compatibility module."""
     return _run_probe(_PROBE, "core-library probe")
-
-
-@pytest.fixture(scope="module")
-def forwarder_probe() -> dict:
-    """TEMPORARY (Stage 12): the forwarder-only probe, deleted with the forwarders in Checkpoint C."""
-    return _run_probe(_FORWARDER_PROBE, "core-library forwarder probe")
 
 
 # ------------------------------------------------------------------------------ the tests
@@ -475,41 +424,6 @@ def test_algorithm_config_targets_resolve_to_canonical_objects(probe, forwarder)
     # The frozen literal keeps its historical spelling; B1 stays unresolvable under the canonical one.
     expected_unresolvable = {canonicalise(t) for t in FORWARDER_UNRESOLVABLE_TARGETS[forwarder]}
     assert unresolvable == expected_unresolvable, (
-        f"unexpected set of unresolvable config targets: {sorted(unresolvable)}"
-    )
-
-
-# TEMPORARY (Stage 12): deleted with the forwarders in Checkpoint C.
-@pytest.mark.parametrize("forwarder", sorted(FORWARDER_PUBLIC_NAMES))
-def test_algorithm_forwarder_preserves_namespace_and_identity(forwarder_probe, forwarder):
-    report = forwarder_probe[forwarder]
-
-    assert report["file"] == str(WORKSPACE / "src" / "src" / "algorithms" / f"{forwarder}.py")
-    assert report["canonical_module"].startswith("noisyvis.algorithms."), report["canonical_module"]
-    assert report["canonical_module"] != f"src.algorithms.{forwarder}"
-
-    expected = FORWARDER_PUBLIC_NAMES[forwarder]
-    assert set(report["public"]) == expected, (
-        f"src.algorithms.{forwarder} namespace changed:\n"
-        f"  missing: {sorted(expected - set(report['public']))}\n"
-        f"  added:   {sorted(set(report['public']) - expected)}"
-    )
-    assert set(report["canonical_public"]) == expected, (
-        f"{report['canonical_module']} public namespace differs from the frozen forwarder namespace"
-    )
-    assert not report["not_identical"], (
-        f"src.algorithms.{forwarder} re-exports different objects for: {report['not_identical']}"
-    )
-    assert report["package_exports_canonical_anchor"], (
-        f"noisyvis.algorithms.{FORWARDER_ANCHOR[forwarder]} is not the canonical module's class"
-    )
-
-    assert report["target_counts"]["configs"] > 0, "no config targets found; the walk looks broken"
-    assert report["target_counts"]["tests/configs"] > 0, "no test-config targets found; the walk looks broken"
-    unresolvable = {t for t, outcome in report["resolution"].items() if outcome.startswith("unresolvable")}
-    different = {t for t, outcome in report["resolution"].items() if outcome == "different object"}
-    assert not different, f"config targets resolve to non-canonical objects: {sorted(different)}"
-    assert unresolvable == FORWARDER_UNRESOLVABLE_TARGETS[forwarder], (
         f"unexpected set of unresolvable config targets: {sorted(unresolvable)}"
     )
 

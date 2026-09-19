@@ -12,8 +12,8 @@ only checks that a name resolves. These tests pin what they cannot see:
  3. every global each of the 24 evaluators reads resolves to the same helper, module or shared object;
  4. every evaluator produces the same output, log records and RNG consumption on fixed inputs;
  5. every configured problem path resolves to its canonical module's object, whichever spelling
-    (`src.problems.*` or `noisyvis.problems.*`) the config uses; until Stage 12 Checkpoint C deletes
-    them, a separate temporary probe also pins the two `src.problems.*` forwarders' namespace and identity;
+    (`src.problems.*` or `noisyvis.problems.*`) the config uses (until Stage 12 deleted them, a
+    temporary probe also pinned the two `src.problems.*` forwarders' namespace and identity);
  6. the knapsack loader output for every instance, plus the stats/correlation helpers;
  7. the `knap_violation` behavioural divergence (D7) between the module-level and nested copies;
  8. the two `mean_weight` copies: equivalent, but distinct definitions;
@@ -980,7 +980,7 @@ ALLOWED_LOCATIONS = {
 
 # ------------------------------------------------------------------------------ the probe
 
-# Shared by the main probe and the temporary forwarder probe. It imports no compatibility module.
+# The probe's shared setup. It imports no compatibility module.
 _PROBE_PRELUDE = r'''
 import ast
 import builtins
@@ -1089,7 +1089,7 @@ def config_values(key):
     return found
 '''
 
-# The main probe never imports a compatibility module, so it keeps working once Stage 12 deletes them.
+# The main probe never imports a compatibility module; Stage 12 deleted them.
 _PROBE_MAIN = r'''
 # Runtime code reaches the problems namespace through the runners' imports.
 import noisyvis
@@ -1555,51 +1555,6 @@ print(json.dumps(report))
 
 _PROBE = _PROBE_PRELUDE + _PROBE_MAIN
 
-# TEMPORARY (Stage 12): the `src.problems.*` forwarders, imported only here. Deleted with the
-# forwarders in Stage 12 Checkpoint C.
-_FORWARDER_PROBE_BODY = r'''
-import noisyvis.experiments.lon_runner as lon_runner
-import noisyvis.problems
-
-problems = sys.modules["noisyvis.problems"]
-FORWARDERS = {"ProblemScripts": ("load_problem_KP", "_target_"),
-              "ViolationFunctions": ("knap_violation", "violation_fn")}
-forwarders = {}
-for name, (anchor, key) in FORWARDERS.items():
-    forwarder = importlib.import_module("src.problems." + name)
-    canonical = sys.modules[getattr(forwarder, anchor).__module__]
-    public = sorted(n for n in vars(forwarder) if not n.startswith("_"))
-    prefix = "src.problems." + name + "."
-    canonical_prefix = legacy.LEGACY_TO_CANONICAL[prefix]
-    # Every configured value of this family, in its legacy spelling, whichever spelling the config uses.
-    values = {where: [prefix + v[len(canonical_prefix):] for v in map(legacy.canonicalise, found)
-                      if v.startswith(canonical_prefix)]
-              for where, found in config_values(key).items()}
-    resolution = {}
-    for value in sorted({v for found in values.values() for v in found}):
-        attribute = value.rsplit(".", 1)[1]
-        try:
-            obj = _locate(value) if key == "_target_" else lon_runner._import_from_dotted(value)
-        except Exception as exc:  # noqa: BLE001
-            resolution[value] = "unresolvable: " + type(exc).__name__
-            continue
-        resolution[value] = ("canonical" if obj is getattr(canonical, attribute, object())
-                             and obj is getattr(forwarder, attribute, object()) else "different object")
-    forwarders[name] = {
-        "file": str(Path(forwarder.__file__).resolve().relative_to(SOURCE_ROOT)),
-        "canonical_module": canonical.__name__,
-        "public": public,
-        "canonical_public": sorted(n for n in vars(canonical) if not n.startswith("_")),
-        "not_identical": [n for n in public if getattr(forwarder, n) is not getattr(canonical, n, object())],
-        "package_exports_identical": {n: getattr(problems, n, None) is getattr(forwarder, n) for n in public},
-        "value_counts": {where: len(found) for where, found in values.items()},
-        "resolution": resolution,
-    }
-
-print(json.dumps(forwarders))
-'''
-
-
 def _substitute(template: str, source_root: Path) -> str:
     replacements = {
         "__SOURCE_ROOT__": repr(str(source_root)),
@@ -1617,11 +1572,6 @@ def _substitute(template: str, source_root: Path) -> str:
 def build_probe(source_root: Path) -> str:
     """The probe for one source tree. The tests only ever pass the workspace."""
     return _substitute(_PROBE, source_root)
-
-
-def build_forwarder_probe(source_root: Path) -> str:
-    """TEMPORARY (Stage 12): the forwarder-only probe, deleted with the forwarders in Checkpoint C."""
-    return _substitute(_PROBE_PRELUDE + _FORWARDER_PROBE_BODY, source_root)
 
 
 @pytest.fixture(scope="module")
@@ -1644,25 +1594,6 @@ def probe() -> dict:
 
     assert report["meta"]["noisyvis_file"].startswith(str(WORKSPACE / "src" / "noisyvis")), report["meta"]
     return report
-
-
-@pytest.fixture(scope="module")
-def forwarder_probe() -> dict:
-    """TEMPORARY (Stage 12): run the forwarder-only probe, deleted with the forwarders in Checkpoint C."""
-    root = make_temp_root()
-    try:
-        completed = subprocess.run(
-            [sys.executable, "-c", build_forwarder_probe(WORKSPACE)],
-            cwd=str(root),
-            env=child_env(root),
-            capture_output=True,
-            text=True,
-            timeout=900,
-        )
-        assert completed.returncode == 0, f"problems forwarder probe failed:\n{completed.stderr[-4000:]}"
-        return json.loads(completed.stdout.strip().splitlines()[-1])
-    finally:
-        shutil.rmtree(root, ignore_errors=True)
 
 
 def _mismatches(observed: dict, expected: dict) -> list:
@@ -1758,34 +1689,6 @@ def test_problem_config_paths_resolve_to_canonical_objects(probe, forwarder):
         f"  missing: {sorted(expected - set(report['canonical_public']))}\n"
         f"  added:   {sorted(set(report['canonical_public']) - expected)}"
     )
-    assert all(report["package_exports_identical"].values()), (
-        f"noisyvis.problems does not export the canonical objects: {report['package_exports_identical']}"
-    )
-
-    assert report["value_counts"]["configs"] > 0, "no config values found; the walk looks broken"
-    assert report["value_counts"]["tests/configs"] > 0, "no test-config values found; the walk looks broken"
-    assert report["resolution"] and set(report["resolution"].values()) == {"canonical"}, report["resolution"]
-
-
-# TEMPORARY (Stage 12): deleted with the forwarders in Checkpoint C.
-@pytest.mark.parametrize("forwarder", ["ProblemScripts", "ViolationFunctions"])
-def test_problem_forwarder_preserves_namespace_and_identity(forwarder_probe, forwarder):
-    report = forwarder_probe[forwarder]
-
-    assert report["file"] == f"src/src/problems/{forwarder}.py"
-    assert report["canonical_module"].startswith("noisyvis.problems."), report["canonical_module"]
-    assert report["canonical_module"] != f"src.problems.{forwarder}"
-
-    expected = FORWARDER_PUBLIC_NAMES[forwarder]
-    assert set(report["public"]) == expected, (
-        f"src.problems.{forwarder} namespace changed:\n"
-        f"  missing: {sorted(expected - set(report['public']))}\n"
-        f"  added:   {sorted(set(report['public']) - expected)}"
-    )
-    assert set(report["canonical_public"]) == expected, (
-        f"{report['canonical_module']} public namespace differs from the frozen forwarder namespace"
-    )
-    assert not report["not_identical"], f"re-exports different objects for: {report['not_identical']}"
     assert all(report["package_exports_identical"].values()), (
         f"noisyvis.problems does not export the canonical objects: {report['package_exports_identical']}"
     )

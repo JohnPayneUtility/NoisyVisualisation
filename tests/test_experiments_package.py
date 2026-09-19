@@ -1,17 +1,19 @@
-"""Contracts of the `noisyvis.experiments` package and the root `run_helpers` forwarder (Stage 7).
+"""Contracts of the `noisyvis.experiments` package and the removed compatibility modules (Stages 7, 12).
 
-Stage 7 moved `run_helpers.py` to `noisyvis.experiments.hyperparams`. The root `run_helpers.py`
-stays until Stage 12 as a forwarder, only so the Hydra config dotted paths `_target_: run_helpers.*`
-keep resolving. These tests pin three things:
+Stage 7 moved `run_helpers.py` to `noisyvis.experiments.hyperparams` and left the root
+`run_helpers.py` as a forwarder for the Hydra config dotted paths `_target_: run_helpers.*`. Stage 12
+rewrote those paths and deleted the forwarder, together with the `src/src/` compatibility package.
+These tests pin four things:
 
 1. `hyperparams` exposes exactly the namespace the original module had, and every configured
    hyperparams target resolves to the `hyperparams` object, whichever spelling (`run_helpers.*` or
-   `noisyvis.experiments.hyperparams.*`) the config uses. Until Stage 12 Checkpoint C deletes it, a
-   separate temporary test also pins that the forwarder re-exports that namespace as the *same objects*.
-2. No Python source imports the forwarder, which is the precondition for deleting it in Stage 12.
+   `noisyvis.experiments.hyperparams.*`) the config uses.
+2. No Python source imports the root `run_helpers`.
 3. Importing any `noisyvis.experiments` module has no side effects: it sets no MLflow tracking URI
    (a workflow must never inherit another's, R24) and creates no files. New modules added to the
    package are covered automatically.
+4. The compatibility modules Stage 12 removed stay removed: none of them is importable from a
+   runner-like `sys.path`, and neither `src/src/` nor the root `run_helpers.py` exists.
 
 Imports of the package happen in subprocesses, so the pytest process never imports the science
 packages.
@@ -69,8 +71,8 @@ def _run_child(code: str, *, workspace_on_path: bool) -> dict:
         shutil.rmtree(root, ignore_errors=True)
 
 
-# Shared by both probes: every configured `_target_` of the hyperparams family, by canonical spelling,
-# whichever spelling the config uses. It imports no compatibility module.
+# Every configured `_target_` of the hyperparams family, by canonical spelling, whichever spelling the
+# config uses. It imports no compatibility module.
 _TARGETS_PRELUDE = """
 import importlib.util
 import json
@@ -131,34 +133,6 @@ print(json.dumps({
 }))
 """
 
-# TEMPORARY (Stage 12): the root forwarder, imported only here. Deleted with it in Checkpoint C.
-_FORWARDER_PROBE = _TARGETS_PRELUDE + """
-import importlib
-
-import noisyvis.experiments.hyperparams as hyperparams
-
-# By name, so the Stage 12 source grep for forwarder imports stays empty.
-run_helpers = importlib.import_module("run_helpers")
-
-# Every configured target of the family, in its legacy spelling, whichever spelling the config uses.
-config_targets = {where: [LEGACY_PREFIX + t[len(CANONICAL_PREFIX):] for t in ts]
-                  for where, ts in canonical_config_targets.items()}
-
-names = public(run_helpers)
-resolution = {}
-for target in sorted({t for ts in config_targets.values() for t in ts}):
-    resolution[target] = _locate(target) is getattr(hyperparams, target.split(".", 1)[1])
-
-print(json.dumps({
-    "forwarder_file": run_helpers.__file__,
-    "forwarder_names": names,
-    "hyperparams_names": public(hyperparams),
-    "identical": {name: getattr(run_helpers, name) is getattr(hyperparams, name) for name in names},
-    "target_counts": {where: len(ts) for where, ts in config_targets.items()},
-    "target_resolves_to_hyperparams_object": resolution,
-}))
-"""
-
 
 def test_hyperparams_config_targets_resolve_to_canonical_objects():
     """Permanent: every configured hyperparams target resolves in noisyvis.experiments.hyperparams,
@@ -171,21 +145,6 @@ def test_hyperparams_config_targets_resolve_to_canonical_objects():
 
     assert report["target_counts"]["configs"] > 0, "no hyperparams config targets found; walk broken"
     unresolved = [t for t, same in report["target_resolves_to_hyperparams_object"].items() if same is not True]
-    assert not unresolved, f"config targets not resolving to the hyperparams objects: {unresolved}"
-
-
-# TEMPORARY (Stage 12): deleted with the root forwarder in Checkpoint C.
-def test_run_helpers_forwarder_preserves_namespace_and_identity():
-    report = _run_child(_FORWARDER_PROBE, workspace_on_path=True)
-
-    assert report["forwarder_file"] == str(WORKSPACE / "run_helpers.py")
-    assert set(report["hyperparams_names"]) == EXPECTED_PUBLIC_NAMES
-    assert set(report["forwarder_names"]) == EXPECTED_PUBLIC_NAMES
-    not_identical = [name for name, same in report["identical"].items() if not same]
-    assert not not_identical, f"run_helpers re-exports different objects for: {not_identical}"
-
-    assert report["target_counts"]["configs"] > 0, "no run_helpers.* config targets found; walk broken"
-    unresolved = [t for t, same in report["target_resolves_to_hyperparams_object"].items() if not same]
     assert not unresolved, f"config targets not resolving to the hyperparams objects: {unresolved}"
 
 
@@ -217,6 +176,70 @@ def test_no_python_source_imports_root_run_helpers():
     assert not offenders, (
         "Python source imports the root run_helpers forwarder, which exists only for Hydra config "
         f"dotted paths until Stage 12; import noisyvis.experiments.hyperparams instead: {offenders}"
+    )
+
+
+# The compatibility modules Stage 12 removed: the `src/src/` forwarders and the root forwarder.
+REMOVED_COMPAT_MODULES = (
+    "src.algorithms.Algorithms",
+    "src.algorithms.MOAlgorithms",
+    "src.problems.ProblemScripts",
+    "src.problems.ViolationFunctions",
+    "run_helpers",
+)
+
+_REMOVED_MODULES_PROBE = """
+import importlib
+import json
+import sys
+
+import noisyvis
+
+outcomes = {}
+for name in %(modules)r:
+    try:
+        module = importlib.import_module(name)
+    except ModuleNotFoundError:
+        outcomes[name] = "ModuleNotFoundError"
+    except Exception as exc:  # noqa: BLE001
+        outcomes[name] = f"{type(exc).__name__}: {exc}"
+    else:
+        outcomes[name] = f"imported from {getattr(module, '__file__', None)}"
+
+try:
+    import src
+except ModuleNotFoundError:
+    bare_src = {"imported": False}
+else:
+    bare_src = {"imported": True, "file": getattr(src, "__file__", None),
+                "path": [str(entry) for entry in getattr(src, "__path__", [])]}
+
+print(json.dumps({"sys_path_0": sys.path[0], "noisyvis_file": noisyvis.__file__,
+                  "outcomes": outcomes, "bare_src": bare_src}))
+""" % {"modules": REMOVED_COMPAT_MODULES}
+
+
+def test_compatibility_shims_removed():
+    """Stage 12 deleted the compatibility bridge, and nothing may make it importable again.
+
+    The child is runner-like: `/workspace` first on sys.path (the run scripts' own directory) plus
+    the editable install's `/workspace/src`. A stray `__pycache__/run_helpers.*.pyc` cannot bring the
+    root module back, because Python never imports a cached bytecode file without its source.
+    A bare `import src` may still succeed, but only as a namespace package that forwards to nothing.
+    """
+    assert not (WORKSPACE / "src" / "src").exists(), "the src/src compatibility package still exists"
+    assert not (WORKSPACE / "run_helpers.py").exists(), "the root run_helpers.py forwarder still exists"
+
+    report = _run_child(_REMOVED_MODULES_PROBE, workspace_on_path=True)
+
+    assert report["sys_path_0"] == str(WORKSPACE), report["sys_path_0"]
+    assert report["noisyvis_file"] == str(WORKSPACE / "src" / "noisyvis" / "__init__.py"), report["noisyvis_file"]
+    importable = {name: outcome for name, outcome in report["outcomes"].items() if outcome != "ModuleNotFoundError"}
+    assert set(report["outcomes"]) == set(REMOVED_COMPAT_MODULES)
+    assert not importable, f"removed compatibility modules are importable again: {importable}"
+    bare_src = report["bare_src"]
+    assert not bare_src["imported"] or bare_src["file"] is None, (
+        f"`src` is a regular package again, which would be a new compatibility bridge: {bare_src}"
     )
 
 
