@@ -10,7 +10,7 @@ organized by purpose:
 
 Quick Start:
     # Using the registry (recommended for dynamic dispatch)
-    from src.plotting import get_pareto_plot, create_pareto_plot
+    from noisyvis.viz.plots import get_pareto_plot, create_pareto_plot
 
     plot_func = get_pareto_plot('Basic')
     fig = plot_func(frontdata, series_labels)
@@ -19,8 +19,8 @@ Quick Start:
     fig = create_pareto_plot('Basic', frontdata, series_labels)
 
     # Direct imports for static usage
-    from src.plotting.pareto import plot_basic, plot_subplots
-    from src.plotting.performance import plot_line, plot_box
+    from noisyvis.viz.plots.pareto import plot_basic, plot_subplots
+    from noisyvis.viz.plots.performance import plot_line, plot_box
 
 """
 

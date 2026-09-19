@@ -2,8 +2,8 @@
 Common utilities shared across visualization and plotting modules.
 
 This package contains pure functions and utilities that are used by both
-the 2D plotting module (src/plotting) and the 3D visualization module
-(src/visualization).
+the 2D plotting package (noisyvis.viz.plots) and the 3D visualization modules
+(noisyvis.viz).
 """
 
 from .distance import (

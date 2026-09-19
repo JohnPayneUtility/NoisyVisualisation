@@ -1,5 +1,9 @@
 # docker/
 
+The container topology, the Compose commands, the editable-install entrypoint and the env-lock
+and recovery procedure are documented in the root [README.md](../README.md), under "Runtime /
+container architecture", "Starting and managing the services" and "Environment lock and recovery".
+
 ## Stage 12: config dotted paths now name `noisyvis.*` modules
 
 Stage 12 of the reorganisation rewrote every Hydra config dotted path from the temporary

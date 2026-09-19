@@ -5,7 +5,7 @@ This module provides a registry pattern for looking up plot functions
 by name, eliminating long if/elif chains in callbacks.
 
 Usage:
-    from src.plotting import get_pareto_plot, get_performance_plot
+    from noisyvis.viz.plots import get_pareto_plot, get_performance_plot
 
     # In callback
     plot_func = get_pareto_plot(plot_type)
@@ -42,7 +42,7 @@ from .performance import (
 # Pareto Plot Registry
 # ==============================================================================
 
-# Map plot type strings (matching dropdown values in Dashboard.py) to functions
+# Map plot type strings (matching the Pareto dropdown values in noisyvis.dashboard.layout.components) to functions
 PARETO_PLOTS = {
     'Basic': plot_basic,
     'Subplots': plot_subplots,
