@@ -29,8 +29,12 @@ import yaml
 
 from harness.run_isolated import HARNESS_DIR, WORKSPACE, child_env, make_temp_root
 from known_broken_configs import KNOWN_BROKEN
+from legacy_paths import LEGACY_TO_CANONICAL, canonicalise, canonicalise_tree
 
 CONFIGS_DIR = WORKSPACE / "configs"
+
+MO_ALGORITHMS_PREFIX = LEGACY_TO_CANONICAL["src.algorithms.MOAlgorithms."]
+SO_ALGORITHMS_PREFIX = LEGACY_TO_CANONICAL["src.algorithms.Algorithms."]
 
 # run_backup.py is excluded: it is a Tier A deletion in Stage 2.
 RUNNERS = {
@@ -73,17 +77,20 @@ def _classify(raw: dict, requests: list) -> list:
     Fragments under configs/defaults/ are not standalone configurations, so they are checked
     against every runner: each runner loads both dynamic namespaces (by star import, or through
     its noisyvis.experiments delegates), so a name that resolves in one must resolve in all.
+
+    Algorithm targets are classified by their canonical spelling (Stage 12), so a config routes to
+    the same runners whether it spells them `src.algorithms.*` or `noisyvis.algorithms.*`.
     """
-    targets = [value for kind, value in requests if kind == "target"]
+    targets = [canonicalise(value) for kind, value in requests if kind == "target"]
     has_violation = any(kind == "violation" for kind, _ in requests)
 
     if has_violation:
         return ["colon"]
     if isinstance(raw, dict) and "lon" in raw:
         return ["lon", "lon_parallel"]
-    if any("MOAlgorithms" in target for target in targets):
+    if any(target.startswith(MO_ALGORITHMS_PREFIX) for target in targets):
         return ["mo"]
-    if any("algorithms.Algorithms" in target for target in targets):
+    if any(target.startswith(SO_ALGORITHMS_PREFIX) for target in targets):
         return ["so"]
     return list(RUNNERS)
 
@@ -206,3 +213,40 @@ def test_corpus_was_actually_walked():
     assert len(COLLECTED) > 100, f"only {len(COLLECTED)} configs found under {CONFIGS_DIR}"
     total = sum(len(entry["requests"]) for entry in COLLECTED.values())
     assert total > 500, f"only {total} dotted paths/dynamic names collected; the walk looks broken"
+
+
+def test_runner_routing_is_path_neutral():
+    """Every config routes to the same runners under either dotted-path spelling (Stage 12).
+
+    Each config is classified as written, fully canonicalised, and fully spelled the legacy way. If
+    routing depended on the spelling, rewriting the configs would silently change which runners
+    exercise them, and this gate would test less without failing.
+    """
+    to_legacy = {canonical: legacy for legacy, canonical in LEGACY_TO_CANONICAL.items()}
+
+    def legacy_spelling(value):
+        for canonical, legacy in to_legacy.items():
+            if isinstance(value, str) and value.startswith(canonical):
+                return legacy + value[len(canonical):]
+        return value
+
+    routed = {}
+    changed = []
+    for path in _config_files():
+        raw = yaml.safe_load(path.read_text())
+        requests: list = []
+        _walk(raw, requests)
+        if not requests:
+            continue
+        config = str(path.relative_to(CONFIGS_DIR))
+        as_written = _classify(raw, requests)
+        canonical = _classify(raw, canonicalise_tree(requests))
+        legacy = _classify(raw, [(kind, legacy_spelling(value)) for kind, value in requests])
+        if not (as_written == canonical == legacy):
+            changed.append(f"{config}: as written {as_written}, canonical {canonical}, legacy {legacy}")
+        routed[config] = as_written
+
+    assert not changed, "runner routing depends on the dotted-path spelling:\n  " + "\n  ".join(changed)
+    assert routed == {config: entry["runners"] for config, entry in COLLECTED.items() if entry["requests"]}
+    # Both algorithm routes must actually occur, or the check above is vacuous.
+    assert ["mo"] in routed.values() and ["so"] in routed.values(), "no config routes to SO or MO"

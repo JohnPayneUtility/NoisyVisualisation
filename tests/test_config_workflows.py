@@ -31,6 +31,7 @@ import pytest
 from config_workflow_cases import build_cases
 from harness import canonical
 from harness.run_isolated import HARNESS_DIR, child_env, make_temp_root
+from legacy_paths import LEGACY_TO_CANONICAL, canonicalise_tree
 
 GOLDEN_PATH = Path(__file__).resolve().parent / "baselines" / "config_workflows.json"
 RECORD_ENV = "NOISYVIS_RECORD_BASELINES"
@@ -136,9 +137,12 @@ def golden(workflow_outcomes, request):
 
 @pytest.mark.parametrize("workflow", list(RESOLVERS))
 def test_workflow_matches_golden(workflow, workflow_outcomes, golden):
-    expected = golden["cases"][workflow]
+    # The golden records the legacy dotted-path spelling and is never re-recorded; both sides are
+    # compared in canonical spelling (Stage 12), so only the path spelling may differ.
+    expected = canonicalise_tree(golden["cases"][workflow])
     for spec in RESOLVERS[workflow]:
-        difference = canonical.first_difference(expected, workflow_outcomes[workflow][spec])
+        observed = canonicalise_tree(workflow_outcomes[workflow][spec])
+        difference = canonical.first_difference(expected, observed)
         assert difference is None, (
             f"{workflow}: {spec} no longer resolves configs as the pre-Stage-7 resolver did.\n"
             f"  {difference}\n"
@@ -152,3 +156,48 @@ def test_golden_covers_exactly_the_defined_cases(golden):
     recorded = {workflow: sorted(cases) for workflow, cases in golden["cases"].items()}
     assert recorded == defined
     assert golden["recorded_from"]["commit"] == RECORDED_FROM_COMMIT
+
+
+# The frozen golden's legacy dotted-path leaves: 10 load_problem_KP, 10 MuPlusLamdaEA, 8 SEMO,
+# 3 knap_violation, 11 inverse_n_mut_rate, 1 dynamic_pop_size_UMDA, 1 dynamic_pop_size_PCEA.
+GOLDEN_TRANSLATED_LEAVES = 44
+
+
+def test_golden_canonicalisation_is_exact():
+    """The canonical comparison may change path spelling in the frozen golden, and nothing else."""
+    original = json.loads(GOLDEN_PATH.read_text())
+    translated = canonicalise_tree(original)
+    rewritten = []
+    unexpected = []
+
+    def compare(before, after, where):
+        if type(before) is not type(after):
+            unexpected.append(f"{where}: type {type(before).__name__} -> {type(after).__name__}")
+        elif isinstance(before, dict):
+            if list(before) != list(after):
+                unexpected.append(f"{where}: keys changed")
+            else:
+                for key in before:
+                    compare(before[key], after[key], f"{where}.{key}")
+        elif isinstance(before, list):
+            if len(before) != len(after):
+                unexpected.append(f"{where}: length changed")
+            else:
+                for index, (b, a) in enumerate(zip(before, after)):
+                    compare(b, a, f"{where}[{index}]")
+        elif before != after:
+            legacy = [prefix for prefix in LEGACY_TO_CANONICAL if isinstance(before, str) and before.startswith(prefix)]
+            if len(legacy) == 1 and after == LEGACY_TO_CANONICAL[legacy[0]] + before[len(legacy[0]):]:
+                rewritten.append(before)
+            else:
+                unexpected.append(f"{where}: {before!r} -> {after!r}")
+        if isinstance(after, str) and any(after.startswith(prefix) for prefix in LEGACY_TO_CANONICAL):
+            unexpected.append(f"{where}: legacy spelling survived: {after!r}")
+
+    compare(original, translated, "golden")
+
+    assert not unexpected, "canonicalisation changed more than path spelling:\n  " + "\n  ".join(unexpected)
+    assert len(rewritten) == GOLDEN_TRANSLATED_LEAVES, (
+        f"{len(rewritten)} golden leaves were canonicalised, not {GOLDEN_TRANSLATED_LEAVES}: "
+        f"{sorted(set(rewritten))}"
+    )

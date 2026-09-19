@@ -4,8 +4,10 @@ Stage 7 moved `run_helpers.py` to `noisyvis.experiments.hyperparams`. The root `
 stays until Stage 12 as a forwarder, only so the Hydra config dotted paths `_target_: run_helpers.*`
 keep resolving. These tests pin three things:
 
-1. The forwarder exposes exactly the namespace the original module had, as the *same objects*, and
-   every `run_helpers.*` config target resolves to the `hyperparams` object.
+1. `hyperparams` exposes exactly the namespace the original module had, and every configured
+   hyperparams target resolves to the `hyperparams` object, whichever spelling (`run_helpers.*` or
+   `noisyvis.experiments.hyperparams.*`) the config uses. Until Stage 12 Checkpoint C deletes it, a
+   separate temporary test also pins that the forwarder re-exports that namespace as the *same objects*.
 2. No Python source imports the forwarder, which is the precondition for deleting it in Stage 12.
 3. Importing any `noisyvis.experiments` module has no side effects: it sets no MLflow tracking URI
    (a workflow must never inherit another's, R24) and creates no files. New modules added to the
@@ -67,30 +69,35 @@ def _run_child(code: str, *, workspace_on_path: bool) -> dict:
         shutil.rmtree(root, ignore_errors=True)
 
 
-_FORWARDER_PROBE = """
+# Shared by both probes: every configured `_target_` of the hyperparams family, by canonical spelling,
+# whichever spelling the config uses. It imports no compatibility module.
+_TARGETS_PRELUDE = """
+import importlib.util
 import json
 from pathlib import Path
 
 import yaml
 from hydra._internal.utils import _locate
 
-import importlib
+spec = importlib.util.spec_from_file_location("_legacy_paths", %(legacy_paths)r)
+legacy = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(legacy)
 
-import noisyvis.experiments.hyperparams as hyperparams
-
-# By name, so the Stage 12 source grep for forwarder imports stays empty.
-run_helpers = importlib.import_module("run_helpers")
+LEGACY_PREFIX = "run_helpers."
+CANONICAL_PREFIX = legacy.LEGACY_TO_CANONICAL[LEGACY_PREFIX]
 
 def public(module):
     return sorted(name for name in vars(module) if not name.startswith("_"))
 
-def targets(directory):
+def canonical_targets(directory):
     found = []
     def walk(node):
         if isinstance(node, dict):
             for key, value in node.items():
-                if key == "_target_" and isinstance(value, str) and value.startswith("run_helpers."):
-                    found.append(value)
+                if key == "_target_" and isinstance(value, str):
+                    value = legacy.canonicalise(value)
+                    if value.startswith(CANONICAL_PREFIX):
+                        found.append(value)
                 else:
                     walk(value)
         elif isinstance(node, list):
@@ -100,8 +107,44 @@ def targets(directory):
         walk(yaml.safe_load(path.read_text()))
     return found
 
+canonical_config_targets = {"configs": canonical_targets("/workspace/configs"),
+                            "tests/configs": canonical_targets("/workspace/tests/configs")}
+""" % {"legacy_paths": str(HARNESS_DIR.parent / "legacy_paths.py")}
+
+# Permanent: runs WITHOUT /workspace on sys.path, so the root forwarder cannot be what resolves.
+_CANONICAL_TARGET_PROBE = _TARGETS_PRELUDE + """
+import noisyvis.experiments.hyperparams as hyperparams
+
+resolution = {}
+for target in sorted({t for ts in canonical_config_targets.values() for t in ts}):
+    try:
+        resolution[target] = _locate(target) is getattr(hyperparams, target[len(CANONICAL_PREFIX):])
+    except Exception as exc:  # noqa: BLE001
+        resolution[target] = "unresolvable: " + type(exc).__name__
+
+print(json.dumps({
+    "canonical_module": CANONICAL_PREFIX[:-1],
+    "hyperparams_module": hyperparams.__name__,
+    "hyperparams_names": public(hyperparams),
+    "target_counts": {where: len(ts) for where, ts in canonical_config_targets.items()},
+    "target_resolves_to_hyperparams_object": resolution,
+}))
+"""
+
+# TEMPORARY (Stage 12): the root forwarder, imported only here. Deleted with it in Checkpoint C.
+_FORWARDER_PROBE = _TARGETS_PRELUDE + """
+import importlib
+
+import noisyvis.experiments.hyperparams as hyperparams
+
+# By name, so the Stage 12 source grep for forwarder imports stays empty.
+run_helpers = importlib.import_module("run_helpers")
+
+# Every configured target of the family, in its legacy spelling, whichever spelling the config uses.
+config_targets = {where: [LEGACY_PREFIX + t[len(CANONICAL_PREFIX):] for t in ts]
+                  for where, ts in canonical_config_targets.items()}
+
 names = public(run_helpers)
-config_targets = {"configs": targets("/workspace/configs"), "tests/configs": targets("/workspace/tests/configs")}
 resolution = {}
 for target in sorted({t for ts in config_targets.values() for t in ts}):
     resolution[target] = _locate(target) is getattr(hyperparams, target.split(".", 1)[1])
@@ -117,6 +160,21 @@ print(json.dumps({
 """
 
 
+def test_hyperparams_config_targets_resolve_to_canonical_objects():
+    """Permanent: every configured hyperparams target resolves in noisyvis.experiments.hyperparams,
+    whichever spelling (`run_helpers.*` or canonical) the config uses, without /workspace on sys.path."""
+    report = _run_child(_CANONICAL_TARGET_PROBE, workspace_on_path=False)
+
+    assert report["canonical_module"] == "noisyvis.experiments.hyperparams"
+    assert report["hyperparams_module"] == report["canonical_module"]
+    assert set(report["hyperparams_names"]) == EXPECTED_PUBLIC_NAMES
+
+    assert report["target_counts"]["configs"] > 0, "no hyperparams config targets found; walk broken"
+    unresolved = [t for t, same in report["target_resolves_to_hyperparams_object"].items() if same is not True]
+    assert not unresolved, f"config targets not resolving to the hyperparams objects: {unresolved}"
+
+
+# TEMPORARY (Stage 12): deleted with the root forwarder in Checkpoint C.
 def test_run_helpers_forwarder_preserves_namespace_and_identity():
     report = _run_child(_FORWARDER_PROBE, workspace_on_path=True)
 

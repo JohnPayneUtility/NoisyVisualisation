@@ -11,7 +11,9 @@ only checks that a name resolves. These tests pin what they cannot see:
  2. the 31 top-level problem definitions exist exactly once (`mean_weight` exactly twice), unchanged;
  3. every global each of the 24 evaluators reads resolves to the same helper, module or shared object;
  4. every evaluator produces the same output, log records and RNG consumption on fixed inputs;
- 5. the two `src.problems.*` config forwarders keep their namespace and object identity;
+ 5. every configured problem path resolves to its canonical module's object, whichever spelling
+    (`src.problems.*` or `noisyvis.problems.*`) the config uses; until Stage 12 Checkpoint C deletes
+    them, a separate temporary probe also pins the two `src.problems.*` forwarders' namespace and identity;
  6. the knapsack loader output for every instance, plus the stats/correlation helpers;
  7. the `knap_violation` behavioural divergence (D7) between the module-level and nested copies;
  8. the two `mean_weight` copies: equivalent, but distinct definitions;
@@ -51,6 +53,7 @@ from pathlib import Path
 import pytest
 
 from harness.run_isolated import HARNESS_DIR, WORKSPACE, child_env, make_temp_root
+from legacy_paths import LEGACY_TO_CANONICAL
 
 PRE_STAGE_9_COMMIT = "8424f5e5014d65f56ec942d51e158dbfe95e656c"
 
@@ -977,7 +980,8 @@ ALLOWED_LOCATIONS = {
 
 # ------------------------------------------------------------------------------ the probe
 
-_PROBE = r'''
+# Shared by the main probe and the temporary forwarder probe. It imports no compatibility module.
+_PROBE_PRELUDE = r'''
 import ast
 import builtins
 import copy
@@ -1005,6 +1009,10 @@ spec = importlib.util.spec_from_file_location("_harness_fence", __FENCE__)
 fence = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fence)
 fence.install(str(WORKSPACE))
+
+spec = importlib.util.spec_from_file_location("_legacy_paths", __LEGACY_PATHS__)
+legacy = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(legacy)
 
 import random
 import numpy as np
@@ -1079,8 +1087,10 @@ def config_values(key):
             walk(yaml.safe_load(path.read_text()), values)
         found[where] = values
     return found
+'''
 
-
+# The main probe never imports a compatibility module, so it keeps working once Stage 12 deletes them.
+_PROBE_MAIN = r'''
 # Runtime code reaches the problems namespace through the runners' imports.
 import noisyvis
 import noisyvis.experiments.runner
@@ -1178,7 +1188,7 @@ report["evaluators"] = {
 }
 
 # 4. evaluator outputs, log records and RNG consumption on fixed inputs
-LOADER = _locate("src.problems.ProblemScripts.load_problem_KP")
+LOADER = _locate("noisyvis.problems.instances.load_problem_KP")
 KP_PID = "f1_l-d_kp_10_269"
 _, KP_CAPACITY, _, _, _, KP_ITEMS, _ = LOADER(KP_PID)
 INPUTS = {
@@ -1275,16 +1285,17 @@ for index, (name, input_keys, kwargs) in enumerate(CASES):
                 outputs[case_id] = None if fn is None else run_case(fn, input_key, kwargs, with_logger, seed)
 report["outputs"] = outputs
 
-# 5/6. the two src.problems config forwarders
-FORWARDERS = {"ProblemScripts": ("load_problem_KP", "_target_"),
-              "ViolationFunctions": ("knap_violation", "violation_fn")}
-forwarders = {}
-for name, (anchor, key) in FORWARDERS.items():
-    forwarder = importlib.import_module("src.problems." + name)
-    canonical = sys.modules[getattr(forwarder, anchor).__module__]
-    public = sorted(n for n in vars(forwarder) if not n.startswith("_"))
-    prefix = "src.problems." + name + "."
-    values = {where: [v for v in found if v.startswith(prefix)] for where, found in config_values(key).items()}
+# 5/6. configured problem paths, through their canonical modules. Path-neutral: a value is counted and
+# resolved by its canonical spelling, whichever spelling the config uses.
+CONFIGURED_PATHS = {"ProblemScripts": ("load_problem_KP", "_target_"),
+                    "ViolationFunctions": ("knap_violation", "violation_fn")}
+canonical_paths = {}
+for name, (anchor, key) in CONFIGURED_PATHS.items():
+    prefix = legacy.LEGACY_TO_CANONICAL["src.problems." + name + "."]
+    canonical = importlib.import_module(prefix[:-1])
+    public = sorted(n for n in vars(canonical) if not n.startswith("_"))
+    values = {where: [v for v in map(legacy.canonicalise, found) if v.startswith(prefix)]
+              for where, found in config_values(key).items()}
     resolution = {}
     for value in sorted({v for found in values.values() for v in found}):
         attribute = value.rsplit(".", 1)[1]
@@ -1293,19 +1304,16 @@ for name, (anchor, key) in FORWARDERS.items():
         except Exception as exc:  # noqa: BLE001
             resolution[value] = "unresolvable: " + type(exc).__name__
             continue
-        resolution[value] = ("canonical" if obj is getattr(canonical, attribute, object())
-                             and obj is getattr(forwarder, attribute, object()) else "different object")
-    forwarders[name] = {
-        "file": str(Path(forwarder.__file__).resolve().relative_to(SOURCE_ROOT)),
+        resolution[value] = "canonical" if obj is getattr(canonical, attribute, object()) else "different object"
+    canonical_paths[name] = {
         "canonical_module": canonical.__name__,
-        "public": public,
-        "canonical_public": sorted(n for n in vars(canonical) if not n.startswith("_")),
-        "not_identical": [n for n in public if getattr(forwarder, n) is not getattr(canonical, n, object())],
-        "package_exports_identical": {n: getattr(problems, n, None) is getattr(forwarder, n) for n in public},
+        "anchor_defined_in_canonical": getattr(canonical, anchor).__module__ == canonical.__name__,
+        "canonical_public": public,
+        "package_exports_identical": {n: getattr(problems, n, None) is getattr(canonical, n) for n in public},
         "value_counts": {where: len(found) for where, found in values.items()},
         "resolution": resolution,
     }
-report["forwarders"] = forwarders
+report["canonical_paths"] = canonical_paths
 
 # 7. loader outputs for every instance, through the config target path
 candidates = [SOURCE_ROOT / "instances" / "knapsack", SOURCE_ROOT / "instances_01_KP"]
@@ -1313,8 +1321,8 @@ existing = [str(path.relative_to(SOURCE_ROOT)) for path in candidates if path.is
 instance_dir = SOURCE_ROOT / existing[0] if len(existing) == 1 else None
 pids = [] if instance_dir is None else sorted(
     entry.name for sub in ("low-dimensional", "large_scale") for entry in (instance_dir / sub).iterdir())
-stats_fn = _locate("src.problems.ProblemScripts.get_knapsack_problem_stats")
-correlation_fn = _locate("src.problems.ProblemScripts.interpret_correlation")
+stats_fn = _locate("noisyvis.problems.instances.get_knapsack_problem_stats")
+correlation_fn = _locate("noisyvis.problems.instances.interpret_correlation")
 def attempt(fn, *args):
     """(result, None) or (None, "ExceptionType: message"); an exception is pinned behaviour too."""
     try:
@@ -1344,7 +1352,7 @@ report["loader"] = {
 }
 
 # 8. knap_violation: the config-reachable module-level copy versus the copy nested in the MO evaluator
-violation = _locate("src.problems.ViolationFunctions.knap_violation")
+violation = _locate("noisyvis.problems.constraints.knap_violation")
 mo_violation = evaluators["eval_noisy_kp_v1_mo_violation"]
 nested = [node for node in ast.walk(ast.parse(textwrap.dedent(inspect.getsource(mo_violation))))
           if isinstance(node, ast.FunctionDef) and node.name == "knap_violation"]
@@ -1539,25 +1547,81 @@ locations["mean_weight[single-objective users]"] = copies["single-objective"][0]
 locations["mean_weight[multi-objective users]"] = copies["multi-objective"][0].__module__
 locations["knap_violation"] = violation.__module__
 for name in ("load_problem_KP", "get_knapsack_problem_stats", "interpret_correlation"):
-    locations[name] = _locate("src.problems.ProblemScripts." + name).__module__
+    locations[name] = _locate("noisyvis.problems.instances." + name).__module__
 report["locations"] = locations
 
 print(json.dumps(report))
 '''
 
+_PROBE = _PROBE_PRELUDE + _PROBE_MAIN
 
-def build_probe(source_root: Path) -> str:
-    """The probe for one source tree. The tests only ever pass the workspace."""
+# TEMPORARY (Stage 12): the `src.problems.*` forwarders, imported only here. Deleted with the
+# forwarders in Stage 12 Checkpoint C.
+_FORWARDER_PROBE_BODY = r'''
+import noisyvis.experiments.lon_runner as lon_runner
+import noisyvis.problems
+
+problems = sys.modules["noisyvis.problems"]
+FORWARDERS = {"ProblemScripts": ("load_problem_KP", "_target_"),
+              "ViolationFunctions": ("knap_violation", "violation_fn")}
+forwarders = {}
+for name, (anchor, key) in FORWARDERS.items():
+    forwarder = importlib.import_module("src.problems." + name)
+    canonical = sys.modules[getattr(forwarder, anchor).__module__]
+    public = sorted(n for n in vars(forwarder) if not n.startswith("_"))
+    prefix = "src.problems." + name + "."
+    canonical_prefix = legacy.LEGACY_TO_CANONICAL[prefix]
+    # Every configured value of this family, in its legacy spelling, whichever spelling the config uses.
+    values = {where: [prefix + v[len(canonical_prefix):] for v in map(legacy.canonicalise, found)
+                      if v.startswith(canonical_prefix)]
+              for where, found in config_values(key).items()}
+    resolution = {}
+    for value in sorted({v for found in values.values() for v in found}):
+        attribute = value.rsplit(".", 1)[1]
+        try:
+            obj = _locate(value) if key == "_target_" else lon_runner._import_from_dotted(value)
+        except Exception as exc:  # noqa: BLE001
+            resolution[value] = "unresolvable: " + type(exc).__name__
+            continue
+        resolution[value] = ("canonical" if obj is getattr(canonical, attribute, object())
+                             and obj is getattr(forwarder, attribute, object()) else "different object")
+    forwarders[name] = {
+        "file": str(Path(forwarder.__file__).resolve().relative_to(SOURCE_ROOT)),
+        "canonical_module": canonical.__name__,
+        "public": public,
+        "canonical_public": sorted(n for n in vars(canonical) if not n.startswith("_")),
+        "not_identical": [n for n in public if getattr(forwarder, n) is not getattr(canonical, n, object())],
+        "package_exports_identical": {n: getattr(problems, n, None) is getattr(forwarder, n) for n in public},
+        "value_counts": {where: len(found) for where, found in values.items()},
+        "resolution": resolution,
+    }
+
+print(json.dumps(forwarders))
+'''
+
+
+def _substitute(template: str, source_root: Path) -> str:
     replacements = {
         "__SOURCE_ROOT__": repr(str(source_root)),
         "__WORKSPACE__": repr(str(WORKSPACE)),
         "__FENCE__": repr(str(HARNESS_DIR / "fence.py")),
+        "__LEGACY_PATHS__": repr(str(HARNESS_DIR.parent / "legacy_paths.py")),
         "__EVALUATORS__": repr(EVALUATORS),
     }
-    probe = _PROBE
+    probe = template
     for marker, value in replacements.items():
         probe = probe.replace(marker, value)
     return probe
+
+
+def build_probe(source_root: Path) -> str:
+    """The probe for one source tree. The tests only ever pass the workspace."""
+    return _substitute(_PROBE, source_root)
+
+
+def build_forwarder_probe(source_root: Path) -> str:
+    """TEMPORARY (Stage 12): the forwarder-only probe, deleted with the forwarders in Checkpoint C."""
+    return _substitute(_PROBE_PRELUDE + _FORWARDER_PROBE_BODY, source_root)
 
 
 @pytest.fixture(scope="module")
@@ -1580,6 +1644,25 @@ def probe() -> dict:
 
     assert report["meta"]["noisyvis_file"].startswith(str(WORKSPACE / "src" / "noisyvis")), report["meta"]
     return report
+
+
+@pytest.fixture(scope="module")
+def forwarder_probe() -> dict:
+    """TEMPORARY (Stage 12): run the forwarder-only probe, deleted with the forwarders in Checkpoint C."""
+    root = make_temp_root()
+    try:
+        completed = subprocess.run(
+            [sys.executable, "-c", build_forwarder_probe(WORKSPACE)],
+            cwd=str(root),
+            env=child_env(root),
+            capture_output=True,
+            text=True,
+            timeout=900,
+        )
+        assert completed.returncode == 0, f"problems forwarder probe failed:\n{completed.stderr[-4000:]}"
+        return json.loads(completed.stdout.strip().splitlines()[-1])
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
 
 
 def _mismatches(observed: dict, expected: dict) -> list:
@@ -1660,8 +1743,34 @@ def _record_digest(record: dict) -> str:
 
 
 @pytest.mark.parametrize("forwarder", ["ProblemScripts", "ViolationFunctions"])
-def test_problem_forwarder_preserves_namespace_and_identity(probe, forwarder):
-    report = probe["forwarders"][forwarder]
+def test_problem_config_paths_resolve_to_canonical_objects(probe, forwarder):
+    """Permanent: every configured problem path resolves in its canonical module, whichever spelling."""
+    report = probe["canonical_paths"][forwarder]
+    expected_module = LEGACY_TO_CANONICAL[f"src.problems.{forwarder}."][:-1]
+
+    assert report["canonical_module"] == expected_module, report["canonical_module"]
+    assert report["canonical_module"].startswith("noisyvis.problems."), report["canonical_module"]
+    assert report["anchor_defined_in_canonical"], f"anchor is not defined in {report['canonical_module']}"
+
+    expected = FORWARDER_PUBLIC_NAMES[forwarder]
+    assert set(report["canonical_public"]) == expected, (
+        f"{report['canonical_module']} public namespace differs from the frozen forwarder namespace:\n"
+        f"  missing: {sorted(expected - set(report['canonical_public']))}\n"
+        f"  added:   {sorted(set(report['canonical_public']) - expected)}"
+    )
+    assert all(report["package_exports_identical"].values()), (
+        f"noisyvis.problems does not export the canonical objects: {report['package_exports_identical']}"
+    )
+
+    assert report["value_counts"]["configs"] > 0, "no config values found; the walk looks broken"
+    assert report["value_counts"]["tests/configs"] > 0, "no test-config values found; the walk looks broken"
+    assert report["resolution"] and set(report["resolution"].values()) == {"canonical"}, report["resolution"]
+
+
+# TEMPORARY (Stage 12): deleted with the forwarders in Checkpoint C.
+@pytest.mark.parametrize("forwarder", ["ProblemScripts", "ViolationFunctions"])
+def test_problem_forwarder_preserves_namespace_and_identity(forwarder_probe, forwarder):
+    report = forwarder_probe[forwarder]
 
     assert report["file"] == f"src/src/problems/{forwarder}.py"
     assert report["canonical_module"].startswith("noisyvis.problems."), report["canonical_module"]
@@ -1794,7 +1903,7 @@ from hydra._internal.utils import _locate
 
 __CANON__
 
-loader = _locate("src.problems.ProblemScripts.load_problem_KP")
+loader = _locate("noisyvis.problems.instances.load_problem_KP")
 results = {}
 for pid in __PIDS__:
     try:
