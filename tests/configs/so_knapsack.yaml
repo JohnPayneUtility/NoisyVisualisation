@@ -37,12 +37,12 @@ algo:
   use_dynamic_mutation: true
 
   indpb_fn:
-    _target_: run_helpers.inverse_n_mut_rate
+    _target_: noisyvis.experiments.hyperparams.inverse_n_mut_rate
     n_items: null   # resolved after problem loading
     noise: 1
 
   init_args:
-    _target_: src.algorithms.Algorithms.MuPlusLamdaEA
+    _target_: noisyvis.algorithms.single_objective.MuPlusLamdaEA
     mu: 1
     lam: 1
     mutate_function: "probFlipBit"
@@ -62,7 +62,7 @@ problem:
   items_dict: null   # set after loading
 
   loader:
-    _target_: src.problems.ProblemScripts.load_problem_KP
+    _target_: noisyvis.problems.instances.load_problem_KP
     filename: f2_l-d_kp_20_878
 
   fitness_fn: eval_noisy_kp_v1

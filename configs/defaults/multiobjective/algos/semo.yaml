@@ -3,4 +3,4 @@ algo:
   name: SEMO
   type: SEMO
   init_args:
-    _target_: src.algorithms.MOAlgorithms.SEMO
+    _target_: noisyvis.algorithms.multi_objective.SEMO

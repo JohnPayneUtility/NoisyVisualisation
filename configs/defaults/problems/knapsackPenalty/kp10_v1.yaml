@@ -13,7 +13,7 @@ problem:
   
   # Problem loading
   loader:
-    _target_: src.problems.ProblemScripts.load_problem_KP
+    _target_: noisyvis.problems.instances.load_problem_KP
     filename: f1_l-d_kp_10_269
   
   # Fitness function

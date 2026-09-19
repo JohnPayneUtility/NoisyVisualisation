@@ -64,7 +64,7 @@ algo:
   
   # Algorithm initialization parameters
   init_args:
-    _target_: src.algorithms.MOAlgorithms.MoUMDA
+    _target_: noisyvis.algorithms.multi_objective.MoUMDA
     pop_size: 100
     select_size: 50
 
@@ -85,7 +85,7 @@ problem:
   
   # Problem loading
   loader:
-    _target_: src.problems.ProblemScripts.load_problem_KP
+    _target_: noisyvis.problems.instances.load_problem_KP
     filename: f10_l-d_kp_20_879
   
   # Fitness function

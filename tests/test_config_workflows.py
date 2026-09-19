@@ -150,6 +150,14 @@ def test_workflow_matches_golden(workflow, workflow_outcomes, golden):
         )
 
 
+def test_workflow_resolution_loads_no_compatibility_module(workflow_outcomes):
+    """Every case resolved through every resolver without loading a compatibility module (Stage 12)."""
+    assert "compat_modules_loaded" in workflow_outcomes, "the workflow child reported no compat modules"
+    assert workflow_outcomes["compat_modules_loaded"] == [], (
+        f"workflow resolution loaded compatibility modules: {workflow_outcomes['compat_modules_loaded']}"
+    )
+
+
 def test_golden_covers_exactly_the_defined_cases(golden):
     """A case added, renamed or dropped on either side would otherwise go unchecked."""
     defined = {workflow: sorted(cases) for workflow, cases in build_cases().items()}

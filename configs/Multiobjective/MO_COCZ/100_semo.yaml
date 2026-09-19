@@ -60,7 +60,7 @@ algo:
   
   # Algorithm initialization parameters
   init_args:
-    _target_: src.algorithms.MOAlgorithms.SEMO
+    _target_: noisyvis.algorithms.multi_objective.SEMO
 
 # ==============================
 # Problem Configuration

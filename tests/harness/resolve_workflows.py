@@ -113,6 +113,10 @@ def main() -> int:
                 name: resolve_case(resolver, case_cfg) for name, case_cfg in cases[workflow].items()
             }
 
+    # Stage 12: after every case has resolved, which compatibility modules got loaded (none may).
+    compat = _load_by_path("_harness_compat_modules", HARNESS_DIR / "compat_modules.py")
+    results["compat_modules_loaded"] = compat.compat_modules_loaded()
+
     Path(args.out).write_text(json.dumps(results, indent=2, allow_nan=True))
     return 0
 

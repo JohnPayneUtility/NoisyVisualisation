@@ -246,9 +246,14 @@ def main() -> int:
     requests = json.loads(Path(args.requests).read_text())
     results = [_resolve_one(request, namespace, keys, delegates) for request in requests]
 
+    # Stage 12: after the runner loaded and every request resolved, which compatibility modules got
+    # loaded (none may).
+    compat = _load_sibling("compat_modules")
+
     Path(args.out).write_text(
         json.dumps(
-            {"keys": keys, "key_origins": key_origins, "scanned": scanned, "results": results},
+            {"keys": keys, "key_origins": key_origins, "scanned": scanned, "results": results,
+             "compat_modules_loaded": compat.compat_modules_loaded()},
             indent=2,
         )
     )

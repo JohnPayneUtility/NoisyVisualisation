@@ -60,7 +60,7 @@ algo:
 
   # Algorithm initialization parameters
   init_args:
-    _target_: src.algorithms.Algorithms.UMDA
+    _target_: noisyvis.algorithms.single_objective.UMDA
     pop_size: 921
     select_size: 460
 
@@ -81,7 +81,7 @@ problem:
   
   # Problem loading
   loader:
-    _target_: src.problems.ProblemScripts.load_problem_KP
+    _target_: noisyvis.problems.instances.load_problem_KP
     filename: knapPI_1_100_1000_1
   
   # Fitness function

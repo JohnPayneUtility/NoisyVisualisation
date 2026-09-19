@@ -19,6 +19,7 @@ Configs are read, never written.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -118,8 +119,11 @@ COLLECTED = _collect()
 
 
 @pytest.fixture(scope="session")
-def resolution_results():
-    """Resolve every request, one subprocess per runner, and index the answers."""
+def resolution_payloads():
+    """Resolve every request, one subprocess per runner, and index the answers.
+
+    Also keeps, per runner, the compatibility modules its child had loaded once everything resolved.
+    """
     by_runner: dict = {name: [] for name in RUNNERS}
     for config, entry in COLLECTED.items():
         for kind, value in entry["requests"]:
@@ -127,6 +131,7 @@ def resolution_results():
                 by_runner[runner].append({"config": config, "kind": kind, "value": value})
 
     answers: dict = {}
+    compat: dict = {}
     for runner, requests in by_runner.items():
         if not requests:
             continue
@@ -169,12 +174,18 @@ def resolution_results():
 
             for result in payload["results"]:
                 answers.setdefault(result["config"], []).append({**result, "runner": runner})
+            compat[runner] = payload["compat_modules_loaded"]
         finally:
             import shutil
 
             shutil.rmtree(root, ignore_errors=True)
 
-    return answers
+    return {"answers": answers, "compat_modules_loaded": compat}
+
+
+@pytest.fixture(scope="session")
+def resolution_results(resolution_payloads):
+    return resolution_payloads["answers"]
 
 
 def _params():
@@ -250,3 +261,56 @@ def test_runner_routing_is_path_neutral():
     assert routed == {config: entry["runners"] for config, entry in COLLECTED.items() if entry["requests"]}
     # Both algorithm routes must actually occur, or the check above is vacuous.
     assert ["mo"] in routed.values() and ["so"] in routed.values(), "no config routes to SO or MO"
+
+
+def test_config_resolution_loads_no_compatibility_module(resolution_payloads):
+    """Every runner loaded and resolved its whole share of the corpus without loading the bridge.
+
+    Stage 12 moved every config dotted path to the canonical `noisyvis.*` modules. While the
+    compatibility modules still existed on disk, this is what proved the configs did not need them.
+    """
+    compat = resolution_payloads["compat_modules_loaded"]
+    assert set(compat) == set(RUNNERS), f"not every runner was exercised: {sorted(compat)}"
+    loaded = {RUNNERS[runner]: modules for runner, modules in compat.items() if modules}
+    assert not loaded, f"config resolution loaded compatibility modules: {loaded}"
+
+
+# The five legacy module paths, anywhere in a line, but not as the tail of a longer dotted name.
+_LEGACY_PATH = re.compile(
+    r"(?<![A-Za-z0-9_.])(?:" + "|".join(re.escape(prefix) for prefix in LEGACY_TO_CANONICAL) + ")"
+)
+
+
+def test_no_legacy_config_paths():
+    """No live config input uses one of the five legacy dotted paths that Stage 12 migrated.
+
+    Live inputs are every YAML under configs/ (gitignored ones included, because the gate walks
+    them), the reproducibility configs under tests/configs/, and the synthetic workflow cases. The
+    frozen golden and other historical records are not live inputs and are not scanned.
+    """
+    from config_workflow_cases import build_cases
+
+    yaml_files = _config_files() + sorted((WORKSPACE / "tests" / "configs").rglob("*.yaml"))
+    offenders = []
+    for path in yaml_files:
+        for number, line in enumerate(path.read_text().splitlines(), 1):
+            if _LEGACY_PATH.search(line):
+                offenders.append(f"{path.relative_to(WORKSPACE)}:{number}: {line.strip()}")
+
+    def leaves(node, where):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                yield from leaves(value, f"{where}.{key}")
+        elif isinstance(node, (list, tuple)):
+            for index, item in enumerate(node):
+                yield from leaves(item, f"{where}[{index}]")
+        elif isinstance(node, str):
+            yield where, node
+
+    cases = build_cases()
+    case_strings = list(leaves(cases, "build_cases()"))
+    offenders += [f"{where}: {value}" for where, value in case_strings if _LEGACY_PATH.search(value)]
+
+    assert len(yaml_files) > 100 and any("tests/configs" in str(path) for path in yaml_files)
+    assert case_strings, "build_cases() yielded no strings; the walk looks broken"
+    assert not offenders, "live config inputs still use legacy dotted paths:\n  " + "\n  ".join(offenders)

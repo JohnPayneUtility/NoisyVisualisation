@@ -60,7 +60,7 @@ algo:
 
   # Algorithm initialization parameters
   init_args:
-    _target_: src.algorithms.Algorithms.UMDA
+    _target_: noisyvis.algorithms.single_objective.UMDA
     pop_size: 921
     select_size: null
 

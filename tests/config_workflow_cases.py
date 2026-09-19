@@ -48,7 +48,7 @@ LOADED_KP_PROBLEM = {
     "mean_value": None,
     "mean_weight": None,
     "items_dict": None,
-    "loader": {"_target_": "src.problems.ProblemScripts.load_problem_KP", "filename": KP10},
+    "loader": {"_target_": "noisyvis.problems.instances.load_problem_KP", "filename": KP10},
     "fitness_fn": "eval_noisy_kp_v1",
     "fitness_params": {"items_dict": None, "capacity": None, "noise_intensity": 1},
     "attr_function": "binary_attribute",
@@ -77,9 +77,9 @@ SO_ALGO = {
     "use_dynamic_pop_size": False,
     "static_indpb": 0.01,
     "use_dynamic_mutation": True,
-    "indpb_fn": {"_target_": "run_helpers.inverse_n_mut_rate", "n_items": None, "noise": 1},
+    "indpb_fn": {"_target_": "noisyvis.experiments.hyperparams.inverse_n_mut_rate", "n_items": None, "noise": 1},
     "init_args": {
-        "_target_": "src.algorithms.Algorithms.MuPlusLamdaEA",
+        "_target_": "noisyvis.algorithms.single_objective.MuPlusLamdaEA",
         "mu": 1,
         "lam": 1,
         "mutate_function": "probFlipBit",
@@ -90,7 +90,7 @@ SO_ALGO = {
 MO_ALGO = {
     "name": "SEMO",
     "type": "SEMO",
-    "init_args": {"_target_": "src.algorithms.MOAlgorithms.SEMO"},
+    "init_args": {"_target_": "noisyvis.algorithms.multi_objective.SEMO"},
 }
 
 RUN = {
@@ -106,7 +106,7 @@ RUN = {
 DYNAMIC_EXTRAS = {
     "algo": {
         "use_dynamic_pop_size": True,
-        "pop_size_fn": {"_target_": "run_helpers.dynamic_pop_size_UMDA", "n_items": None, "noise": None},
+        "pop_size_fn": {"_target_": "noisyvis.experiments.hyperparams.dynamic_pop_size_UMDA", "n_items": None, "noise": None},
         "init_args": {"pop_size": None},
     },
     "run": {
@@ -153,7 +153,7 @@ def _colon_problem(patch: dict) -> dict:
     base = _patch(
         LOADED_KP_PROBLEM,
         {
-            "violation_fn": "src.problems.ViolationFunctions.knap_violation",
+            "violation_fn": "noisyvis.problems.constraints.knap_violation",
             "violation_params": {"items_dict": None, "capacity": None},
         },
     )
@@ -249,7 +249,7 @@ def build_cases() -> dict:
             algo_patch={
                 "use_dynamic_pop_size": True,
                 "pop_size_fn": {
-                    "_target_": "run_helpers.dynamic_pop_size_PCEA",
+                    "_target_": "noisyvis.experiments.hyperparams.dynamic_pop_size_PCEA",
                     "n_items": None,
                     "noise": None,
                 },

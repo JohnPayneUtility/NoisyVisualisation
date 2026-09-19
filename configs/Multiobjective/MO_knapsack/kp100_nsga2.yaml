@@ -50,7 +50,7 @@ algo:
   name: NSGA2
   type: NSGA2
   init_args:
-    _target_: src.algorithms.MOAlgorithms.NSGA2
+    _target_: noisyvis.algorithms.multi_objective.NSGA2
     pop_size: 100
     cxpb: 0.9
     mutpb: 0.2
@@ -78,7 +78,7 @@ problem:
   items_dict: null
 
   loader:
-    _target_: src.problems.ProblemScripts.load_problem_KP
+    _target_: noisyvis.problems.instances.load_problem_KP
     filename: knapPI_1_100_1000_1
 
   fitness_fn: eval_noisy_kp_v1_mo

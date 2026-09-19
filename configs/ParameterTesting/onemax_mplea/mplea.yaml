@@ -62,13 +62,13 @@ algo:
   
   # Dynamic mutation rate function
   indpb_fn:
-    _target_: run_helpers.inverse_n_mut_rate
+    _target_: noisyvis.experiments.hyperparams.inverse_n_mut_rate
     n_items: null  # Will be resolved after problem loading
     noise: 1  # Set to noise intensity 1 to match fitness function
   
   # Algorithm initialization parameters
   init_args:
-    _target_: src.algorithms.Algorithms.MuPlusLamdaEA
+    _target_: noisyvis.algorithms.single_objective.MuPlusLamdaEA
     mu: 1
     lam: 1
     mutate_function: "probFlipBit"

@@ -6,5 +6,5 @@ algo:
 
   # Algorithm initialization parameters
   init_args:
-    _target_: src.algorithms.Algorithms.PCEA
+    _target_: noisyvis.algorithms.single_objective.PCEA
     pop_size: 461
