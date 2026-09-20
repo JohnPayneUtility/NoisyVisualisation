@@ -153,8 +153,11 @@ without touching a long experiment running in `evovis-runner-1`, and the other w
 Consolidating the Compose files was considered and is not planned: merging projects would change
 container names and networking for no functional gain.
 
-Every data path is a host bind mount, so the containers share `data/` and `fast_storage/` with the
-host and with each other.
+The three `noisyvis:latest` containers see the same host repository at `/workspace`, so `data/`,
+`configs/` and the source tree are shared with the host and with each other. **Only the runner**
+overlays `/mnt/nvme` at `/workspace/fast_storage`. In `noisyvis-dashboard` and `noisyvis-app`,
+`/workspace/fast_storage` is just the repository's `fast_storage/` directory on the ordinary disk,
+not the NVMe. `mlflow-ui` mounts only `data/mlruns`.
 
 ---
 
@@ -408,10 +411,11 @@ done
 
 **Recommended batch workflow:**
 
-1. Write one config and check it composes: `--cfg job`, see
-   [Validating a config](#validating-a-config-before-a-long-run).
-2. Run it once, small (`run.num_runs=2`, a separate `experiment_name=…`), and check the result in
-   the dashboard or MLflow.
+1. Write one config and validate it without running it: `--cfg job`, in-memory resolution and the
+   config-resolution gate. See [Validating a config](#validating-a-config-before-a-long-run).
+2. *Optionally* do a small real run first (`run.num_runs=2`, a separate `experiment_name=…`) and
+   check the result in the dashboard or MLflow. Remember that it **writes to the production
+   warehouse and MLflow**.
 3. Copy it for each variant into **one directory**, e.g. `configs/experiments/<study>/`, giving
    each variant a meaningful `experiment_name` and, for LONs, a distinct `lon.name`.
 4. Launch the batch detached (`docker exec -d …`, as above) and follow its log.
@@ -686,7 +690,11 @@ what each part means when you do.
    - The SO/MO runners always log to `data/mlruns`. LON/CoLON runners use
      `mlflow.tracking_uri: "data/mlruns"`: include it in LON/CoLON configs.
    - The runners log `data/outputs/.hydra/config.yaml` as an MLflow artifact, so set `hydra.run.dir:
-     data/outputs` (or, for sweeps, `hydra.sweep.dir: data/outputs`) as every existing config does.
+     data/outputs` (or, for sweeps, `hydra.sweep.dir: data/outputs`). The experiment configs under
+     `configs/` all do this. A config that sets neither falls back to Hydra's default `outputs/…`
+     directory. The runner then logs a `config.yaml` left behind by some other run, or fails if
+     `data/outputs/.hydra/config.yaml` does not exist. The
+     `tests/configs/*` files omit it because the test harness passes it on the command line.
 10. **Validate it** before running at scale; see the next section.
 
 ### Example: a minimal single-objective config (`run.py`)
@@ -826,11 +834,34 @@ For a **plain LON**, delete `violation_fn` and `violation_params`, pick a fitnes
 
    It takes a few minutes; see [Tests](#tests-and-reproducibility-contracts) for the one-time
    bootstrap.
-4. **Do a small real run** with a throwaway experiment name, e.g. `run.num_runs=2
-   run.parallel=false experiment_name=smoke_<study>`, plus a small `run.eval_limit` (SO/MO) or
-   `run.num_runs`/`lon.pert_attempts` (LON). Note that this **does** write to the production
-   warehouse and to MLflow, like every real run; the throwaway name is what lets you find the rows
-   and ignore them.
+4. **Resolve it in memory.** For a config addressed with `--config-path`, which covers every
+   LON/CoLON config and any standalone SO file, the Hydra compose API and the runner's own resolver
+   show the fully resolved config. This loads the problem instance and computes the derived values,
+   and writes nothing:
+
+   ```sh
+   docker exec -i evovis-runner-1 python - <<'PY'
+   from hydra import initialize_config_dir, compose
+   from noisyvis.experiments.config.workflows import resolve_colon_config   # or resolve_lon/so/mo_config
+   with initialize_config_dir(config_dir="/workspace/configs/LONs/MyCoLONs", version_base=None):
+       cfg = resolve_colon_config(compose("kp10_colon_noisy", overrides=["run.num_runs=5"]))
+   print(cfg.problem.PID, cfg.problem.dimensions, cfg.problem.opt_global, dict(cfg.lon))
+   PY
+   ```
+
+   For a nested `run.py`/`run_mo.py` name, especially a composed `experiments/` file, use `--cfg job`
+   (step 1) instead: composing a nested name from `configs/` is exactly what the runner's symlink
+   step avoids.
+
+**Any real run writes to production.** Even a tiny one (`run.num_runs=2 run.parallel=false
+experiment_name=smoke_<study>`) appends rows to `data/warehouse/*.pkl` and creates runs in
+`data/mlruns`, exactly like a full experiment. Nothing removes them afterwards, and the dashboard
+will show them. Only do this when you accept that; a throwaway `experiment_name` at least makes the
+rows easy to identify.
+
+The one path that executes a real entry point without touching production is the test harness
+(`tests/harness/run_isolated.py`). It runs the script in a throwaway root behind a write fence.
+However, it only reads configs from `tests/configs/`; see step 3b of `tests/README.md`.
 
 ---
 
@@ -936,9 +967,17 @@ will make some pinned tests fail by design:
 - `test_dashboard_package.py`: the 41-callback contract and statement inventory.
 
 When that happens, check that the failure names *only* what you added, then update that test's
-pinned inventory deliberately, in a separate, reviewable commit. **Never edit
-`tests/baselines/*.json` to accommodate an addition.** Adding code must not change existing seeded
-results. If a baseline moves, you changed existing behaviour.
+pinned inventory deliberately, in a separate, reviewable commit.
+
+**Baseline policy.**
+- **Never change an existing baseline** (`tests/baselines/*.json`) to make an addition pass.
+  Adding code must not change existing seeded results; if an existing baseline moves, you changed
+  existing behaviour.
+- **Genuinely new behaviour may get a new, dedicated baseline:** a new small case in
+  `tests/configs/` and `tests/test_reproducibility.py`, recorded once with
+  `NOISYVIS_RECORD_BASELINES=1`. That mode writes only baselines that are missing; replacing an
+  existing one needs `=overwrite`, which is a separate, deliberate decision.
+- `baselines/config_workflows.json` is frozen and is never re-recorded.
 
 ### Adding an algorithm
 
@@ -989,9 +1028,14 @@ hypervolume lists that `mo_algo_data_single` reads: `pareto_*`, `true_pareto_*`,
 4. **Resolution test.** `tests/test_config_resolution.py` automatically routes and resolves the new
    config (by its `single_objective`/`multi_objective` target). Expect the
    `test_core_library.py` namespace pin to flag the new public name.
-5. **Small run.** For example: `python run.py --config-name <your config> run.num_runs=2
-   run.parallel=false run.eval_limit=2000 experiment_name=smoke_myea`. Check `stop_trigger` and
-   `n_evals` in the output table.
+5. **Check without running.**
+   - `--cfg job` shows the config composes.
+   - In-memory resolution shows `init_args` are filled.
+   - For behaviour, the non-writing route is a small `tests/configs/` case run through the harness,
+     like the existing SO baselines.
+   - A real small run (`run.num_runs=2 run.parallel=false run.eval_limit=2000
+     experiment_name=smoke_myea`) shows `stop_trigger` and `n_evals` directly, but **appends to the
+     production warehouse and MLflow**.
 6. **Full research run.**
 
 No runner dispatch changes are needed: the SO/MO runners instantiate whatever `init_args._target_`
@@ -1010,8 +1054,17 @@ The code distinguishes four kinds of addition:
 
 **The evaluator contract:**
 
-- Signature: `f(individual, <params>, noise_intensity=0, …)`. It returns a **tuple**, e.g.
-  `(value,)` for SO or `(f1, f2)` for MO.
+- Signature: `f(individual, **kwargs)`. The kwargs are exactly the keys of
+  `problem.fitness_params`, after the loader has injected `items_dict`/`capacity`. The evaluator
+  returns a **tuple**, e.g. `(value,)` for SO or `(f1, f2)` for MO.
+- `noise_intensity` is the **convention for noisy evaluators**, not an argument every evaluator
+  must take. The deterministic `eval_ind_kp`, used by the LON configs, has none. The runners depend
+  on it in specific places:
+  - The SO runner reads `fitness_params["noise_intensity"]` into each results row, so SO configs
+    need the key.
+  - The MO runner also builds a "true" fitness by setting `noise_intensity=0`, so MO evaluators
+    must accept it.
+  - The noise sweeps and the noise-dependent evaluation limits key on it.
 - If `get_active_logger()` returns a logger, the evaluator must call
   `logger.log_noisy_eval(original, noisy, true_fitness, noisy_fitness)` before returning.
   - `original` is the submitted solution.
@@ -1108,7 +1161,8 @@ config (lon.*, problem.*)
 - `lon.name` is only a label: the MLflow run name and the `LON_Algo` column.
 - The builder is hard-coded: the LON workers call `BinaryLON` and the CoLON workers call
   `BinaryCoLON`.
-- A genuinely new construction therefore needs runner code, not just config.
+- A genuinely new construction therefore needs orchestration code in `lon_runner.py`, not just
+  config.
 
 **Where each kind of change belongs:**
 
@@ -1135,19 +1189,27 @@ config (lon.*, problem.*)
    - Import operators from `noisyvis.algorithms.operators`. **`noisyvis.algorithms` must never
      import `noisyvis.networks`**, or the import becomes a cycle.
    - Export the function from `networks/__init__.py`.
-2. **Wire it into orchestration** in `experiments/lon_runner.py`. Prefer a **new workflow function
-   and worker** over editing the existing ones.
-   - Copy the smallest existing workflow (`run_lon_parallel_experiment`) and swap the worker call.
-   - Keep reusing `resolve_lon_config`/`resolve_colon_config`, `_merge_lon`/`_merge_colon`,
-     `_lon_compression_rows` and `_log_and_persist_lon_df`.
-   - Add a thin root script (e.g. `run_<variant>_parallel.py`) modelled on `run_lon_parallel.py`.
-     It must call `set_lon_module_tracking_uri()` at import and use `@hydra.main(version_base=None,
-     config_path="configs", …)`.
+2. **Wire it into orchestration** in `experiments/lon_runner.py`. Because there is no dispatcher,
+   a new builder is only reachable once some workflow calls it. Explicit wiring is unavoidable
+   today. There are two ways to do it, each with a cost:
+   - **A switch inside an existing worker and workflow**, e.g. a new `lon.*` key that selects the
+     builder, or forwarding the currently ignored `lon.include_start_nodes` /
+     `only_improving_perturbations`.
+     - This avoids duplicating orchestration.
+     - It changes code paths the baselines protect. It is only acceptable if the default path
+       reproduces current behaviour exactly, including the order of RNG calls;
+       `tests/baselines/lon.json` and `colon.json` will tell you.
+   - **A separate worker and workflow function**, plus a thin root script modelled on
+     `run_lon_parallel.py`. Such a script calls `set_lon_module_tracking_uri()` at import and uses
+     `@hydra.main(version_base=None, config_path="configs", …)`.
+     - This leaves the existing paths untouched.
+     - It duplicates orchestration, which is how the three near-identical LON workflows in
+       `lon_runner.py` came about. Treat it as a stop-gap, not as the architecture to grow.
 
-   Adding a switch inside the existing workers instead (e.g. a new `lon.*` key, or forwarding the
-   currently ignored `lon.include_start_nodes`/`only_improving_perturbations`) changes existing code
-   paths. It is only acceptable if the default reproduces current behaviour exactly, including the
-   order of RNG calls; `tests/baselines/lon.json` and `colon.json` will tell you.
+   Either way, reuse the shared pieces instead of copying them: `resolve_lon_config` /
+   `resolve_colon_config`, `_merge_lon` / `_merge_colon`, `_lon_compression_rows` and
+   `_log_and_persist_lon_df`. If variants start to multiply, the better long-term step is a small,
+   separately reviewed builder-selection mechanism in `lon_runner.py`, rather than more copies.
 3. **Configuration.** Keep the existing `lon:`/`problem:` shape and add only the new keys your
    builder needs. Give `lon.name` a distinctive value so rows are distinguishable in the dashboard's
    LON table.
@@ -1170,13 +1232,17 @@ config (lon.*, problem.*)
    - `test_core_library.py` pins the `BinaryLON`/`BinaryCoLON` bodies and the builders
      `lon_runner` imports, so editing an existing builder will fail there.
    - For a new builder, add a small sequential reproducibility case, following
-     `tests/test_reproducibility.py` and a tiny config in `tests/configs/`. Record its new baseline
-     once with `NOISYVIS_RECORD_BASELINES=1`, which never overwrites existing baselines.
+     `tests/test_reproducibility.py` and a tiny config in `tests/configs/`. Give the new behaviour
+     its own baseline file. `NOISYVIS_RECORD_BASELINES=1` writes only baselines that are missing and
+     leaves existing ones untouched; overwriting needs `NOISYVIS_RECORD_BASELINES=overwrite`, which
+     is not for this. The existing `lon.json`/`colon.json` must keep passing unchanged.
 7. **Validate.**
-   - Run `--cfg job`, then a tiny sequential run (`run.num_runs=3 run.parallel=false
-     lon.pert_attempts=100`, with a smoke `experiment_name`).
-   - Inspect the new row in `data/temp/lon_results.csv`.
-   - Restart the dashboard and view the network before any bulk run.
+   - Without writing anything: `--cfg job`, in-memory resolution, and the harness case from step 6.
+   - Before any bulk run you will usually also want to see the network in the dashboard. That
+     requires a real tiny sequential run (`run.num_runs=3 run.parallel=false
+     lon.pert_attempts=100`, with a smoke `experiment_name`), which **appends to the production
+     warehouse and MLflow**. Then inspect the row in `data/temp/lon_results.csv` and restart the
+     dashboard.
 
 ---
 
@@ -1317,30 +1383,39 @@ The full register (B1–B10) and the risk log were kept in local, untracked plan
   | `pip-freeze.txt` | `pip freeze --all` |
   | `python-runtime.txt` | interpreter details |
 
-  `pip-freeze.txt` is **reference material, not a reinstall script**. Most of its entries are
-  conda-provided packages recorded with build-time `file://` origins; a bulk `pip install -r` would
-  fail or clobber conda. To rebuild:
-  - recreate the environment from `conda-explicit.txt`;
-  - install only the PyPI-channel packages from `micromamba-list.txt`, pinned, with `--no-deps`;
-  - leave `noisyvis` to the entrypoint.
+  These files record what the working environment contains. **Rebuilding a clean environment from
+  them has not been validated.** Treat them as a record and a starting point, not as a proven
+  recipe. Two constraints are already clear:
+  - `pip-freeze.txt` is **not a reinstall script**. Most of its entries are conda-provided packages
+    recorded with build-time `file://` origins, so a bulk `pip install -r` would fail or clobber
+    conda's packages.
+  - `conda-explicit.txt` is the natural input for recreating the conda side. `micromamba-list.txt`
+    shows which packages came from PyPI rather than conda. The editable `noisyvis` entry is
+    installed by the entrypoint, not from the lock.
 
-  To check the live environment still matches the lock, compare `pip freeze --all` and
+  To check the **live** environment still matches the lock, compare `pip freeze --all` and
   `micromamba list -n exp` in the runner against these files. The only expected difference is the
   editable `noisyvis` entry.
 - **Recovery image.**
-  - `noisyvis:pre-reorg` is the pre-reorganisation image, currently the same image as
+  - `noisyvis:pre-reorg` is the pre-reorganisation image, currently the same image ID as
     `noisyvis:latest`. **Never overwrite it.** An older `noisyvis:pre-sklearn-1.8` tag also exists.
-  - A `docker save` archive of the image (about 8.5 GiB), the original lock files and the container
-    `inspect` state are kept outside Git on the NVMe filesystem, at
-    `/mnt/nvme/backups/docker-images/noisyvis-pre-reorg/`. A data-warehouse backup is kept alongside
-    them. This is a separate-disk local snapshot, not an off-host backup.
+  - `/mnt/nvme/backups/docker-images/noisyvis-pre-reorg/` is outside Git on the NVMe filesystem and
+    holds:
+    - `noisyvis-pre-reorg.tar.gz` (about 8.5 GiB), the saved image;
+    - an `env-lock/` directory, the original lock files;
+    - a `container-state/` directory, the containers' `inspect` output.
+
+    This is a separate-disk local snapshot, not an off-host backup.
+  - A data-warehouse backup is also held in the NVMe backup area, as confirmed by the maintainer.
+    Its exact path is not recorded here.
   - To roll back: `docker tag noisyvis:pre-reorg noisyvis:latest`, then recreate the three
     `noisyvis` services with the commands in [Starting and managing the
-    services](#starting-and-managing-the-services). If the tag is ever lost, restore the image with
-    `docker load < …/noisyvis-pre-reorg.tar.gz`.
-- **Status.** The current runtime and recovery image are validated. A clean rebuild from the
-  captured lock remains an optional future reproducibility verification step. It has not been
-  performed, and any such rebuild must use a new tag.
+    services](#starting-and-managing-the-services). If the tag itself were lost, the archive is the
+    fallback: `docker load -i <path>/noisyvis-pre-reorg.tar.gz`. This restore has not been
+    exercised.
+- **Status.** The current runtime and recovery image are validated. A clean
+  rebuild from the captured lock remains an optional future reproducibility verification step. It
+  has not been performed, and any such rebuild must use a new tag.
 
 ---
 
@@ -1349,13 +1424,15 @@ The full register (B1–B10) and the risk log were kept in local, untracked plan
 1. **Edit on the host.** The editable install makes the change visible in every container
    immediately. Restart `noisyvis-dashboard` / `noisyvis-app` to reload app code. Code you run in
    the runner picks up changes on its next invocation.
-2. **Add or update a config**, and check it with `--cfg job`.
-3. **Run the targeted tests** for what you touched. For example:
+2. **Add or update a config**, and check it with `--cfg job` and in-memory resolution.
+3. **Run the targeted tests** for what you touched. These run in isolated roots and never touch
+   production data. For example:
    - `tests/test_layering.py` for any import change;
    - `tests/test_config_resolution.py` for configs;
    - the fast `test_viz_package.py` subset from `tests/README.md` for visualisation;
    - `tests/test_dashboard_package.py` for the dashboard.
-4. **Run a small experiment** with a throwaway `experiment_name`.
+4. **If you need to see real output**, run a small experiment with a throwaway `experiment_name`,
+   knowing it appends to the production warehouse and MLflow.
 5. **Inspect the result**: the output table in the terminal, then MLflow (5000/8051), then the
    dashboard after a restart.
 6. **Before structural changes**, run the full suite. Run it twice for anything touching seeded
