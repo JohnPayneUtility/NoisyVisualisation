@@ -1,0 +1,15 @@
+# @package _global_
+algo:
+  name: NSGA2
+  type: NSGA2
+  init_args:
+    _target_: noisyvis.algorithms.multi_objective.NSGA2
+    pop_size: 100
+    cxpb: 0.9
+    mutpb: 0.2
+
+    mate_op: "deap.tools.cxTwoPoint"
+    mutate_op: "deap.tools.mutFlipBit"
+
+    mutate_params:
+      indpb: 0.01

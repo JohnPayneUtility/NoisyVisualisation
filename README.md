@@ -71,6 +71,7 @@ NoisyVisualisation/
 ├── run_lon_parallel.py     LON runner, process-parallel    (Hydra; needs --config-path)
 ├── run_colon_parallel.py   CoLON runner, process-parallel  (Hydra; needs --config-path)
 ├── run_batch.py            run every SO config in a directory tree through run.py
+├── run_mo_batch.py         run every MO config in a directory tree through run_mo.py
 ├── run_colon_batch.py      run every CoLON config in one directory through run_colon_parallel.py
 ├── pyproject.toml          package metadata only: no dependencies, two console scripts
 ├── src/noisyvis/           the Python package (editable-installed; see below)
@@ -323,6 +324,9 @@ This takes the same nested `--config-name` form as `run.py`. MO configs use
 runner computes `problem.ref_point` automatically.
 `Multiobjective/MO_knapsack_test/mo_1p1ea.yaml` is known to be broken (B1).
 
+To run a selection of MO configs in one go, use `run_mo_batch.py`
+(see [Running a directory of configs](#running-a-directory-of-configs-batch-runs)).
+
 ### LON experiments (`run_lon.py`, `run_lon_parallel.py`)
 
 ```sh
@@ -369,21 +373,24 @@ LON/CoLON output depends on worker completion order and is not reproducible**; u
 
 ### Running a directory of configs (batch runs)
 
-There are two batch drivers. Both launch the normal runner once per config as a **subprocess**,
-**sequentially**. Neither adds any parallelism beyond what each config itself sets.
+There are three batch drivers. All launch the normal runner once per config as a **subprocess**,
+**sequentially**. None adds any parallelism beyond what each config itself sets.
 
-| | `run_batch.py` | `run_colon_batch.py` |
-|---|---|---|
-| Launches | `python run.py --config-name=<name>` (**SO only**) | `python run_colon_parallel.py --config-path=<abs dir> --config-name=<stem>` (**CoLON only**) |
-| `--config-dir` | **required**, relative to `configs/` | optional, relative to `configs/`; default `LONs/penalty_colons` |
-| File selection | `--pattern`, default `*.yaml`, **recursive** (`rglob`) | `--pattern`, default `*.yaml`, **this directory only** (`glob`) |
-| Order | sorted by path | sorted by path |
-| On failure | stops at the first failing config (exception) | stops at the first failure, unless `--keep-going`; then prints a failure summary |
-| Nested files | flattens to a temporary `configs/<a>__<b>.yaml` symlink, removed afterwards | not needed (`--config-path`) |
-| Other options | `--python` (interpreter), trailing Hydra overrides | `--python`, `--keep-going`, trailing Hydra overrides |
-| Working directory | **must be `/workspace`**: the script is launched as the relative path `run.py` | **must be `/workspace`**: the script is launched as the relative path `run_colon_parallel.py` |
+| | `run_batch.py` | `run_mo_batch.py` | `run_colon_batch.py` |
+|---|---|---|---|
+| Launches | `python run.py --config-name=<name>` (**SO only**) | `python run_mo.py --config-name=<name>` (**MO only**) | `python run_colon_parallel.py --config-path=<abs dir> --config-name=<stem>` (**CoLON only**) |
+| `--config-dir` | **required**, relative to `configs/` | **required**, relative to `configs/` | optional, relative to `configs/`; default `LONs/penalty_colons` |
+| File selection | `--pattern`, default `*.yaml`, **recursive** (`rglob`) | `--pattern`, default `*.yaml`, **recursive** (`rglob`) | `--pattern`, default `*.yaml`, **this directory only** (`glob`) |
+| Order | sorted by path | sorted by path | sorted by path |
+| On failure | stops at the first failing config (exception) | stops at the first failure, unless `--keep-going`; then prints a failure summary | stops at the first failure, unless `--keep-going`; then prints a failure summary |
+| Nested files | flattens to a temporary `configs/<a>__<b>.yaml` symlink itself, removed afterwards | passes the nested name through; **`run_mo.py` does the flattening** | not needed (`--config-path`) |
+| Other options | `--python` (interpreter), trailing Hydra overrides | `--python`, `--keep-going`, trailing Hydra overrides | `--python`, `--keep-going`, trailing Hydra overrides |
+| Working directory | **must be `/workspace`**: the script is launched as the relative path `run.py` | **must be `/workspace`**: the script is launched as the relative path `run_mo.py` | **must be `/workspace`**: the script is launched as the relative path `run_colon_parallel.py` |
 
-Trailing arguments after the options are passed unchanged to every run, as Hydra overrides.
+Trailing arguments after the options are passed unchanged to every run, as Hydra overrides. All
+three drivers collect them with `argparse.REMAINDER`, which accepts only `key=value` overrides:
+an argument starting with a dash, such as `--cfg job`, is rejected as an unrecognised option. To
+validate configs with `--cfg job`, call the runner directly, once per config.
 
 ```sh
 # every SO config under configs/SingleObjective/Continuous/ (recursive: 8 files)
@@ -395,13 +402,24 @@ python run_batch.py --config-dir SingleObjective/Continuous --pattern '1p1ea.yam
 # a directory of composed sweep experiments
 python run_batch.py --config-dir experiments/SO_performance
 
+# every MO config under configs/Multiobjective/ (recursive: 26 files)
+python run_mo_batch.py --config-dir Multiobjective --keep-going
+
+# one MO problem family, two seeds each
+python run_mo_batch.py --config-dir Multiobjective/MO_knapsack run.num_runs=2
+
+# a subset of it, by pattern
+python run_mo_batch.py --config-dir Multiobjective --pattern 'kp10_*.yaml'
+
 # every CoLON config in configs/LONs/penalty_colons (the default), carrying on past failures
 python run_colon_batch.py --keep-going
 python run_colon_batch.py --config-dir LONs/CoLON --keep-going
 ```
 
-There is **no batch driver for `run_mo.py` or the plain-LON runners**. A shell loop does the same
-job:
+A recursive MO run over `Multiobjective` includes `MO_knapsack_test/mo_1p1ea.yaml`, which is known
+to be broken (B1); `--keep-going` carries the batch past it and names it in the failure summary.
+
+There is **no batch driver for the plain-LON runners**. A shell loop does the same job:
 
 ```sh
 for f in configs/LONs/LON/*.yaml; do
@@ -944,8 +962,8 @@ The same working-directory dependence applies to:
 - Hydra output directories (`hydra.run.dir`/`hydra.sweep.dir: data/outputs`);
 - the LON/CoLON `mlflow.tracking_uri: "data/mlruns"`;
 - the runners' `data/outputs/.hydra/config.yaml` artifact;
-- `run_batch.py`/`run_colon_batch.py`, which launch `run.py`/`run_colon_parallel.py` by relative
-  path.
+- `run_batch.py`/`run_mo_batch.py`/`run_colon_batch.py`, which launch
+  `run.py`/`run_mo.py`/`run_colon_parallel.py` by relative path.
 
 **Always launch experiments from `/workspace`.**
 
