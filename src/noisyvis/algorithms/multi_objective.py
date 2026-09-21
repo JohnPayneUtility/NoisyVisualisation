@@ -649,7 +649,7 @@ class MoUMDA(OptimisationAlgorithm):
     def __init__(self, 
                  pop_size: int,
                  select_size: Optional[int] = None,
-                 prob_margin: bool = True,
+                 prob_margin: bool = False,
                  margin_scale: float = 1.0,
                  prevent_duplicates: bool = False,
                  **kwargs):
@@ -696,7 +696,7 @@ class MoUMDA_noDuplicates(OptimisationAlgorithm):
     def __init__(self, 
                  pop_size: int,
                  select_size: Optional[int] = None,
-                 prob_margin: bool = True,
+                 prob_margin: bool = False,
                  margin_scale: float = 1.0,
                  prevent_duplicates: bool = True,
                  **kwargs):
@@ -744,7 +744,7 @@ class MoUMDA_ParetoArchive(OptimisationAlgorithm):
         self,
         pop_size: int,
         select_size: Optional[int] = None,
-        prob_margin: bool = True,
+        prob_margin: bool = False,
         margin_scale: float = 1.0,
         **kwargs
     ):
