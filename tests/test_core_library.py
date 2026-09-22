@@ -82,7 +82,11 @@ CONFIGURED_ATTR_FUNCTIONS = frozenset({"binary_attribute", "Rastrigin_attribute"
 D4_CONSUMERS = {
     "package": frozenset(D4_AST),
     "single_objective_module": frozenset(D4_AST),
-    "multi_objective_module": frozenset(D4_AST) - {"random_bit_flip"},
+    # MO package split (deliberate contract amendment): the monolithic MO module only *imported*
+    # binary_attribute, Rastrigin_attribute, mutSwapBit and complementary_crossover and never used
+    # them; the split dropped those unused imports. The consumer is now the canonical MO package,
+    # which reaches no D4 name (the package namespace still gets them from `operators`).
+    "multi_objective_module": frozenset(),
     "OneMax_prior_mult_bitflip_fitness_globals": frozenset({"random_bit_flip"}),
     "eval_noisy_kp_prior_mult_bitflip_globals": frozenset({"random_bit_flip"}),
     "BinaryLON_module": frozenset({"random_bit_flip"}),
@@ -99,13 +103,15 @@ FORWARDER_PUBLIC_NAMES = {
         "creator", "dataclass", "field", "median", "mutSwapBit", "np", "optuna", "random",
         "random_bit_flip", "set_active_logger", "tools", "umda_update_full",
     }),
+    # MO package split (deliberate contract amendment): `multi_objective` became a package whose
+    # namespace is its explicit `__all__` plus its four submodules. The incidental names of the old
+    # monolithic module (typing names, np, optuna, deap modules, unused operator imports) are no
+    # longer bound there; every class and helper a config, runner or user reached is kept.
     "MOAlgorithms": frozenset({
-        "ABC", "Any", "Callable", "List", "MoUMDA", "MoUMDA_ParetoArchive", "MoUMDA_noDuplicates",
-        "NSGA2", "OptimisationAlgorithm", "Optional", "Rastrigin_attribute", "SEMO", "Tuple",
-        "abstractmethod", "algorithms", "base", "binary_attribute", "complementary_crossover",
-        "creator", "dataclass", "field", "front_sig", "hypervolume", "mo_umda_update_full",
-        "mo_umda_update_with_archive", "mutSwapBit", "mut_flip_one_bit", "np", "optuna", "pydoc",
-        "random", "record_pareto_data", "tools",
+        "MoUMDA", "MoUMDA_ParetoArchive", "MoUMDA_noDuplicates", "NSGA2", "OptimisationAlgorithm",
+        "SEMO", "front_sig", "mo_umda_update_full", "mo_umda_update_with_archive", "mut_flip_one_bit",
+        "record_pareto_data",
+        "base", "nsga2", "semo", "umda",  # submodules
     }),
 }
 
@@ -208,7 +214,9 @@ get_active_logger_via_fitness = fitness_globals["OneMax_fitness"]["get_active_lo
 
 package = sys.modules["noisyvis.algorithms"]
 so_module = sys.modules[package.MuPlusLamdaEA.__module__]
-mo_module = sys.modules[package.SEMO.__module__]
+# MO package split (deliberate contract amendment): SEMO.__module__ is now the `semo` submodule, so
+# the MO consumer is the canonical package itself rather than the anchor's defining module.
+mo_module = importlib.import_module(legacy.LEGACY_TO_CANONICAL["src.algorithms.MOAlgorithms."][:-1])
 lon_module = sys.modules[lon_runner.BinaryLON.__module__]
 colon_module = sys.modules[lon_runner.BinaryCoLON.__module__]
 
@@ -290,7 +298,10 @@ for name, anchor in FORWARDER_ANCHOR.items():
         resolution[target] = "canonical" if obj is getattr(canonical, attribute, object()) else "different object"
     canonical_report[name] = {
         "canonical_module": canonical.__name__,
-        "anchor_defined_in_canonical": getattr(canonical, anchor).__module__ == canonical.__name__,
+        # MO package split (deliberate contract amendment): a canonical package may define the anchor
+        # in one of its submodules (SEMO lives in multi_objective.semo) and re-export it.
+        "anchor_defined_in_canonical": (getattr(canonical, anchor).__module__ == canonical.__name__
+                                        or getattr(canonical, anchor).__module__.startswith(canonical.__name__ + ".")),
         "canonical_public": sorted(n for n in vars(canonical) if not n.startswith("_")),
         "package_exports_canonical_anchor": getattr(package, anchor) is getattr(canonical, anchor),
         "target_counts": {where: len(values) for where, values in mine.items()},

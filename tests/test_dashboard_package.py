@@ -3514,6 +3514,10 @@ NEW_MODULES = (
     "noisyvis.dashboard.callbacks.graph_data", "noisyvis.dashboard.callbacks.visualization",
     "noisyvis.dashboard.callbacks.pareto", "noisyvis.analysis.misjudgements",
     "noisyvis.mlflow_app", "noisyvis.mlflow_app.app",
+    # MO package split (deliberate amendment): `noisyvis.algorithms.multi_objective` became a
+    # package, so its submodules now load alongside it. No import-time behaviour changes.
+    "noisyvis.algorithms.multi_objective.base", "noisyvis.algorithms.multi_objective.umda",
+    "noisyvis.algorithms.multi_objective.semo", "noisyvis.algorithms.multi_objective.nsga2",
 )
 
 # Where an import's module moves. The imported *names* never change (A1).
