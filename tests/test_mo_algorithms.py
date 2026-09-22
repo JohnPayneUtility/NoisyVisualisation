@@ -17,11 +17,15 @@ gain a `MoUMDABase`, stop MoUMDA runs whose probability vector has converged, an
    genotype can carry different observed objectives; whether the archive should deduplicate them is
    an open research question, so the refactor must not change it.
 
-Known defect, pinned as strict xfails until the stage that fixes it (MO refactor Stage 5):
+A defect pinned by strict xfails from Stage 0 and fixed in MO refactor Stage 5 (the xfails removed):
 
-9. `MoUMDA_noDuplicates` never passes `prevent_duplicates` to the sampler, so its offspring contain
-   duplicate genotypes: it behaves exactly like `MoUMDA` and differs only in `name`/`type`.
-10. Its initial population is built by the generic initialiser, so it is not duplicate-free either.
+9. `MoUMDA_noDuplicates` never passed `prevent_duplicates` to the sampler, so its offspring contained
+   duplicate genotypes: it behaved exactly like `MoUMDA` and differed only in `name`/`type`.
+10. Its initial population was built by the generic initialiser, so it was not duplicate-free either.
+
+Since Stage 5 duplicate-free runs check, before each generation, whether the probability vector that
+generation would use can support pop_size distinct genotypes, and stop with
+`probability_vector_converged` or `insufficient_unique_support` if not.
 
 The characterisation is a strict *prefix* contract for later stages, not only an equality one: runs
 whose probability vector fully converges will stop there once the convergence stop exists (Stage 4),
@@ -503,6 +507,9 @@ def no_duplicates_generation():
         injected.append(ind)
     algo.population = injected
     probs = np.mean(injected, axis=0)
+    evals_before = algo.evals
+    counting = Counting(algo.fitness_function[0])
+    algo.fitness_function = (counting, algo.fitness_function[1])
     seed_all(1)
     algo.perform_generation()
     keys = [tuple(int(x) for x in ind) for ind in algo.population]
@@ -511,20 +518,39 @@ def no_duplicates_generation():
         "population_size": len(keys),
         "unique_genotypes": len(set(keys)),
         "all_within_support": all(not any(key[4:]) for key in keys),
+        "evals_added": algo.evals - evals_before,
+        "evaluations": counting.calls,
     }
 
 
+class Counting:
+    """Wraps a callable and counts its calls."""
+
+    def __init__(self, fn):
+        self.fn = fn
+        self.calls = 0
+
+    def __call__(self, *args, **kwargs):
+        self.calls += 1
+        return self.fn(*args, **kwargs)
+
+
 def no_duplicates_initial_population():
-    """sol_length 4 has 16 genotypes, so 10 unique initial individuals are possible."""
+    """sol_length 4 has 16 genotypes, so 10 unique initial individuals are possible (with rejections)."""
     cfg = case_config({"init_args": {"_target_": MO_PREFIX + "MoUMDA_noDuplicates", "pop_size": 10,
                                      "select_size": 5, "prob_margin": False},
                        "gen_limit": 5})
     params = runner_algo_params(cfg)
     params["sol_length"] = 4
+    attribute = Counting(params["attr_function"])
+    fitness = Counting(params["fitness_function"][0])
+    params["attr_function"] = attribute
+    params["fitness_function"] = (fitness, params["fitness_function"][1])
     seed_all(1)
     algo = instantiate(cfg.algo.init_args, **params)
     keys = [tuple(int(x) for x in ind) for ind in algo.population]
-    return {"population_size": len(keys), "unique_genotypes": len(set(keys)), "evals": algo.evals}
+    return {"population_size": len(keys), "unique_genotypes": len(set(keys)), "evals": algo.evals,
+            "candidates_drawn": attribute.calls // 4, "evaluations": fitness.calls}
 
 
 # ---------------------------------------------------------------- 4/14. helpers and direct calls
@@ -696,9 +722,9 @@ def commit_on_success():
 COLLAPSED_GENOTYPE = [1, 0, 1, 1, 0, 0, 1, 0, 1, 0]
 
 
-def moumda_case(target="MoUMDA", **params):
-    return {"init_args": {"_target_": MO_PREFIX + target, "pop_size": 20, "select_size": 10,
-                          "prob_margin": False},
+def moumda_case(target="MoUMDA", pop_size=20, select_size=10, init_args=None, **params):
+    return {"init_args": dict({"_target_": MO_PREFIX + target, "pop_size": pop_size, "select_size": select_size,
+                               "prob_margin": False}, **(init_args or {})),
             "gen_limit": 50, "record_every_gen": True, "params": params}
 
 
@@ -822,9 +848,225 @@ def real_valued_path():
             "gene_type": type(algo.population[0][0]).__name__}
 
 
+# ---------------------------------------------------------------- duplicate-free MoUMDA (Stage 5)
+
+def duplicate_free_case(**params):
+    """MoUMDA_noDuplicates on the 10-bit knapsack with select_size == pop_size == 10, so the probability
+    vector is exactly the mean of the (injected) population."""
+    return moumda_case("MoUMDA_noDuplicates", pop_size=10, select_size=10, **params)
+
+
+def inject_free_bits(algo, free_bits):
+    """Individual i carries the low `free_bits` bits of i, the other bits fixed at 1: with 10
+    individuals every one of those bits is mixed, so the vector has exactly `free_bits` free bits."""
+    injected = []
+    for value in range(algo.pop_size):
+        ind = creator.Individual([(value >> b) & 1 for b in range(free_bits)] + [1] * (algo.sol_length - free_bits))
+        ind.fitness.values = algo.toolbox.evaluate(ind)
+        injected.append(ind)
+    algo.population = injected
+
+
+def state_snapshot(algo):
+    return {"gens": algo.gens, "evals": algo.evals, "records": records(algo), "population": algo.population,
+            "genotypes": genotypes(algo.population), "vector": algo.probability_vector, "rng": rng_state()}
+
+
+def unchanged_since(algo, before):
+    now = state_snapshot(algo)
+    return {"gens": now["gens"] == before["gens"], "evals": now["evals"] == before["evals"],
+            "records": now["records"] == before["records"],
+            "population_object": now["population"] is before["population"],
+            "population_genotypes": now["genotypes"] == before["genotypes"],
+            "probability_vector_object": now["vector"] is before["vector"], "rng": now["rng"] == before["rng"]}
+
+
+class Instrumented:
+    """Counts parent selections, vector calculations and sampler calls in the UMDA module, and records
+    which vector object each sampler call received. Restores the originals on exit."""
+
+    def __enter__(self):
+        um = umda_module()
+        self.um, self.calls, self.sampled_vectors = um, {"select": 0, "vector": 0, "sample": 0}, []
+        self.saved = {"select": um.tools.selNSGA2, "vector": um.calculate_probability_vector,
+                      "sample": um.sample_from_probability_vector}
+
+        def count(name, fn):
+            def wrapped(*args, **kwargs):
+                self.calls[name] += 1
+                if name == "sample":
+                    self.sampled_vectors.append(args[0])
+                return fn(*args, **kwargs)
+            return wrapped
+
+        um.tools.selNSGA2 = count("select", self.saved["select"])
+        um.calculate_probability_vector = count("vector", self.saved["vector"])
+        um.sample_from_probability_vector = count("sample", self.saved["sample"])
+        return self
+
+    def __exit__(self, *exc):
+        self.um.tools.selNSGA2 = self.saved["select"]
+        self.um.calculate_probability_vector = self.saved["vector"]
+        self.um.sample_from_probability_vector = self.saved["sample"]
+        return False
+
+
+def duplicate_free_preflight_stops():
+    """support = 1 and 1 < support < pop_size: stop before the generation, committing nothing."""
+    found = {}
+    for name, free_bits in (("support_1", 0), ("support_8", 3)):
+        algo = build(duplicate_free_case(), 1)
+        inject_free_bits(algo, free_bits)
+        before = state_snapshot(algo)
+        with Instrumented() as probe_calls:
+            stopped = algo.stop_condition()
+        prepared = algo._prepared_probability_vector
+        found[name] = {
+            "stopped": stopped, "trigger": algo.stop_trigger, "unchanged": unchanged_since(algo, before),
+            "calls": probe_calls.calls,
+            "prepared_is_population_mean": bool(np.array_equal(prepared, np.mean(algo.population, axis=0))),
+            "prepared_free_bits": umda_module().count_free_bits(prepared),
+        }
+        # run() from this state ends immediately, with no generation counted.
+        plain = build(duplicate_free_case(), 1)
+        inject_free_bits(plain, free_bits)
+        evals = plain.evals
+        plain.run()
+        found[name]["run"] = {"gens": plain.gens, "evals_added": plain.evals - evals, "records": records(plain),
+                              "trigger": plain.stop_trigger}
+    return found
+
+
+def duplicate_free_reuse():
+    """Sufficient support (16 genotypes for 10): calculate once, inspect once, use once."""
+    algo = build(duplicate_free_case(), 1)
+    inject_free_bits(algo, 4)
+    evals = algo.evals
+    with Instrumented() as probe_calls:
+        first = algo.stop_condition()
+        prepared = algo._prepared_probability_vector
+        after_first = dict(probe_calls.calls)
+        second = algo.stop_condition()
+        after_second = dict(probe_calls.calls)
+        same_prepared = algo._prepared_probability_vector is prepared
+        algo.gens += 1
+        algo.perform_generation()
+        after_generation = dict(probe_calls.calls)
+        sampled = probe_calls.sampled_vectors
+    keys = [tuple(int(x) for x in ind) for ind in algo.population]
+    return {
+        "checks": [first, second], "calls_after_first_check": after_first,
+        "calls_after_second_check": after_second, "prepared_kept_between_checks": same_prepared,
+        "calls_after_generation": after_generation,
+        "sampler_received_prepared_object": len(sampled) == 1 and sampled[0] is prepared,
+        "committed_vector_is_prepared_object": algo.probability_vector is prepared,
+        "prepared_cleared": algo._prepared_probability_vector is None,
+        "population_size": len(keys), "unique_genotypes": len(set(keys)),
+        "within_support": all(all(bit == 1 for bit in key[4:]) for key in keys),
+        "evals_added": algo.evals - evals,
+    }
+
+
+def duplicate_free_commit_on_success():
+    """Evaluation fails after a successful preflight: nothing is committed, the prepared vector stays."""
+    algo = build(duplicate_free_case(), 1)
+    inject_free_bits(algo, 4)
+    stopped = algo.stop_condition()
+    prepared = algo._prepared_probability_vector
+    before = state_snapshot(algo)
+    algo.fitness_function = (FailingFitness(3), {})
+    try:
+        algo.perform_generation()
+        raised = None
+    except RuntimeError as exc:
+        raised = str(exc)
+    after = unchanged_since(algo, before)
+    del after["rng"]  # sampling did draw RNG before evaluation failed
+    return {"stopped": stopped, "raised": raised, "unchanged": after,
+            "prepared_kept": algo._prepared_probability_vector is prepared}
+
+
+def duplicate_free_direct_generation_guard():
+    """perform_generation called directly (no stop check) on an impossible vector raises, commits nothing."""
+    algo = build(duplicate_free_case(), 1)
+    inject_free_bits(algo, 3)
+    before = state_snapshot(algo)
+    outcome = raises_value_error(algo.perform_generation)
+    return {"outcome": outcome, "unchanged": unchanged_since(algo, before),
+            "prepared": algo._prepared_probability_vector}
+
+
+def duplicate_free_construction():
+    """Constructor semantics and duplicate-free initialisation, including the invalid configurations."""
+    cfg = case_config(duplicate_free_case())
+
+    def construct(target, **overrides):
+        params = runner_algo_params(cfg)
+        params.update(overrides.pop("params", {}))
+        seed_all(1)
+        return _locate(MO_PREFIX + target)(pop_size=overrides.pop("pop_size", 10), select_size=5, **overrides,
+                                           **params)
+
+    def outcome(fn):
+        try:
+            algo = fn()
+        except ValueError as exc:
+            return {"error": "ValueError", "message": str(exc)}
+        keys = [tuple(int(x) for x in ind) for ind in algo.population]
+        return {"name": algo.name, "type": algo.type, "prevent_duplicates": algo.prevent_duplicates,
+                "population_size": len(keys), "unique_genotypes": len(set(keys)), "evals": algo.evals}
+
+    start = [1, 0, 1, 0, 1, 0, 1, 0, 1, 0]
+    return {
+        "default": outcome(lambda: construct("MoUMDA_noDuplicates")),
+        "explicit_true": outcome(lambda: construct("MoUMDA_noDuplicates", prevent_duplicates=True)),
+        "explicit_false": outcome(lambda: construct("MoUMDA_noDuplicates", prevent_duplicates=False)),
+        "moumda_flag_true": outcome(lambda: construct("MoUMDA", prevent_duplicates=True)),
+        "capacity_3_bits": outcome(lambda: construct("MoUMDA_noDuplicates", params={"sol_length": 3})),
+        "starting_solution_pop_10": outcome(lambda: construct("MoUMDA_noDuplicates",
+                                                              params={"starting_solution": start})),
+        "starting_solution_pop_1": outcome(lambda: construct("MoUMDA_noDuplicates", pop_size=1,
+                                                             params={"starting_solution": start})),
+        "ordinary_3_bits": outcome(lambda: construct("MoUMDA", params={"sol_length": 3})),
+    }
+
+
+def duplicate_free_natural_runs():
+    """Natural margin-off runs: every recorded population is duplicate-free, and MoUMDA(prevent_duplicates=True)
+    is the same algorithm as MoUMDA_noDuplicates for the same seed and inputs."""
+    found = {}
+    for seed in ARGS["seeds"]:
+        runs = {}
+        for target, extra in (("MoUMDA_noDuplicates", {}), ("MoUMDA", {"prevent_duplicates": True})):
+            algo = build(moumda_case(target, init_args=extra, gen_limit=150), seed)
+            initial_duplicates = duplicate_genotypes(algo.population)
+            per_generation = drive(algo)
+            summary = run_summary(algo)
+            summary.pop("class")
+            runs[target] = {"summary": summary, "per_generation": per_generation,
+                            "initial_duplicates": initial_duplicates}
+        a, b = runs["MoUMDA_noDuplicates"], runs["MoUMDA"]
+        found[str(seed)] = {
+            "initial_duplicate_genotypes": a["initial_duplicates"],
+            "gens": a["summary"]["gens"], "trigger": a["summary"]["stop_trigger"],
+            "max_duplicate_genotypes": max((g["population_duplicate_genotypes"] for g in a["per_generation"]),
+                                           default=0),
+            "records": len(a["summary"]["true_pf_hypervolumes"]),
+            "flag_spelling_identical": a["summary"] == b["summary"] and a["per_generation"] == b["per_generation"]
+                                       and a["initial_duplicates"] == b["initial_duplicates"],
+        }
+    return found
+
+
 report = {
     "environment": {"python": sys.version.split()[0], "numpy": np.__version__, "deap": deap.__version__,
                     "hydra": hydra.__version__},
+    "duplicate_free_preflight_stops": section(duplicate_free_preflight_stops),
+    "duplicate_free_reuse": section(duplicate_free_reuse),
+    "duplicate_free_commit_on_success": section(duplicate_free_commit_on_success),
+    "duplicate_free_direct_generation_guard": section(duplicate_free_direct_generation_guard),
+    "duplicate_free_construction": section(duplicate_free_construction),
+    "duplicate_free_natural_runs": section(duplicate_free_natural_runs),
     "ordinary_collapse": section(ordinary_collapse),
     "archive_collapse": section(archive_collapse),
     "generic_precedence": section(generic_precedence),
@@ -942,18 +1184,25 @@ def test_every_configured_mo_target_instantiates_and_runs(probe, note):
     ran = [o for o in outcomes.values() if "skipped" not in o]
     assert {o["class"] for o in ran} == MO_ALGORITHM_CLASSES, sorted({o["class"] for o in ran})
     # Every run reaches the generation limit, except that a MoUMDA-family run may legitimately stop
-    # earlier on the convergence stop (MO refactor Stage 4) after at least one completed generation.
+    # earlier: ordinary/ParetoArchive runs on the post-generation convergence stop (MO refactor Stage 4)
+    # after at least one completed generation, duplicate-free runs on the pre-generation support stops
+    # (Stage 5) after any number of generations.
     def ran_as_expected(o):
         if o["gens"] == CONFIG_SWEEP_GENS and o["stop_trigger"] == "gen_limit":
             return True
-        return (o["stop_trigger"] == "probability_vector_converged" and 1 <= o["gens"] < CONFIG_SWEEP_GENS
-                and o["class"] in {"MoUMDA", "MoUMDA_noDuplicates", "MoUMDA_ParetoArchive"})
+        if o["gens"] >= CONFIG_SWEEP_GENS:
+            return False
+        if o["type"] == "MoUMDA_noDuplicates":
+            return o["stop_trigger"] in {"probability_vector_converged", "insufficient_unique_support"}
+        return (o["stop_trigger"] == "probability_vector_converged" and o["gens"] >= 1
+                and o["class"] in {"MoUMDA", "MoUMDA_ParetoArchive"})
 
     wrong = {path: o for path, o in outcomes.items() if "skipped" not in o and not ran_as_expected(o)}
     assert not wrong, f"configs that did not run as expected: {wrong}"
-    converged = sorted(path for path, o in outcomes.items() if o.get("stop_trigger") == "probability_vector_converged")
-    if converged:
-        note(f"test_mo_algorithms: config sweep runs stopped early on probability_vector_converged: {converged}")
+    early = sorted(f"{path} ({o['stop_trigger']})" for path, o in outcomes.items()
+                   if "skipped" not in o and o["stop_trigger"] != "gen_limit")
+    if early:
+        note(f"test_mo_algorithms: config sweep runs that stopped early: {early}")
 
 
 # ------------------------------------------------------------------------------ 3. characterisation
@@ -1180,31 +1429,118 @@ def test_generation_commits_only_after_successful_evaluation(probe):
     assert found["pareto_archive_margin_on"] == dict(committed_nothing, archive_updated_before_evaluation=True)
 
 
-# ------------------------------------------------------------------------------ 9/10. known defect
-
-_NO_DUPLICATES_DEFECT = (
-    "Known defect, fixed in MO refactor Stage 5: MoUMDA_noDuplicates never passes prevent_duplicates "
-    "to the sampler and initialises through the generic initialiser, so its populations contain "
-    "duplicate genotypes."
-)
+# ------------------------------------------------------------------------------ 9/10. duplicate-free MoUMDA
+# Strict xfails from Stage 0 until Stage 5 fixed the defect.
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason=_NO_DUPLICATES_DEFECT)
 def test_no_duplicates_generation_is_duplicate_free(probe):
     found = _section(probe, "no_duplicates_generation")
 
-    # Preconditions of the scenario itself; they hold before and after the fix.
+    # Preconditions of the scenario itself.
     if found["free_bits"] != 4 or not found["all_within_support"] or found["population_size"] != 10:
         raise RuntimeError(f"the injected scenario is not what the test assumes: {found}")
 
     assert found["unique_genotypes"] == found["population_size"], found
+    # Exactly the accepted offspring are evaluated and counted.
+    assert found["evals_added"] == found["evaluations"] == 10, found
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason=_NO_DUPLICATES_DEFECT)
 def test_no_duplicates_initial_population_is_duplicate_free(probe):
     found = _section(probe, "no_duplicates_initial_population")
 
-    if found["population_size"] != 10 or found["evals"] != 10:
+    if found["population_size"] != 10:
         raise RuntimeError(f"the initialisation scenario is not what the test assumes: {found}")
 
     assert found["unique_genotypes"] == found["population_size"], found
+    # Duplicates were drawn and rejected, and rejected candidates were never evaluated.
+    assert found["candidates_drawn"] > 10, found
+    assert found["evals"] == found["evaluations"] == 10, found
+
+
+_PREFLIGHT_UNCHANGED = {"gens": True, "evals": True, "records": True, "population_object": True,
+                        "population_genotypes": True, "probability_vector_object": True, "rng": True}
+
+
+def test_duplicate_free_preflight_stops_before_the_generation(probe):
+    found = _section(probe, "duplicate_free_preflight_stops")
+
+    for name, trigger, free_bits in (("support_1", "probability_vector_converged", 0),
+                                     ("support_8", "insufficient_unique_support", 3)):
+        result = found[name]
+        assert result["stopped"] is True and result["trigger"] == trigger, (name, result)
+        # Nothing but the prepared vector changes: no RNG, evaluation, counter, record or population.
+        assert result["unchanged"] == _PREFLIGHT_UNCHANGED, (name, result)
+        # One selection, one vector calculation, no sampling.
+        assert result["calls"] == {"select": 1, "vector": 1, "sample": 0}, (name, result)
+        # The classified vector is cached: exactly the mean of the (select_size == pop_size) parents.
+        assert result["prepared_is_population_mean"] is True
+        assert result["prepared_free_bits"] == free_bits
+        assert result["run"] == {"gens": 0, "evals_added": 0, "records": 0, "trigger": trigger}, (name, result)
+
+
+def test_duplicate_free_generation_uses_the_prepared_vector_once(probe):
+    found = _section(probe, "duplicate_free_reuse")
+
+    assert found["checks"] == [False, False]
+    # The first check selects parents and calculates the vector once; nothing afterwards repeats it.
+    assert found["calls_after_first_check"] == {"select": 1, "vector": 1, "sample": 0}
+    assert found["calls_after_second_check"] == {"select": 1, "vector": 1, "sample": 0}
+    assert found["prepared_kept_between_checks"] is True
+    assert found["calls_after_generation"] == {"select": 1, "vector": 1, "sample": 1}
+    # The classified array itself is sampled and then committed as the generation's vector.
+    assert found["sampler_received_prepared_object"] is True
+    assert found["committed_vector_is_prepared_object"] is True
+    assert found["prepared_cleared"] is True
+    assert (found["population_size"], found["unique_genotypes"], found["within_support"]) == (10, 10, True)
+    assert found["evals_added"] == 10
+
+
+def test_duplicate_free_generation_commits_only_after_successful_evaluation(probe):
+    found = _section(probe, "duplicate_free_commit_on_success")
+
+    assert found["stopped"] is False
+    assert found["raised"] == "injected evaluation failure"
+    assert found["unchanged"] == {key: True for key in _PREFLIGHT_UNCHANGED if key != "rng"}
+    assert found["prepared_kept"] is True
+
+
+def test_direct_duplicate_free_generation_with_impossible_support_raises(probe):
+    found = _section(probe, "duplicate_free_direct_generation_guard")
+
+    assert found["outcome"] == "ValueError"
+    assert found["unchanged"] == _PREFLIGHT_UNCHANGED
+    assert found["prepared"] is None
+
+
+def test_duplicate_free_construction(probe):
+    found = _section(probe, "duplicate_free_construction")
+
+    valid = {"name": "MoUMDA_noDuplicates(p=10, μ=5)", "type": "MoUMDA_noDuplicates", "prevent_duplicates": True,
+             "population_size": 10, "unique_genotypes": 10, "evals": 10}
+    assert found["default"] == valid
+    assert found["explicit_true"] == valid
+    assert found["moumda_flag_true"] == valid
+    assert found["explicit_false"] == {"error": "ValueError",
+                                       "message": "MoUMDA_noDuplicates requires prevent_duplicates=True."}
+    assert found["capacity_3_bits"]["error"] == "ValueError", found["capacity_3_bits"]
+    assert found["starting_solution_pop_10"]["error"] == "ValueError", found["starting_solution_pop_10"]
+    assert found["starting_solution_pop_1"] == dict(valid, name="MoUMDA_noDuplicates(p=1, μ=5)",
+                                                    population_size=1, unique_genotypes=1, evals=1)
+    # Duplicates remain allowed without the flag: 10 individuals over 8 genotypes.
+    ordinary = found["ordinary_3_bits"]
+    assert ordinary["type"] == "MoUMDA" and ordinary["prevent_duplicates"] is False
+    assert ordinary["population_size"] == 10 and ordinary["unique_genotypes"] <= 8
+
+
+def test_duplicate_free_natural_runs(probe, note):
+    found = _section(probe, "duplicate_free_natural_runs")
+
+    for seed, result in found.items():
+        assert result["initial_duplicate_genotypes"] == 0, (seed, result)
+        assert result["max_duplicate_genotypes"] == 0, (seed, result)
+        assert result["trigger"] in {"gen_limit", "probability_vector_converged", "insufficient_unique_support"}
+        assert result["records"] == result["gens"], (seed, result)
+        # MoUMDA(prevent_duplicates=True) is the same algorithm as MoUMDA_noDuplicates.
+        assert result["flag_spelling_identical"] is True, (seed, result)
+    note(f"test_mo_algorithms: duplicate-free natural runs: "
+         f"{ {seed: (r['gens'], r['trigger']) for seed, r in found.items()} }")

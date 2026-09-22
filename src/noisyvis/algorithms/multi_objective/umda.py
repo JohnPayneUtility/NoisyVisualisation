@@ -228,6 +228,10 @@ class MoUMDABase(OptimisationAlgorithm):
 
     probability_vector: the binary probability vector used by the last successfully completed
     generation (None before generation 1, and for real-valued genes).
+
+    _prepared_probability_vector: duplicate-free runs only. The exact binary probability vector the
+    next generation would sample from, computed by the pre-generation support check and consumed by
+    that generation. Derived state, never the vector of a completed generation.
     """
     def __init__(self,
                  pop_size: int,
@@ -245,29 +249,99 @@ class MoUMDABase(OptimisationAlgorithm):
         self.margin_scale = margin_scale
         self.prevent_duplicates = prevent_duplicates
         self.probability_vector = None
+        self._prepared_probability_vector = None
 
         # Initialise & evaluate λ population
-        self.initialise_population(self.pop_size)
+        self._initialise_umda_population()
+
+    def _initialise_umda_population(self):
+        if self.prevent_duplicates:
+            self._initialise_unique_population()
+        else:
+            self.initialise_population(self.pop_size)
+
+    def _initialise_unique_population(self):
+        """
+        initialise_population with pairwise-distinct genotypes: candidates are drawn one at a time and
+        duplicates rejected (never evaluated) until pop_size remain, which are then evaluated.
+        Configurations that cannot hold pop_size distinct genotypes raise ValueError.
+        """
+        if self.starting_solution is not None:
+            if self.pop_size > 1:
+                raise ValueError(
+                    "starting_solution copies one genotype into every individual, which contradicts "
+                    "prevent_duplicates=True when pop_size > 1."
+                )
+            self.initialise_population(self.pop_size)
+            return
+
+        self.population = []
+        seen = set()
+        binary = None
+        while len(self.population) < self.pop_size:
+            ind = self.toolbox.individual()
+            if binary is None:
+                binary = _gene_kind([ind]) == "binary"
+                if binary and not binary_support_at_least(self.sol_length, self.pop_size):
+                    raise ValueError(
+                        f"pop_size={self.pop_size} exceeds the 2**{self.sol_length} distinct binary "
+                        f"genotypes of length {self.sol_length}."
+                    )
+            key = _ind_to_key(ind) if binary else tuple(np.round(ind, 12))  # as the samplers key them
+            if key in seen:
+                continue
+            seen.add(key)
+            self.population.append(ind)
+
+        # Evaluate initial population
+        for ind in self.population:
+            ind.fitness.values = self.toolbox.evaluate(ind)
+        self.evals += self.pop_size
 
     def stop_condition(self) -> bool:
         """
         Stop-trigger precedence:
           1. the generic criteria (eval_limit, target_reached, gen_limit, no_improvement);
-          2. probability_vector_converged, checked after a generation: the vector that generated the
-             last completed and recorded population is entirely 0/1, so any further generation could
-             only resample that one genotype. The converged generation itself is kept.
-        Reads state only: no probability vector is recomputed and the archive is not touched.
+        then, when duplicates are allowed (MoUMDA, MoUMDA_ParetoArchive), after a generation:
+          2. probability_vector_converged: the vector that generated the last completed and recorded
+             population is entirely 0/1, so any further generation could only resample that one
+             genotype. The converged generation itself is kept.
+        or, when duplicates are prevented, before a generation starts (see _pre_generation_support_stop):
+          2. probability_vector_converged: the next vector supports a single genotype;
+          3. insufficient_unique_support: it supports fewer than pop_size distinct genotypes.
+        Neither check draws RNG, evaluates or commits anything, and the archive is never touched.
         """
         if super().stop_condition():
             return True
         if self.prevent_duplicates:
-            # duplicate-free runs are checked before a generation instead (MO refactor Stage 5)
-            return False
+            return self._pre_generation_support_stop()
         return self._post_generation_convergence_stop()
 
     def _post_generation_convergence_stop(self):
         if is_probability_vector_converged(self.probability_vector):
             self.stop_trigger = PROBABILITY_VECTOR_CONVERGED
+            return True
+        return False
+
+    def _pre_generation_support_stop(self):
+        """
+        Duplicate-free runs: before the generation starts, classify the exact binary probability vector
+        it would sample from, since a duplicate-free population can only be built if that vector
+        supports pop_size distinct genotypes. The vector is computed once (one parent selection),
+        cached in _prepared_probability_vector and reused by perform_generation; repeated checks reuse it.
+
+        Stopping here is an explicit resolution of an edge case the published MoUMDA pseudocode leaves
+        open: the run ends normally rather than allowing duplicates, shrinking λ or restarting the model.
+        """
+        if _gene_kind(self.population) != "binary":
+            return False  # real-valued support has no finite bound
+        if self._prepared_probability_vector is None:
+            self._prepared_probability_vector = calculate_probability_vector(
+                self._select_parents(), self.sol_length, self.prob_margin, self.margin_scale
+            )
+        reason = no_duplicates_stop_reason(self._prepared_probability_vector, self.pop_size)
+        if reason is not None:
+            self.stop_trigger = reason
             return True
         return False
 
@@ -282,16 +356,21 @@ class MoUMDABase(OptimisationAlgorithm):
     def perform_generation(self):
         """One generation: construct offspring, evaluate them, and only then commit."""
         # Construct
-        source = self._distribution_source()
         if _gene_kind(self.population) == "binary":
-            probability_vector = calculate_probability_vector(
-                source, self.sol_length, self.prob_margin, self.margin_scale
+            # duplicate-free runs: the vector the pre-generation check already classified
+            probability_vector = self._prepared_probability_vector
+            if probability_vector is None:
+                probability_vector = calculate_probability_vector(
+                    self._distribution_source(), self.sol_length, self.prob_margin, self.margin_scale
+                )
+            offspring = sample_from_probability_vector(
+                probability_vector, self.pop_size, prevent_duplicates=self.prevent_duplicates
             )
-            # prevent_duplicates is not propagated yet (known MoUMDA_noDuplicates defect)
-            offspring = sample_from_probability_vector(probability_vector, self.pop_size)
         else:
-            means, stds = calculate_gaussian_marginals(source)
-            offspring = sample_from_gaussian_marginals(means, stds, self.pop_size)
+            means, stds = calculate_gaussian_marginals(self._distribution_source())
+            offspring = sample_from_gaussian_marginals(
+                means, stds, self.pop_size, prevent_duplicates=self.prevent_duplicates
+            )
             probability_vector = None
 
         # Evaluate
@@ -303,6 +382,7 @@ class MoUMDABase(OptimisationAlgorithm):
         self.population = offspring
         self.evals += self.pop_size
         self.probability_vector = probability_vector
+        self._prepared_probability_vector = None
 
 class MoUMDA(MoUMDABase):
     def __init__(self,
@@ -329,14 +409,13 @@ class MoUMDA_noDuplicates(MoUMDABase):
                  margin_scale: float = 1.0,
                  prevent_duplicates: bool = True,
                  **kwargs):
-        super().__init__(pop_size, select_size, prob_margin, margin_scale, prevent_duplicates, **kwargs)
+        # the parameter is kept for config compatibility; this variant always prevents duplicates
+        if prevent_duplicates is not True:
+            raise ValueError("MoUMDA_noDuplicates requires prevent_duplicates=True.")
+        super().__init__(pop_size, select_size, prob_margin, margin_scale, prevent_duplicates=True, **kwargs)
 
-        if prevent_duplicates:
-            self.name = f'MoUMDA_noDuplicates(p={pop_size}, μ={self.select_size})'
-            self.type = 'MoUMDA_noDuplicates'
-        else:
-            self.name = f'MoUMDA(p={pop_size}, μ={self.select_size})'
-            self.type = 'MoUMDA'
+        self.name = f'MoUMDA_noDuplicates(p={pop_size}, μ={self.select_size})'
+        self.type = 'MoUMDA_noDuplicates'
 
 class MoUMDA_ParetoArchive(MoUMDABase):
     def __init__(
