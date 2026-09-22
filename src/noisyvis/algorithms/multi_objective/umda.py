@@ -221,7 +221,14 @@ def mo_umda_update_with_archive(
 # Estimation of Distribution Algorithm Subclasses
 # ==============================
 
-class MoUMDA(OptimisationAlgorithm):
+class MoUMDABase(OptimisationAlgorithm):
+    """
+    Shared state and generation of the MoUMDA family: NSGA-II selection of μ parents, a univariate
+    model fitted on the distribution source, and λ = pop_size sampled offspring replacing the population.
+
+    probability_vector: the binary probability vector used by the last successfully completed
+    generation (None before generation 1, and for real-valued genes).
+    """
     def __init__(self,
                  pop_size: int,
                  select_size: Optional[int] = None,
@@ -237,6 +244,53 @@ class MoUMDA(OptimisationAlgorithm):
         self.prob_margin = prob_margin
         self.margin_scale = margin_scale
         self.prevent_duplicates = prevent_duplicates
+        self.probability_vector = None
+
+        # Initialise & evaluate λ population
+        self.initialise_population(self.pop_size)
+
+    def _select_parents(self):
+        # NSGA-II parent selection (Pareto rank + crowding distance)
+        return tools.selNSGA2(self.population, self.select_size)
+
+    def _distribution_source(self):
+        """Individuals the model is fitted on. Called only by perform_generation (it may commit state)."""
+        return self._select_parents()
+
+    def perform_generation(self):
+        """One generation: construct offspring, evaluate them, and only then commit."""
+        # Construct
+        source = self._distribution_source()
+        if _gene_kind(self.population) == "binary":
+            probability_vector = calculate_probability_vector(
+                source, self.sol_length, self.prob_margin, self.margin_scale
+            )
+            # prevent_duplicates is not propagated yet (known MoUMDA_noDuplicates defect)
+            offspring = sample_from_probability_vector(probability_vector, self.pop_size)
+        else:
+            means, stds = calculate_gaussian_marginals(source)
+            offspring = sample_from_gaussian_marginals(means, stds, self.pop_size)
+            probability_vector = None
+
+        # Evaluate
+        fitnesses = list(map(self.toolbox.evaluate, offspring))
+        for ind, fit in zip(offspring, fitnesses):
+            ind.fitness.values = fit
+
+        # Commit, only after successful evaluation
+        self.population = offspring
+        self.evals += self.pop_size
+        self.probability_vector = probability_vector
+
+class MoUMDA(MoUMDABase):
+    def __init__(self,
+                 pop_size: int,
+                 select_size: Optional[int] = None,
+                 prob_margin: bool = False,
+                 margin_scale: float = 1.0,
+                 prevent_duplicates: bool = False,
+                 **kwargs):
+        super().__init__(pop_size, select_size, prob_margin, margin_scale, prevent_duplicates, **kwargs)
 
         if prevent_duplicates:
             self.name = f'MoUMDA_noDuplicates(p={pop_size}, μ={self.select_size})'
@@ -245,29 +299,7 @@ class MoUMDA(OptimisationAlgorithm):
             self.name = f'MoUMDA(p={pop_size}, μ={self.select_size})'
             self.type = 'MoUMDA'
 
-        # Initialise & evaluate μ population
-        self.initialise_population(self.pop_size)
-
-    def perform_generation(self):
-        """One generation of MoUMDA."""
-        # NSGA-II parent selection + UMDA model update
-        self.population = mo_umda_update_full(
-            self.sol_length,
-            self.population,
-            self.pop_size,
-            self.select_size,
-            self.toolbox,
-            prob_margin=self.prob_margin,
-            margin_scale=self.margin_scale,
-        )
-
-        # Evaluate new population
-        fitnesses = list(map(self.toolbox.evaluate, self.population))
-        for ind, fit in zip(self.population, fitnesses):
-            ind.fitness.values = fit
-        self.evals += self.pop_size
-
-class MoUMDA_noDuplicates(OptimisationAlgorithm):
+class MoUMDA_noDuplicates(MoUMDABase):
     def __init__(self,
                  pop_size: int,
                  select_size: Optional[int] = None,
@@ -275,14 +307,7 @@ class MoUMDA_noDuplicates(OptimisationAlgorithm):
                  margin_scale: float = 1.0,
                  prevent_duplicates: bool = True,
                  **kwargs):
-        super().__init__(**kwargs)
-        self.gens = 0
-        self.evals = 0
-        self.pop_size = pop_size
-        self.select_size = int(pop_size/2) if select_size is None else select_size
-        self.prob_margin = prob_margin
-        self.margin_scale = margin_scale
-        self.prevent_duplicates = prevent_duplicates
+        super().__init__(pop_size, select_size, prob_margin, margin_scale, prevent_duplicates, **kwargs)
 
         if prevent_duplicates:
             self.name = f'MoUMDA_noDuplicates(p={pop_size}, μ={self.select_size})'
@@ -291,29 +316,7 @@ class MoUMDA_noDuplicates(OptimisationAlgorithm):
             self.name = f'MoUMDA(p={pop_size}, μ={self.select_size})'
             self.type = 'MoUMDA'
 
-        # Initialise & evaluate μ population
-        self.initialise_population(self.pop_size)
-
-    def perform_generation(self):
-        """One generation of MoUMDA."""
-        # NSGA-II parent selection + UMDA model update
-        self.population = mo_umda_update_full(
-            self.sol_length,
-            self.population,
-            self.pop_size,
-            self.select_size,
-            self.toolbox,
-            prob_margin=self.prob_margin,
-            margin_scale=self.margin_scale,
-        )
-
-        # Evaluate new population
-        fitnesses = list(map(self.toolbox.evaluate, self.population))
-        for ind, fit in zip(self.population, fitnesses):
-            ind.fitness.values = fit
-        self.evals += self.pop_size
-
-class MoUMDA_ParetoArchive(OptimisationAlgorithm):
+class MoUMDA_ParetoArchive(MoUMDABase):
     def __init__(
         self,
         pop_size: int,
@@ -322,13 +325,8 @@ class MoUMDA_ParetoArchive(OptimisationAlgorithm):
         margin_scale: float = 1.0,
         **kwargs
     ):
-        super().__init__(**kwargs)
-        self.gens = 0
-        self.evals = 0
-        self.pop_size = pop_size
-        self.select_size = int(pop_size / 2) if select_size is None else select_size
-        self.prob_margin = prob_margin
-        self.margin_scale = margin_scale
+        # no prevent_duplicates parameter: passing one still raises TypeError
+        super().__init__(pop_size, select_size, prob_margin, margin_scale, prevent_duplicates=False, **kwargs)
 
         self.name = f"MoUMDA_ParetoArchive(λ={pop_size}, μ={self.select_size})"
         self.type = "MoUMDA_ParetoArchive"
@@ -336,8 +334,12 @@ class MoUMDA_ParetoArchive(OptimisationAlgorithm):
         # NEW: archive of non-dominated solutions
         self.archive = []
 
-        # keep your existing init behaviour
-        self.initialise_population(self.pop_size)
+    def _distribution_source(self):
+        # NSGA-II parents update the non-dominated archive; the model is fitted on the archive
+        parents = self._select_parents()
+        self.archive = _update_archive_nondominated(self.archive, parents)
+        # if archive empty (can happen at very start), fallback to parents
+        return self.archive if self.archive else parents
 
     def record_state_pareto(self, population):
         # Record PF/HV based on the archive
@@ -362,22 +364,3 @@ class MoUMDA_ParetoArchive(OptimisationAlgorithm):
             self.seed_signature,
             self.verbose_rate
             )
-
-    def perform_generation(self):
-        # generate offspring AND update archive
-        self.population, self.archive = mo_umda_update_with_archive(
-            self.sol_length,
-            self.population,
-            self.pop_size,
-            self.select_size,
-            self.toolbox,
-            archive=self.archive,
-            prob_margin=self.prob_margin,
-            margin_scale=self.margin_scale,
-        )
-
-        # evaluate offspring (same as before)
-        fitnesses = list(map(self.toolbox.evaluate, self.population))
-        for ind, fit in zip(self.population, fitnesses):
-            ind.fitness.values = fit
-        self.evals += self.pop_size

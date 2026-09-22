@@ -51,7 +51,7 @@ MO_PREFIX = "noisyvis.algorithms.multi_objective."
 
 # Public names a config, the runner or a user can reach at the flat MO path today.
 PUBLIC_MO_NAMES = (
-    "OptimisationAlgorithm", "SEMO", "MoUMDA", "MoUMDA_noDuplicates", "MoUMDA_ParetoArchive", "NSGA2",
+    "OptimisationAlgorithm", "MoUMDABase", "SEMO", "MoUMDA", "MoUMDA_noDuplicates", "MoUMDA_ParetoArchive", "NSGA2",
     "mo_umda_update_full", "mo_umda_update_with_archive", "record_pareto_data", "front_sig",
     "mut_flip_one_bit",
 )
@@ -347,15 +347,13 @@ def config_sweep():
 
 # ---------------------------------------------------------------- 3. characterisation
 
-def generating_vector_collapsed(algo):
-    """Whether the probability vector the next generation will sample from is entirely 0/1.
+def expected_generating_vector(algo):
+    """The probability vector the next generation will sample from, computed independently.
 
     Recomputes, without committing anything, exactly what perform_generation is about to compute:
     selNSGA2 parents (for the archive variant, the non-dominated archive update), their mean, and
-    the margin clip. Consumes no RNG, which is asserted. None for algorithms with no UMDA model.
+    the margin clip. Consumes no RNG, which is asserted.
     """
-    if not hasattr(algo, "select_size"):
-        return None
     before = rng_state()
     parents = tools.selNSGA2(algo.population, algo.select_size)
     source = parents
@@ -366,7 +364,15 @@ def generating_vector_collapsed(algo):
         eps = algo.margin_scale / float(algo.sol_length)
         probs = np.clip(probs, eps, 1.0 - eps)
     if rng_state() != before:
-        raise AssertionError("the collapse probe consumed RNG")
+        raise AssertionError("the vector probe consumed RNG")
+    return probs
+
+
+def generating_vector_collapsed(algo):
+    """Whether the vector the next generation will sample from is entirely 0/1; None with no UMDA model."""
+    if not hasattr(algo, "select_size"):
+        return None
+    probs = expected_generating_vector(algo)
     return bool(np.all((probs == 0.0) | (probs == 1.0)))
 
 
@@ -635,9 +641,59 @@ def legacy_wrapper_outputs():
     return found
 
 
+# ---------------------------------------------------------------- 15. commit on success
+
+class FailingFitness:
+    """A fitness function that raises on its `fail_on`-th call."""
+
+    def __init__(self, fail_on):
+        self.calls = 0
+        self.fail_on = fail_on
+
+    def __call__(self, individual, **kwargs):
+        self.calls += 1
+        if self.calls == self.fail_on:
+            raise RuntimeError("injected evaluation failure")
+        return (float(sum(individual)), float(sum(individual)))
+
+
+def commit_on_success():
+    found = {}
+    for name in ("moumda_margin_on", "moumda_margin_off", "pareto_archive_margin_on"):
+        algo = build(ARGS["cases"][name], 1)
+        record = {"vector_before_first_generation": None if algo.probability_vector is None else "set"}
+
+        # A successful generation stores exactly the vector it sampled from.
+        expected = expected_generating_vector(algo)
+        algo.gens += 1
+        algo.perform_generation()
+        algo.record_state_pareto(algo.population)
+        record["stored_vector_is_generating_vector"] = bool(np.array_equal(algo.probability_vector, expected))
+
+        # A generation whose evaluation raises commits nothing of its own.
+        before = {"population": algo.population, "genotypes": genotypes(algo.population), "evals": algo.evals,
+                  "vector": algo.probability_vector, "archive": getattr(algo, "archive", None)}
+        algo.fitness_function = (FailingFitness(3), {})
+        try:
+            algo.perform_generation()
+            record["raised"] = None
+        except RuntimeError as exc:
+            record["raised"] = str(exc)
+        record["population_object_kept"] = algo.population is before["population"]
+        record["population_genotypes_kept"] = genotypes(algo.population) == before["genotypes"]
+        record["evals_kept"] = algo.evals == before["evals"]
+        record["vector_object_kept"] = algo.probability_vector is before["vector"]
+        if hasattr(algo, "archive"):
+            # The archive update is part of constructing the model, before evaluation (today's timing).
+            record["archive_updated_before_evaluation"] = algo.archive is not before["archive"]
+        found[name] = record
+    return found
+
+
 report = {
     "environment": {"python": sys.version.split()[0], "numpy": np.__version__, "deap": deap.__version__,
                     "hydra": hydra.__version__},
+    "commit_on_success": section(commit_on_success),
     "helper_contracts": section(helper_contracts),
     "legacy_wrapper_outputs": section(legacy_wrapper_outputs),
     "public_names": section(public_names),
@@ -719,7 +775,7 @@ def test_public_mo_names_resolve_at_flat_paths(probe):
             f"{MO_PREFIX}{name} is defined in {module}, outside the multi_objective package"
         )
         assert info["callable"], f"{MO_PREFIX}{name} is not callable"
-        assert info["is_class"] is (name in MO_ALGORITHM_CLASSES | {"OptimisationAlgorithm"}), name
+        assert info["is_class"] is (name in MO_ALGORITHM_CLASSES | {"OptimisationAlgorithm", "MoUMDABase"}), name
         assert info["is_package_namespace_object"], (
             f"noisyvis.algorithms.{name} is not the object at {MO_PREFIX}{name}"
         )
@@ -836,6 +892,29 @@ def test_direct_calls_with_impossible_unique_support_raise(probe):
 
 def test_legacy_wrappers_unchanged(probe):
     assert _section(probe, "legacy_wrapper_outputs") == LEGACY_WRAPPER_OUTPUTS
+
+
+# ------------------------------------------------------------------------------ 15. commit on success
+
+
+def test_generation_commits_only_after_successful_evaluation(probe):
+    """probability_vector always describes a completed generation; a failed one commits nothing."""
+    found = _section(probe, "commit_on_success")
+
+    committed_nothing = {
+        "vector_before_first_generation": None,
+        "stored_vector_is_generating_vector": True,
+        "raised": "injected evaluation failure",
+        "population_object_kept": True,
+        "population_genotypes_kept": True,
+        "evals_kept": True,
+        "vector_object_kept": True,
+    }
+    assert found["moumda_margin_on"] == committed_nothing
+    assert found["moumda_margin_off"] == committed_nothing
+    # The archive variant updates its archive while constructing the model, before evaluation,
+    # exactly as before the refactor; that update is not rolled back.
+    assert found["pareto_archive_margin_on"] == dict(committed_nothing, archive_updated_before_evaluation=True)
 
 
 # ------------------------------------------------------------------------------ 9/10. known defect

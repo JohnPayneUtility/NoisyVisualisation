@@ -107,8 +107,9 @@ FORWARDER_PUBLIC_NAMES = {
     # namespace is its explicit `__all__` plus its four submodules. The incidental names of the old
     # monolithic module (typing names, np, optuna, deap modules, unused operator imports) are no
     # longer bound there; every class and helper a config, runner or user reached is kept.
+    # MoUMDABase (Stage 3) is the new shared base class of the three MoUMDA variants.
     "MOAlgorithms": frozenset({
-        "MoUMDA", "MoUMDA_ParetoArchive", "MoUMDA_noDuplicates", "NSGA2", "OptimisationAlgorithm",
+        "MoUMDA", "MoUMDABase", "MoUMDA_ParetoArchive", "MoUMDA_noDuplicates", "NSGA2", "OptimisationAlgorithm",
         "SEMO", "front_sig", "mo_umda_update_full", "mo_umda_update_with_archive", "mut_flip_one_bit",
         "record_pareto_data",
         "base", "nsga2", "semo", "umda",  # submodules

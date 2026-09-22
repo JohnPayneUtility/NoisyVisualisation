@@ -9,6 +9,7 @@ is explicit. Without it the star import would also export the submodule attribut
 from .base import OptimisationAlgorithm, record_pareto_data, front_sig
 from .semo import SEMO, mut_flip_one_bit
 from .umda import (
+    MoUMDABase,
     MoUMDA,
     MoUMDA_noDuplicates,
     MoUMDA_ParetoArchive,
@@ -23,6 +24,7 @@ __all__ = [
     "front_sig",
     "SEMO",
     "mut_flip_one_bit",
+    "MoUMDABase",
     "MoUMDA",
     "MoUMDA_noDuplicates",
     "MoUMDA_ParetoArchive",
