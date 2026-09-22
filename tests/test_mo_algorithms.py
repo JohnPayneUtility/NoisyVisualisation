@@ -280,6 +280,7 @@ def build(case, seed):
     cfg = case_config(case)
     params = runner_algo_params(cfg)
     params["record_every_gen"] = case["record_every_gen"]
+    params.update(case.get("params", {}))  # optional overrides; the characterisation cases have none
     seed_all(seed)
     return instantiate(cfg.algo.init_args, **params)
 
@@ -690,9 +691,144 @@ def commit_on_success():
     return found
 
 
+# ---------------------------------------------------------------- 5/6/7. convergence stop
+
+COLLAPSED_GENOTYPE = [1, 0, 1, 1, 0, 0, 1, 0, 1, 0]
+
+
+def moumda_case(target="MoUMDA", **params):
+    return {"init_args": {"_target_": MO_PREFIX + target, "pop_size": 20, "select_size": 10,
+                          "prob_margin": False},
+            "gen_limit": 50, "record_every_gen": True, "params": params}
+
+
+def inject_identical_population(algo, genotype):
+    """Replace the population with copies of one genotype, each with its own noisy evaluation."""
+    injected = []
+    for _ in range(algo.pop_size):
+        ind = creator.Individual(list(genotype))
+        ind.fitness.values = algo.toolbox.evaluate(ind)
+        injected.append(ind)
+    algo.population = injected
+
+
+def records(algo):
+    return len(algo.true_pf_hypervolumes)
+
+
+def stop_check(algo):
+    """One stop_condition() call, reporting whether it drew RNG."""
+    before = rng_state()
+    stopped = algo.stop_condition()
+    return stopped, rng_state() == before
+
+
+def step(algo):
+    algo.gens += 1
+    algo.perform_generation()
+    algo.record_state_pareto(algo.population)
+
+
+def ordinary_collapse():
+    algo = build(moumda_case(), 1)
+    inject_identical_population(algo, COLLAPSED_GENOTYPE)
+    found = {"first_check": stop_check(algo), "evals_before": algo.evals}
+    step(algo)
+    found.update({
+        "gens": algo.gens, "evals": algo.evals, "records": records(algo),
+        "trigger_before_next_check": algo.stop_trigger,
+        "vector": [float(p) for p in algo.probability_vector],
+        "genotypes": sorted({tuple(int(x) for x in ind) for ind in algo.population}),
+        "distinct_fitnesses": len({tuple(ind.fitness.values) for ind in algo.population}),
+        "recorded_front_genotypes": sorted({tuple(int(x) for x in ind) for ind in algo.pareto_solutions[-1]}),
+    })
+    found["next_check"] = stop_check(algo)
+    found["trigger"] = algo.stop_trigger
+    found["gens_after"], found["evals_after"], found["records_after"] = algo.gens, algo.evals, records(algo)
+
+    plain = build(moumda_case(), 1)
+    inject_identical_population(plain, COLLAPSED_GENOTYPE)
+    plain.run()
+    found["run"] = {"gens": plain.gens, "evals": plain.evals, "records": records(plain),
+                    "trigger": plain.stop_trigger}
+    return found
+
+
+def archive_collapse():
+    algo = build(moumda_case("MoUMDA_ParetoArchive"), 1)
+    dominant = creator.Individual(list(COLLAPSED_GENOTYPE))
+    dominant.fitness.values = (1.0e6, -1.0e6)  # dominates every knapsack evaluation
+    algo.archive = [dominant]
+    diverse_parents = sorted({tuple(int(x) for x in ind) for ind in algo.population})
+    found = {"first_check": stop_check(algo), "population_diverse": len(diverse_parents) > 1}
+    archive_before_generation = algo.archive
+    step(algo)
+    found.update({
+        "archive_replaced_by_generation": algo.archive is not archive_before_generation,
+        "archive_genotypes": sorted(tuple(int(x) for x in ind) for ind in algo.archive),
+        "gens": algo.gens, "evals": algo.evals, "records": records(algo),
+        "trigger_before_next_check": algo.stop_trigger,
+        "vector": [float(p) for p in algo.probability_vector],
+        "population_genotypes": sorted({tuple(int(x) for x in ind) for ind in algo.population}),
+        "population_evaluated": all(ind.fitness.valid for ind in algo.population),
+        "recorded_front_genotypes": sorted({tuple(int(x) for x in ind) for ind in algo.pareto_solutions[-1]}),
+    })
+    archive_object = algo.archive
+    archive_snapshot = [[list(a), list(a.fitness.values)] for a in algo.archive]
+    checks = [stop_check(algo), stop_check(algo)]
+    found.update({
+        "next_checks": checks, "trigger": algo.stop_trigger,
+        "archive_object_kept": algo.archive is archive_object,
+        "archive_contents_kept": [[list(a), list(a.fitness.values)] for a in algo.archive] == archive_snapshot,
+        "gens_after": algo.gens, "evals_after": algo.evals, "records_after": records(algo),
+    })
+
+    # The same diverse start on ordinary MoUMDA does not converge after one generation.
+    ordinary = build(moumda_case(), 1)
+    step(ordinary)
+    found["ordinary_same_start_stops"] = ordinary.stop_condition()
+    return found
+
+
+def generic_precedence():
+    """A converged probability_vector and a generic criterion on the same check: generic wins."""
+    found = {}
+    for name, params in (("gen_limit", {"gen_limit": 1}), ("eval_limit", {"eval_limit": 40}),
+                         ("no_improvement", {"stop_without_improvement_in_gens": 1})):
+        algo = build(moumda_case(**params), 1)
+        inject_identical_population(algo, COLLAPSED_GENOTYPE)
+        algo.run()
+        found[name] = {"gens": algo.gens, "trigger": algo.stop_trigger,
+                       "vector_converged": umda_module().is_probability_vector_converged(algo.probability_vector)}
+    return found
+
+
+def real_objectives(individual):
+    return (float(sum(individual)), float(sum(individual)))
+
+
+def real_valued_path():
+    """Gaussian generations leave probability_vector None, so they never trigger the stop."""
+    algo = _locate(MO_PREFIX + "MoUMDA")(
+        pop_size=10, select_size=5, sol_length=3, opt_weights=(1.0, -1.0), gen_limit=50,
+        attr_function=getattr(algorithms, "Rastrigin_attribute"), fitness_function=(real_objectives, {}),
+    )
+    for ind in algo.population:  # a collapsed real-valued population
+        ind[:] = [0.5, 0.5, 0.5]
+        ind.fitness.values = real_objectives(ind)
+    algo.gens += 1
+    algo.perform_generation()
+    return {"vector": algo.probability_vector, "stops": algo.stop_condition(), "trigger": algo.stop_trigger,
+            "gene_type": type(algo.population[0][0]).__name__}
+
+
 report = {
     "environment": {"python": sys.version.split()[0], "numpy": np.__version__, "deap": deap.__version__,
                     "hydra": hydra.__version__},
+    "ordinary_collapse": section(ordinary_collapse),
+    "archive_collapse": section(archive_collapse),
+    "generic_precedence": section(generic_precedence),
+    "real_valued_path": section(real_valued_path),
     "commit_on_success": section(commit_on_success),
     "helper_contracts": section(helper_contracts),
     "legacy_wrapper_outputs": section(legacy_wrapper_outputs),
@@ -805,9 +941,19 @@ def test_every_configured_mo_target_instantiates_and_runs(probe, note):
 
     ran = [o for o in outcomes.values() if "skipped" not in o]
     assert {o["class"] for o in ran} == MO_ALGORITHM_CLASSES, sorted({o["class"] for o in ran})
-    wrong = {path: o for path, o in outcomes.items()
-             if "skipped" not in o and (o["gens"] != CONFIG_SWEEP_GENS or o["stop_trigger"] != "gen_limit")}
-    assert not wrong, f"configs that did not run exactly {CONFIG_SWEEP_GENS} generations: {wrong}"
+    # Every run reaches the generation limit, except that a MoUMDA-family run may legitimately stop
+    # earlier on the convergence stop (MO refactor Stage 4) after at least one completed generation.
+    def ran_as_expected(o):
+        if o["gens"] == CONFIG_SWEEP_GENS and o["stop_trigger"] == "gen_limit":
+            return True
+        return (o["stop_trigger"] == "probability_vector_converged" and 1 <= o["gens"] < CONFIG_SWEEP_GENS
+                and o["class"] in {"MoUMDA", "MoUMDA_noDuplicates", "MoUMDA_ParetoArchive"})
+
+    wrong = {path: o for path, o in outcomes.items() if "skipped" not in o and not ran_as_expected(o)}
+    assert not wrong, f"configs that did not run as expected: {wrong}"
+    converged = sorted(path for path, o in outcomes.items() if o.get("stop_trigger") == "probability_vector_converged")
+    if converged:
+        note(f"test_mo_algorithms: config sweep runs stopped early on probability_vector_converged: {converged}")
 
 
 # ------------------------------------------------------------------------------ 3. characterisation
@@ -825,14 +971,57 @@ def test_stepped_loop_is_run(probe):
     assert equivalence == {name: True for name in CHARACTERISATION_CASES}, equivalence
 
 
+def first_collapsed_generation(run: dict):
+    """The first baseline generation sampled from a fully 0/1 probability vector, or None."""
+    return next((g["gen"] for g in run["per_generation"] if g.get("generating_vector_collapsed")), None)
+
+
+def truncated_at_convergence(want: dict, stop_gen: int) -> dict:
+    """What a pre-refactor baseline run becomes once the convergence stop (MO refactor Stage 4) ends
+    it right after generation `stop_gen`, the first one sampled from a converged vector.
+
+    Only defined for runs that record every generation (one record per generation), which is why
+    the margin-off characterisation cases do.
+    """
+    summary = want["summary"]
+    per_generation = want["per_generation"][:stop_gen]
+    records = stop_gen
+    runs, remaining = [], records  # n_gens_pareto_best: the baseline's run lengths cut at `records`
+    for length in summary["n_gens_pareto_best"]:
+        runs.append(min(length, remaining))
+        remaining -= runs[-1]
+        if remaining == 0:
+            break
+    truncated = dict(summary)
+    truncated.update({
+        "gens": stop_gen,
+        "evals": per_generation[-1]["evals"],
+        "stop_trigger": "probability_vector_converged",
+        "n_gens_pareto_best": runs,
+        "final_population_genotypes_sha": per_generation[-1]["population_genotypes_sha"],
+        "final_population_fitnesses_sha": per_generation[-1]["population_fitnesses_sha"],
+    })
+    for key in ("noisy_pf_noisy_hypervolumes", "noisy_pf_true_hypervolumes", "true_pf_hypervolumes",
+                "pareto_solutions_sha", "pareto_fitnesses_sha", "pareto_true_fitnesses_sha",
+                "true_pareto_solutions_sha", "true_pareto_fitnesses_sha"):
+        truncated[key] = summary[key][:records]
+    return {"summary": truncated, "per_generation": per_generation}
+
+
 @pytest.mark.parametrize("case", sorted(CHARACTERISATION_CASES))
 def test_characterisation_matches_baseline(probe, baseline, case):
+    """Exact, except that a run whose probability vector fully converges now stops right after the
+    first generation sampled from it: its record must then be exactly that prefix of the baseline."""
     observed = _section(probe, "characterisation")[case]
     expected = baseline["cases"][case]
 
     assert set(observed) == set(expected) == {str(seed) for seed in SEEDS}
     for seed in sorted(expected):
         got, want = observed[seed], expected[seed]
+        stop_gen = first_collapsed_generation(want)
+        if stop_gen is not None and stop_gen < want["summary"]["gens"]:
+            assert CHARACTERISATION_CASES[case]["record_every_gen"], f"{case}: prefix needs per-generation records"
+            want = truncated_at_convergence(want, stop_gen)
         assert got["summary"] == want["summary"], (
             f"{case} seed {seed}: run summary differs from the frozen pre-refactor baseline"
         )
@@ -844,6 +1033,16 @@ def test_characterisation_matches_baseline(probe, baseline, case):
             assert got_gen == want_gen, (
                 f"{case} seed {seed}: generation {want_gen['gen']} differs from the frozen baseline"
             )
+
+
+def test_natural_convergence_points_are_inside_the_baseline_window(baseline):
+    """The margin-off MoUMDA baseline runs really do collapse inside their window, so the prefix
+    comparison above exercises the convergence stop; margin-on runs and the archive variant do not."""
+    collapse = {case: {seed: first_collapsed_generation(run) for seed, run in runs.items()}
+                for case, runs in baseline["cases"].items()}
+    assert collapse["moumda_margin_off"] == {"1": 30, "2": 42}
+    for case in ("moumda_margin_on", "pareto_archive_margin_on", "pareto_archive_margin_off", "nsga2"):
+        assert set(collapse[case].values()) == {None}, (case, collapse[case])
 
 
 # ------------------------------------------------------------------------------ 8. archive
@@ -892,6 +1091,70 @@ def test_direct_calls_with_impossible_unique_support_raise(probe):
 
 def test_legacy_wrappers_unchanged(probe):
     assert _section(probe, "legacy_wrapper_outputs") == LEGACY_WRAPPER_OUTPUTS
+
+
+# ------------------------------------------------------------------------------ 5/6/7. convergence stop
+
+COLLAPSED = (1, 0, 1, 1, 0, 0, 1, 0, 1, 0)
+NO_RNG_NOT_STOPPED = [False, True]  # stop_check(): (stopped, RNG untouched)
+NO_RNG_STOPPED = [True, True]
+
+
+def test_ordinary_moumda_keeps_the_converged_generation_then_stops(probe):
+    found = _section(probe, "ordinary_collapse")
+
+    # Generation 1 runs normally from the collapsed parents: sampled, evaluated, counted, recorded.
+    assert found["first_check"] == NO_RNG_NOT_STOPPED
+    assert (found["gens"], found["evals"], found["records"]) == (1, found["evals_before"] + 20, 1)
+    assert found["vector"] == [float(bit) for bit in COLLAPSED]
+    assert found["genotypes"] == [list(COLLAPSED)]
+    assert found["distinct_fitnesses"] > 1, "noisy copies of one genotype should get different observed fitness"
+    assert found["recorded_front_genotypes"] == [list(COLLAPSED)]
+    # Only the following check stops, and it neither draws RNG nor advances the run.
+    assert found["trigger_before_next_check"] == ""
+    assert found["next_check"] == NO_RNG_STOPPED
+    assert found["trigger"] == "probability_vector_converged"
+    assert (found["gens_after"], found["evals_after"], found["records_after"]) == (1, found["evals"], 1)
+    assert found["run"] == {"gens": 1, "evals": found["evals"], "records": 1,
+                            "trigger": "probability_vector_converged"}
+
+
+def test_pareto_archive_keeps_the_converged_generation_and_stop_checks_leave_the_archive(probe):
+    found = _section(probe, "archive_collapse")
+
+    assert found["first_check"] == NO_RNG_NOT_STOPPED
+    assert found["population_diverse"] is True
+    # The real archive update happens inside the generation, as before; its single genotype gives
+    # a converged vector, whose sampled population is evaluated, and the archive is recorded.
+    assert found["archive_replaced_by_generation"] is True
+    assert found["archive_genotypes"] == [list(COLLAPSED)]
+    assert (found["gens"], found["records"]) == (1, 1)
+    assert found["vector"] == [float(bit) for bit in COLLAPSED]
+    assert found["population_genotypes"] == [list(COLLAPSED)]
+    assert found["population_evaluated"] is True
+    assert found["recorded_front_genotypes"] == [list(COLLAPSED)]
+    assert found["trigger_before_next_check"] == ""
+    # The following checks stop without drawing RNG or touching the archive, however often called.
+    assert found["next_checks"] == [NO_RNG_STOPPED, NO_RNG_STOPPED]
+    assert found["trigger"] == "probability_vector_converged"
+    assert found["archive_object_kept"] is True and found["archive_contents_kept"] is True
+    assert (found["gens_after"], found["evals_after"], found["records_after"]) == (1, found["evals"], 1)
+    assert found["ordinary_same_start_stops"] is False
+
+
+def test_generic_stop_criteria_take_precedence_over_convergence(probe):
+    found = _section(probe, "generic_precedence")
+
+    assert found == {
+        "gen_limit": {"gens": 1, "trigger": "gen_limit", "vector_converged": True},
+        "eval_limit": {"gens": 1, "trigger": "eval_limit", "vector_converged": True},
+        "no_improvement": {"gens": 1, "trigger": "no_improvement", "vector_converged": True},
+    }
+
+
+def test_real_valued_generations_never_trigger_the_convergence_stop(probe):
+    assert _section(probe, "real_valued_path") == {"vector": None, "stops": False, "trigger": "",
+                                                   "gene_type": "float"}
 
 
 # ------------------------------------------------------------------------------ 15. commit on success

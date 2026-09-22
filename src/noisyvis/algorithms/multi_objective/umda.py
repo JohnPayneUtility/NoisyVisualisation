@@ -249,6 +249,28 @@ class MoUMDABase(OptimisationAlgorithm):
         # Initialise & evaluate λ population
         self.initialise_population(self.pop_size)
 
+    def stop_condition(self) -> bool:
+        """
+        Stop-trigger precedence:
+          1. the generic criteria (eval_limit, target_reached, gen_limit, no_improvement);
+          2. probability_vector_converged, checked after a generation: the vector that generated the
+             last completed and recorded population is entirely 0/1, so any further generation could
+             only resample that one genotype. The converged generation itself is kept.
+        Reads state only: no probability vector is recomputed and the archive is not touched.
+        """
+        if super().stop_condition():
+            return True
+        if self.prevent_duplicates:
+            # duplicate-free runs are checked before a generation instead (MO refactor Stage 5)
+            return False
+        return self._post_generation_convergence_stop()
+
+    def _post_generation_convergence_stop(self):
+        if is_probability_vector_converged(self.probability_vector):
+            self.stop_trigger = PROBABILITY_VECTOR_CONVERGED
+            return True
+        return False
+
     def _select_parents(self):
         # NSGA-II parent selection (Pareto rank + crowding distance)
         return tools.selNSGA2(self.population, self.select_size)
