@@ -60,13 +60,14 @@ algo:
   use_dynamic_pop_size: false
   pop_size: 100
   select_size: 50
-  prevent_duplicates: True
   
   # Algorithm initialization parameters
   init_args:
     _target_: noisyvis.algorithms.multi_objective.MoUMDA_noDuplicates
     pop_size: 100
     select_size: 50
+    prob_margin: false
+    prevent_duplicates: true
 
 # ==============================
 # Problem Configuration

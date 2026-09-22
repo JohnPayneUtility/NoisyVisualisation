@@ -66,6 +66,7 @@ algo:
     _target_: noisyvis.algorithms.multi_objective.MoUMDA_ParetoArchive
     pop_size: 100
     select_size: 50
+    prob_margin: false
 
 # ==============================
 # Problem Configuration

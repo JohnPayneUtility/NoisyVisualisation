@@ -147,7 +147,7 @@ def sample_from_gaussian_marginals(means, stds, pop_size, prevent_duplicates=Fal
 # ==============================
 
 def mo_umda_update_full(len_sol, population, pop_size, select_size, toolbox,
-                        prob_margin=True, margin_scale=1.0, prevent_duplicates=False):
+                        prob_margin=False, margin_scale=1.0, prevent_duplicates=False):
     """
     NSGA-II (non-dominated sorting + crowding) selection of μ parents,
     then UMDA-style model update and sampling of λ=pop_size offspring.
@@ -184,7 +184,7 @@ def mo_umda_update_with_archive(
     select_size,
     toolbox,
     archive,
-    prob_margin=True,
+    prob_margin=False,
     margin_scale=1.0,
 ):
     """

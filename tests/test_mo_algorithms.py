@@ -344,7 +344,9 @@ def config_sweep():
                 algo.run()
                 outcomes[relative] = {"target": target, "class": type(algo).__name__, "name": algo.name,
                                       "type": algo.type, "gens": algo.gens, "evals": algo.evals,
-                                      "stop_trigger": algo.stop_trigger}
+                                      "stop_trigger": algo.stop_trigger,
+                                      "prevent_duplicates": getattr(algo, "prevent_duplicates", None),
+                                      "prob_margin": getattr(algo, "prob_margin", None)}
             except Exception:
                 outcomes[relative] = {"target": target, "error": traceback.format_exc()}
     return outcomes
@@ -655,7 +657,9 @@ def legacy_wrapper_outputs():
                                                              prevent_duplicates=True),
         "full real": lambda: um.mo_umda_update_full(6, real, 12, 6, None),
         "full real unique": lambda: um.mo_umda_update_full(6, real, 12, 6, None, prevent_duplicates=True),
-        "archive binary empty": lambda: um.mo_umda_update_with_archive(10, binary, 12, 6, None, archive=[]),
+        # prob_margin explicit: captured when the default was True (Stage 6 changed it to False)
+        "archive binary empty": lambda: um.mo_umda_update_with_archive(10, binary, 12, 6, None, archive=[],
+                                                                       prob_margin=True),
         "archive binary seeded": lambda: um.mo_umda_update_with_archive(10, binary, 12, 6, None,
                                                                         archive=seeded_archive, prob_margin=False),
         "archive real": lambda: um.mo_umda_update_with_archive(6, real, 12, 6, None, archive=[]),
@@ -666,6 +670,14 @@ def legacy_wrapper_outputs():
         out = call()
         found[name] = fingerprint(*out) if isinstance(out, tuple) else fingerprint(out)
     return found
+
+
+def legacy_wrapper_defaults():
+    import inspect
+    um = umda_module()
+    return {fn.__name__: {name: p.default for name, p in inspect.signature(fn).parameters.items()
+                          if name in ("prob_margin", "margin_scale", "prevent_duplicates")}
+            for fn in (um.mo_umda_update_full, um.mo_umda_update_with_archive)}
 
 
 # ---------------------------------------------------------------- 15. commit on success
@@ -1074,6 +1086,7 @@ report = {
     "commit_on_success": section(commit_on_success),
     "helper_contracts": section(helper_contracts),
     "legacy_wrapper_outputs": section(legacy_wrapper_outputs),
+    "legacy_wrapper_defaults": section(legacy_wrapper_defaults),
     "public_names": section(public_names),
     "config_sweep": section(config_sweep),
     "characterisation": section(characterisation),
@@ -1199,6 +1212,14 @@ def test_every_configured_mo_target_instantiates_and_runs(probe, note):
 
     wrong = {path: o for path, o in outcomes.items() if "skipped" not in o and not ran_as_expected(o)}
     assert not wrong, f"configs that did not run as expected: {wrong}"
+    # Stage 6: every MoUMDA-family config runs without a probability margin, and the one duplicate-free
+    # config really prevents duplicates (its flag used to sit at algo level, where Hydra ignored it).
+    umda_family = {path: o for path, o in outcomes.items() if o.get("class", "").startswith("MoUMDA")}
+    assert umda_family and all(o["prob_margin"] is False for o in umda_family.values()), umda_family
+    duplicate_free = sorted(path for path, o in umda_family.items() if o["prevent_duplicates"])
+    assert duplicate_free == ["configs/Multiobjective/MO_knapsack/kp10_moumda_nd.yaml"], duplicate_free
+    assert outcomes["configs/Multiobjective/MO_knapsack/kp10_moumda_nd.yaml"]["type"] == "MoUMDA_noDuplicates"
+
     early = sorted(f"{path} ({o['stop_trigger']})" for path, o in outcomes.items()
                    if "skipped" not in o and o["stop_trigger"] != "gen_limit")
     if early:
@@ -1340,6 +1361,14 @@ def test_direct_calls_with_impossible_unique_support_raise(probe):
 
 def test_legacy_wrappers_unchanged(probe):
     assert _section(probe, "legacy_wrapper_outputs") == LEGACY_WRAPPER_OUTPUTS
+
+
+def test_legacy_wrapper_defaults_match_the_classes(probe):
+    """Stage 6 (R3): no probability margin by default, as for the MoUMDA classes."""
+    assert _section(probe, "legacy_wrapper_defaults") == {
+        "mo_umda_update_full": {"prob_margin": False, "margin_scale": 1.0, "prevent_duplicates": False},
+        "mo_umda_update_with_archive": {"prob_margin": False, "margin_scale": 1.0},
+    }
 
 
 # ------------------------------------------------------------------------------ 5/6/7. convergence stop
