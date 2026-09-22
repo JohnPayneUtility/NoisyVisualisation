@@ -18,6 +18,134 @@ def _ind_to_key(ind):
     # hashable representation of a solution
     return tuple(ind)
 
+# Stop triggers of the MoUMDA family
+PROBABILITY_VECTOR_CONVERGED = "probability_vector_converged"
+INSUFFICIENT_UNIQUE_SUPPORT = "insufficient_unique_support"
+
+def _gene_kind(individuals):
+    # "binary" (int genes) or "real" (float genes), from the first gene of the first individual
+    gene_type = type(individuals[0][0])
+    if gene_type == int:
+        return "binary"
+    if gene_type == float:
+        return "real"
+    raise ValueError("Unsupported gene type for moUMDA. Use int (binary) or float.")
+
+# ==============================
+# Binary UMDA: Bernoulli probability vector
+# ==============================
+
+def calculate_probability_vector(parents, len_sol, prob_margin, margin_scale):
+    """
+    Per-bit marginal probabilities of the parents.
+
+    prob_margin: clamp p to [s/n, 1-s/n] with s = margin_scale (classic UMDA margin).
+    """
+    probs = np.mean(parents, axis=0)
+
+    if prob_margin:
+        n = float(len_sol)
+        eps = (margin_scale / n)
+        probs = np.clip(probs, eps, 1.0 - eps)
+
+    return probs
+
+def is_probability_vector_converged(probability_vector):
+    # every p_i exactly 0 or 1: the vector can only generate one genotype
+    if probability_vector is None:
+        return False
+    probs = np.asarray(probability_vector, dtype=float)
+    return probs.size > 0 and bool(np.all((probs == 0.0) | (probs == 1.0)))
+
+def count_free_bits(probability_vector):
+    # positions with 0 < p_i < 1; the vector can generate 2**free_bits distinct genotypes
+    probs = np.asarray(probability_vector, dtype=float)
+    return int(np.count_nonzero((probs > 0.0) & (probs < 1.0)))
+
+def binary_support_at_least(n_free_bits, required):
+    # exactly 2**n_free_bits >= required, without building 2**n_free_bits
+    return required <= 1 or n_free_bits >= (required - 1).bit_length()
+
+def has_sufficient_unique_support(probability_vector, required):
+    return binary_support_at_least(count_free_bits(probability_vector), required)
+
+def no_duplicates_stop_reason(probability_vector, pop_size):
+    """
+    Why a duplicate-free population of pop_size cannot be sampled from this vector, or None.
+    Convergence (support 1) is reported in preference to insufficient support.
+    """
+    if is_probability_vector_converged(probability_vector):
+        return PROBABILITY_VECTOR_CONVERGED
+    if not has_sufficient_unique_support(probability_vector, pop_size):
+        return INSUFFICIENT_UNIQUE_SUPPORT
+    return None
+
+def sample_from_probability_vector(probability_vector, pop_size, prevent_duplicates=False):
+    """
+    Sample pop_size binary individuals, one np.random.rand draw per candidate.
+
+    prevent_duplicates: rejection-sample distinct genotypes. Raises ValueError before drawing
+    if the vector cannot generate pop_size distinct genotypes.
+    """
+    if prevent_duplicates and not has_sufficient_unique_support(probability_vector, pop_size):
+        raise ValueError(
+            f"Probability vector has {count_free_bits(probability_vector)} free bits, so it supports "
+            f"fewer than pop_size={pop_size} distinct genotypes."
+        )
+
+    len_sol = len(probability_vector)
+    new_solutions = []
+    seen = set() if prevent_duplicates else None
+
+    while len(new_solutions) < pop_size:
+        bits = (np.random.rand(len_sol) < probability_vector).astype(int).tolist()
+        ind = creator.Individual(bits)
+
+        if prevent_duplicates:
+            key = _ind_to_key(ind)
+            if key in seen:
+                continue
+            seen.add(key)
+
+        new_solutions.append(ind)
+
+    return new_solutions
+
+# ==============================
+# Real-valued UMDA: Gaussian marginals
+# ==============================
+
+def calculate_gaussian_marginals(parents):
+    # per-position means and standard deviations (floored to avoid degenerate sigma)
+    arr = np.array(parents, dtype=float)
+    means = np.mean(arr, axis=0)
+    stds  = np.maximum(np.std(arr, axis=0), 1e-12)
+    return means, stds
+
+def sample_from_gaussian_marginals(means, stds, pop_size, prevent_duplicates=False):
+    # sample pop_size real-valued individuals, one np.random.normal draw per candidate
+    len_sol = len(means)
+    new_solutions = []
+    seen = set() if prevent_duplicates else None
+
+    while len(new_solutions) < pop_size:
+        vals = np.random.normal(means, stds, size=len_sol).tolist()
+        ind = creator.Individual(vals)
+
+        if prevent_duplicates:
+            key = tuple(np.round(vals, 12))  # avoid FP noise
+            if key in seen:
+                continue
+            seen.add(key)
+
+        new_solutions.append(ind)
+
+    return new_solutions
+
+# ==============================
+# Legacy one-shot update helpers
+# ==============================
+
 def mo_umda_update_full(len_sol, population, pop_size, select_size, toolbox,
                         prob_margin=True, margin_scale=1.0, prevent_duplicates=False):
     """
@@ -31,57 +159,13 @@ def mo_umda_update_full(len_sol, population, pop_size, select_size, toolbox,
     # (Population must be evaluated already — your base class ensures this.)
     parents = tools.selNSGA2(population, select_size)
 
-    # --- 2) Detect gene type
-    gene_type = type(population[0][0])
+    # --- 2) Fit the univariate model on parents & sample new offspring
+    if _gene_kind(population) == "binary":
+        probability_vector = calculate_probability_vector(parents, len_sol, prob_margin, margin_scale)
+        return sample_from_probability_vector(probability_vector, pop_size, prevent_duplicates=prevent_duplicates)
 
-    # --- 3) Fit the univariate model on parents & sample new offspring
-    if gene_type == int:
-        probs = np.mean(parents, axis=0)
-
-        if prob_margin:
-            n = float(len_sol)
-            eps = (margin_scale / n)
-            probs = np.clip(probs, eps, 1.0 - eps)
-
-        new_solutions = []
-        seen = set() if prevent_duplicates else None
-
-        while len(new_solutions) < pop_size:
-            bits = (np.random.rand(len_sol) < probs).astype(int).tolist()
-            ind = creator.Individual(bits)
-
-            if prevent_duplicates:
-                key = _ind_to_key(ind)
-                if key in seen:
-                    continue
-                seen.add(key)
-
-            new_solutions.append(ind)
-
-    elif gene_type == float:
-        arr = np.array(parents, dtype=float)
-        means = np.mean(arr, axis=0)
-        stds  = np.maximum(np.std(arr, axis=0), 1e-12)
-
-        new_solutions = []
-        seen = set() if prevent_duplicates else None
-
-        while len(new_solutions) < pop_size:
-            vals = np.random.normal(means, stds, size=len_sol).tolist()
-            ind = creator.Individual(vals)
-
-            if prevent_duplicates:
-                key = tuple(np.round(vals, 12))  # avoid FP noise
-                if key in seen:
-                    continue
-                seen.add(key)
-
-            new_solutions.append(ind)
-
-    else:
-        raise ValueError("Unsupported gene type for moUMDA. Use int (binary) or float.")
-
-    return new_solutions
+    means, stds = calculate_gaussian_marginals(parents)
+    return sample_from_gaussian_marginals(means, stds, pop_size, prevent_duplicates=prevent_duplicates)
 
 def _update_archive_nondominated(archive, candidates):
     combined = list(archive) + list(candidates)
@@ -120,38 +204,16 @@ def mo_umda_update_with_archive(
         archive, parents
     )
 
-    # 3) detect gene type (same as you do)
-    gene_type = type(population[0][0])
+    # 3) fit on ARCHIVE (key change) and sample λ
+    # if archive empty (can happen at very start), fallback to parents
+    model_source = new_archive if new_archive else parents
 
-    # 4) fit on ARCHIVE (key change) and sample λ
-    if gene_type == int:
-        # if archive empty (can happen at very start), fallback to parents
-        model_source = new_archive if new_archive else parents
-        probs = np.mean(model_source, axis=0)
-
-        if prob_margin:
-            n = float(len_sol)
-            eps = (margin_scale / n)
-            probs = np.clip(probs, eps, 1.0 - eps)
-
-        new_solutions = []
-        for _ in range(pop_size):
-            bits = (np.random.rand(len_sol) < probs).astype(int).tolist()
-            new_solutions.append(creator.Individual(bits))
-
-    elif gene_type == float:
-        model_source = np.array(new_archive if new_archive else parents, dtype=float)
-        means = np.mean(model_source, axis=0)
-        stds  = np.std(model_source, axis=0)
-        stds  = np.maximum(stds, 1e-12)
-
-        new_solutions = []
-        for _ in range(pop_size):
-            vals = np.random.normal(means, stds, size=len_sol).tolist()
-            new_solutions.append(creator.Individual(vals))
-
+    if _gene_kind(population) == "binary":
+        probability_vector = calculate_probability_vector(model_source, len_sol, prob_margin, margin_scale)
+        new_solutions = sample_from_probability_vector(probability_vector, pop_size)
     else:
-        raise ValueError("Unsupported gene type for moUMDA. Use int (binary) or float.")
+        means, stds = calculate_gaussian_marginals(model_source)
+        new_solutions = sample_from_gaussian_marginals(means, stds, pop_size)
 
     return new_solutions, new_archive
 

@@ -104,6 +104,58 @@ CHARACTERISATION_CASES = {
     },
 }
 
+# ------------------------------------------------------------------ helper expectations (checks 4/14)
+
+# binary_support_at_least(k, required) is exactly 2**k >= required.
+SUPPORT_CASES = [(6, 100), (7, 100), (6, 64), (6, 65), (0, 1), (0, 2), (1, 2), (1, 3), (10_000, 100)]
+EXPECTED_SUPPORT = {"6,100": False, "7,100": True, "6,64": True, "6,65": False, "0,1": True, "0,2": False,
+                    "1,2": True, "1,3": False, "10000,100": True}
+
+# no_duplicates_stop_reason(vector with k free bits, pop_size): convergence wins over support.
+REASON_CASES = [(0, 10), (0, 1), (3, 10), (4, 10), (6, 100), (7, 100)]
+EXPECTED_REASONS = {"0,10": "probability_vector_converged", "0,1": "probability_vector_converged",
+                    "3,10": "insufficient_unique_support", "4,10": None,
+                    "6,100": "insufficient_unique_support", "7,100": None}
+
+# Frozen outputs of direct legacy-wrapper calls on the paths the classes never reach: duplicate
+# rejection, real-valued genes and a non-empty archive. Captured at commit 3395480 (MO refactor
+# Stage 1), where both wrappers were still AST-identical to the pre-refactor module. `next_draw` is
+# the next np.random draw after the call, so it pins how much RNG each call consumed. Never
+# re-derive these to make a test pass.
+LEGACY_WRAPPER_OUTPUTS = {
+    "archive binary empty": {
+        "archive_sha": "19554dfe5411b60ca450eb44bd818766625a924d58a0cf4e59f3bc8a86a97bc8",
+        "gene_type": "int", "next_draw": 0.22407863694631935, "size": 12,
+        "solutions_sha": "2b2422cd0b6cf241965828e7802ff73ca36ef19d4d249a0d9e85f6dddb301d15",
+    },
+    "archive binary seeded": {
+        "archive_sha": "174da8f63f779296cf3652cc2b03e4ee963cc8a0cbfdfbca1a892f14db9a72af",
+        "gene_type": "int", "next_draw": 0.22407863694631935, "size": 12,
+        "solutions_sha": "df827a07cd7afad75e85e0ab58871bacdb884b34e41e6b488134bb783a4367a8",
+    },
+    "archive real": {
+        "archive_sha": "1a642cbd6f70ea9ee68c32509ba0e63d3fb5a5faa5c08a9e96c6fdc88bb46c04",
+        "gene_type": "float", "next_draw": 0.7963907007825485, "size": 12,
+        "solutions_sha": "9365ea5cdd2a9fd530242c42b5722580ecb23c6bbefcb43e4006843b67cab672",
+    },
+    "full binary margin": {
+        "gene_type": "int", "next_draw": 0.22407863694631935, "size": 12,
+        "solutions_sha": "f312317a701e6483e05fcfc7079385b6d5e6aba1c3b4e549b6e0b3b2813ed808",
+    },
+    "full binary unique": {
+        "gene_type": "int", "next_draw": 0.3290495438867621, "size": 12,
+        "solutions_sha": "2f1a4f19324df29b8c5b51a09dd3e0141bc7db19ba98ed2692bd372e86fddb31",
+    },
+    "full real": {
+        "gene_type": "float", "next_draw": 0.7963907007825485, "size": 12,
+        "solutions_sha": "8de677e7902d4839f8489daa4d361353a371870ab8396c2d51c76c52d8e5db3c",
+    },
+    "full real unique": {
+        "gene_type": "float", "next_draw": 0.7963907007825485, "size": 12,
+        "solutions_sha": "8de677e7902d4839f8489daa4d361353a371870ab8396c2d51c76c52d8e5db3c",
+    },
+}
+
 # ------------------------------------------------------------------------------ the probe
 
 # Runs in a harness subprocess (fresh temp root, write fence installed). It only reports what it
@@ -468,9 +520,126 @@ def no_duplicates_initial_population():
     return {"population_size": len(keys), "unique_genotypes": len(set(keys)), "evals": algo.evals}
 
 
+# ---------------------------------------------------------------- 4/14. helpers and direct calls
+
+def ten_bit_vector(free_bits):
+    """A 10-bit probability vector: `free_bits` positions at 0.5, the rest fixed at 1."""
+    return np.array([0.5] * free_bits + [1.0] * (10 - free_bits))
+
+
+def raises_value_error(fn):
+    try:
+        fn()
+    except ValueError:
+        return "ValueError"
+    return "no error"
+
+
+def helper_contracts():
+    um = umda_module()
+    vectors = {
+        "partial": np.array([0.0, 1.0, 0.5, 1.0]),
+        "collapsed": np.array([0.0, 1.0, 1.0, 0.0]),
+        "empty": np.array([]),
+        "margin_clipped": np.clip(np.array([0.0, 1.0, 1.0, 0.0]), 0.1, 0.9),
+    }
+    copies = {name: v.copy() for name, v in vectors.items()}
+    before = rng_state()
+
+    converged = {name: um.is_probability_vector_converged(v) for name, v in vectors.items()}
+    converged["None"] = um.is_probability_vector_converged(None)
+    free_bits = {name: um.count_free_bits(v) for name, v in vectors.items()}
+    support = {f"{k},{required}": um.binary_support_at_least(k, required)
+               for k, required in ARGS["support_cases"]}
+    reasons = {f"{k},{pop}": um.no_duplicates_stop_reason(ten_bit_vector(k), pop)
+               for k, pop in ARGS["reason_cases"]}
+    # Direct misuse fails fast, before any draw: impossible duplicate-free support.
+    guards = {
+        "sample k=3 pop=10": raises_value_error(
+            lambda: um.sample_from_probability_vector(ten_bit_vector(3), 10, prevent_duplicates=True)),
+        "sample k=0 pop=10": raises_value_error(
+            lambda: um.sample_from_probability_vector(ten_bit_vector(0), 10, prevent_duplicates=True)),
+    }
+    pure = {"inputs_unchanged": all(np.array_equal(vectors[n], copies[n]) for n in vectors),
+            "rng_unchanged": rng_state() == before}
+
+    build(ARGS["cases"]["moumda_margin_on"], 1)  # creator.Individual with weights (1, -1)
+    collapsed_population = []
+    for i in range(10):
+        ind = creator.Individual([1, 0, 1, 1, 0, 0, 1, 0, 1, 0])
+        ind.fitness.values = (float(i), float(i))
+        collapsed_population.append(ind)
+    guards["mo_umda_update_full collapsed"] = raises_value_error(
+        lambda: um.mo_umda_update_full(10, collapsed_population, 10, 5, None, prob_margin=False,
+                                       prevent_duplicates=True))
+
+    seed_all(1)
+    sampled = um.sample_from_probability_vector(ten_bit_vector(4), 10, prevent_duplicates=True)
+    unique_sample = {"size": len(sampled), "unique": len({tuple(ind) for ind in sampled}),
+                     "within_support": all(all(bit == 1 for bit in ind[4:]) for ind in sampled)}
+    return {"converged": converged, "free_bits": free_bits, "support": support, "reasons": reasons,
+            "guards": guards, "pure": pure, "unique_sample": unique_sample,
+            "constants": [um.PROBABILITY_VECTOR_CONVERGED, um.INSUFFICIENT_UNIQUE_SUPPORT]}
+
+
+def legacy_wrapper_outputs():
+    """Direct calls of the two legacy wrappers on paths the classes never reach (duplicate
+    prevention, real-valued genes, a non-empty archive): output, gene type and RNG consumption."""
+    um = umda_module()
+    build(ARGS["cases"]["moumda_margin_on"], 1)  # creator.Individual with weights (1, -1)
+    generator = np.random.RandomState(12345)
+
+    def population(make_genes):
+        found = []
+        for i in range(12):
+            ind = creator.Individual(make_genes())
+            ind.fitness.values = (float(sum(ind)), float(i % 5))
+            found.append(ind)
+        return found
+
+    binary = population(lambda: [int(b) for b in generator.randint(0, 2, size=10)])
+    # 4 free bits (16 genotypes) for 12 unique offspring: duplicate rejection really happens.
+    narrow = population(lambda: [int(b) for b in generator.randint(0, 2, size=4)] + [1] * 6)
+    real = population(lambda: [float(x) for x in generator.uniform(-5.0, 5.0, size=6)])
+    # Archive members non-dominated by every population member (value above 10, or weight below 0).
+    seeded_archive = []
+    for bits, fitness in (([0] * 10, (11.0, 4.0)), ([1] * 10, (0.0, -1.0))):
+        ind = creator.Individual(bits)
+        ind.fitness.values = fitness
+        seeded_archive.append(ind)
+
+    def fingerprint(solutions, archive=None):
+        found = {"size": len(solutions), "gene_type": type(solutions[0][0]).__name__,
+                 "solutions_sha": sha([list(s) for s in solutions]),
+                 "next_draw": float(np.random.rand())}
+        if archive is not None:
+            found["archive_sha"] = sha([[list(a), list(a.fitness.values)] for a in archive])
+        return found
+
+    calls = {
+        "full binary margin": lambda: um.mo_umda_update_full(10, binary, 12, 6, None, prob_margin=True),
+        "full binary unique": lambda: um.mo_umda_update_full(10, narrow, 12, 6, None, prob_margin=False,
+                                                             prevent_duplicates=True),
+        "full real": lambda: um.mo_umda_update_full(6, real, 12, 6, None),
+        "full real unique": lambda: um.mo_umda_update_full(6, real, 12, 6, None, prevent_duplicates=True),
+        "archive binary empty": lambda: um.mo_umda_update_with_archive(10, binary, 12, 6, None, archive=[]),
+        "archive binary seeded": lambda: um.mo_umda_update_with_archive(10, binary, 12, 6, None,
+                                                                        archive=seeded_archive, prob_margin=False),
+        "archive real": lambda: um.mo_umda_update_with_archive(6, real, 12, 6, None, archive=[]),
+    }
+    found = {}
+    for name, call in calls.items():
+        seed_all(7)
+        out = call()
+        found[name] = fingerprint(*out) if isinstance(out, tuple) else fingerprint(out)
+    return found
+
+
 report = {
     "environment": {"python": sys.version.split()[0], "numpy": np.__version__, "deap": deap.__version__,
                     "hydra": hydra.__version__},
+    "helper_contracts": section(helper_contracts),
+    "legacy_wrapper_outputs": section(legacy_wrapper_outputs),
     "public_names": section(public_names),
     "config_sweep": section(config_sweep),
     "characterisation": section(characterisation),
@@ -499,6 +668,8 @@ def run_probe() -> dict:
         "sweep_select_size": CONFIG_SWEEP_SELECT_SIZE,
         "cases": CHARACTERISATION_CASES,
         "seeds": SEEDS,
+        "support_cases": SUPPORT_CASES,
+        "reason_cases": REASON_CASES,
     }
     root = make_temp_root()
     try:
@@ -632,6 +803,39 @@ def test_pareto_archive_update_keeps_genotype_duplicates(probe):
     assert semantics["returns_new_list"] is True
     assert semantics["archive_argument_unchanged"] is True
     assert semantics["empty_inputs"] == []
+
+
+# ------------------------------------------------------------------------------ 4. helpers
+
+
+def test_probability_vector_helpers(probe):
+    found = _section(probe, "helper_contracts")
+
+    assert found["constants"] == ["probability_vector_converged", "insufficient_unique_support"]
+    # Exact 0/1 comparison: a margin-clipped vector is not converged; empty and None are not either.
+    assert found["converged"] == {"partial": False, "collapsed": True, "empty": False,
+                                  "margin_clipped": False, "None": False}
+    assert found["free_bits"] == {"partial": 1, "collapsed": 0, "empty": 0, "margin_clipped": 4}
+    assert found["support"] == EXPECTED_SUPPORT
+    assert found["reasons"] == EXPECTED_REASONS
+    assert found["pure"] == {"inputs_unchanged": True, "rng_unchanged": True}
+
+
+# ------------------------------------------------------------------------------ 14. direct calls
+
+
+def test_direct_calls_with_impossible_unique_support_raise(probe):
+    """Direct misuse fails fast instead of entering an impossible rejection loop."""
+    found = _section(probe, "helper_contracts")
+
+    assert found["guards"] == {"sample k=3 pop=10": "ValueError", "sample k=0 pop=10": "ValueError",
+                               "mo_umda_update_full collapsed": "ValueError"}
+    # With sufficient support (16 genotypes for 10) the sampler returns unique in-support genotypes.
+    assert found["unique_sample"] == {"size": 10, "unique": 10, "within_support": True}
+
+
+def test_legacy_wrappers_unchanged(probe):
+    assert _section(probe, "legacy_wrapper_outputs") == LEGACY_WRAPPER_OUTPUTS
 
 
 # ------------------------------------------------------------------------------ 9/10. known defect
