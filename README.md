@@ -91,7 +91,8 @@ The five root scripts are thin. Each one sets the MLflow tracking URI at import,
 
 ```
 src/noisyvis/
-├── algorithms/     single_objective.py, multi_objective.py, operators.py
+├── algorithms/     single_objective.py, operators.py,
+│                   multi_objective/ (base.py, umda.py, semo.py, nsga2.py)
 ├── problems/       onemax.py, jump.py, knapsack.py, knapsack_mo.py, continuous.py,
 │                   instances.py (loaders), constraints.py (violation functions)
 ├── networks/       lon.py (BinaryLON), colon.py (BinaryCoLON), compression.py
@@ -110,7 +111,7 @@ src/noisyvis/
 
 | Package | Responsibility |
 |---|---|
-| `noisyvis.algorithms` | Search algorithms. `single_objective.py` holds the SO base class `OptimisationAlgorithm` and `MuPlusLamdaEA` (+ `_forgetful`, `_estimated`), `PCEA`, `UMDA` (+ `_estimated`) and `CompactGA`. `multi_objective.py` holds its own `OptimisationAlgorithm` plus `SEMO`, `MoUMDA`, `MoUMDA_noDuplicates`, `MoUMDA_ParetoArchive` and `NSGA2`. `operators.py` holds attribute generators (`binary_attribute`, `Rastrigin_attribute`) and bit-level operators. The package namespace is built by star imports and is the lookup table for `problem.attr_function`. |
+| `noisyvis.algorithms` | Search algorithms. `single_objective.py` holds the SO base class `OptimisationAlgorithm` and `MuPlusLamdaEA` (+ `_forgetful`, `_estimated`), `PCEA`, `UMDA` (+ `_estimated`) and `CompactGA`. `multi_objective/` is a package: `base.py` holds the MO `OptimisationAlgorithm` and the Pareto/hypervolume recording, `umda.py` the MoUMDA family (`MoUMDABase`, `MoUMDA`, `MoUMDA_noDuplicates`, `MoUMDA_ParetoArchive` and the probability-vector helpers), `semo.py` `SEMO` and `nsga2.py` `NSGA2`; its `__init__.py` re-exports the public names with an explicit `__all__`, so targets keep the flat `noisyvis.algorithms.multi_objective.<Class>` form. `operators.py` holds attribute generators (`binary_attribute`, `Rastrigin_attribute`) and bit-level operators. The package namespace is built by star imports and is the lookup table for `problem.attr_function`. |
 | `noisyvis.problems` | Fitness functions grouped by family, the knapsack instance loader (`load_problem_KP`), instance statistics and `knap_violation`. `__init__.py` re-exports every evaluator explicitly, because runners look up `problem.fitness_fn` by name in this namespace. |
 | `noisyvis.networks` | Landscape-network builders. `BinaryLON` builds iterated-local-search LONs. `BinaryCoLON` builds constrained LONs with feasibility, neighbour-feasibility and visit counts. `compress_lon_aggregated` merges optima whose fitness lies within an accuracy threshold. |
 | `noisyvis.tracking` | `ExperimentLogger`, with an in-memory or LMDB fit-history backend. It records every noisy evaluation and every generation so that STN trajectories can be rebuilt. The module-level active-logger singleton is how fitness functions reach it. |
@@ -326,6 +327,48 @@ runner computes `problem.ref_point` automatically.
 
 To run a selection of MO configs in one go, use `run_mo_batch.py`
 (see [Running a directory of configs](#running-a-directory-of-configs-batch-runs)).
+
+#### The MoUMDA family
+
+`MoUMDA`, `MoUMDA_noDuplicates` and `MoUMDA_ParetoArchive` share `MoUMDABase`
+(`noisyvis/algorithms/multi_objective/umda.py`). Each generation selects μ = `select_size` parents
+by NSGA-II, fits a univariate model and samples λ = `pop_size` offspring that replace the
+population. For binary genes the model is a Bernoulli probability vector. `MoUMDA_ParetoArchive`
+fits it on its non-dominated archive (updated with the selected parents) instead of the parents.
+The configs set `prob_margin: false`, which is also the default, so probabilities may reach
+exactly 0 or 1. `prob_margin: true` clamps them to `[s/n, 1 - s/n]` with `s = margin_scale`.
+
+Stopping. The generic criteria (`eval_limit`, `gen_limit`, `stop_without_improvement_in_gens`)
+always take precedence. After those:
+
+- **`MoUMDA` and `MoUMDA_ParetoArchive`** stop with `stop_trigger = probability_vector_converged`
+  once a generation has been sampled from a probability vector whose entries are all exactly 0 or
+  1. That generation is still evaluated, counted and recorded; the run stops at the next check,
+  before sampling another population from the same collapsed distribution.
+- **Duplicate-free runs** (`MoUMDA_noDuplicates`, or `MoUMDA(prevent_duplicates=True)`) check
+  *before* each generation. They compute the probability vector the next generation would sample
+  from and stop, without starting that generation, with `probability_vector_converged` if it
+  supports a single genotype, or `insufficient_unique_support` if it supports fewer than
+  `pop_size` distinct genotypes (a vector with `k` entries strictly between 0 and 1 supports
+  `2^k`). The
+  vector comes from the μ selected parents, not the whole population, so a duplicate-free
+  population does not by itself guarantee enough support for the next one. The published MoUMDA
+  pseudocode leaves this case open; stopping is this repository's explicit resolution, rather than
+  allowing duplicates or shrinking λ.
+
+`MoUMDA_noDuplicates` guarantees pairwise-distinct genotypes in the initial population and in
+every generated population. It requires `prevent_duplicates=True` (the default);
+`prevent_duplicates=False` raises `ValueError`. So do `pop_size > 2^sol_length` and a
+`starting_solution` with `pop_size > 1`. **Runs labelled `MoUMDA_noDuplicates` produced before
+this was fixed behaved exactly like ordinary `MoUMDA` (duplicates were never prevented), so do not
+treat them as equivalent to new duplicate-free runs.**
+
+`MoUMDA_ParetoArchive` keeps its archive's genotype-duplicate behaviour unchanged: under noisy
+evaluation, copies of one genotype with different observed objectives can sit in the archive
+together, and whether they should be merged is an open question. It records its **archive**
+(Pareto front and hypervolumes), not the sampled population, so the final population sampled from
+a converged vector is evaluated but does not appear in the recorded Pareto history.
+`probability_vector` on the finished instance identifies the genotype it collapsed to.
 
 ### LON experiments (`run_lon.py`, `run_lon_parallel.py`)
 
@@ -1000,9 +1043,11 @@ pinned inventory deliberately, in a separate, reviewable commit.
 ### Adding an algorithm
 
 **Where it goes.** A single-objective algorithm goes in `src/noisyvis/algorithms/single_objective.py`,
-subclassing that module's `OptimisationAlgorithm`. A multi-objective one goes in
-`multi_objective.py`, subclassing that module's `OptimisationAlgorithm`. Operators (mutation,
-crossover, attribute generators) go in `operators.py`.
+subclassing that module's `OptimisationAlgorithm`. A multi-objective one goes in its own module in
+`multi_objective/`, subclassing `multi_objective.base.OptimisationAlgorithm` (or
+`umda.MoUMDABase` for a MoUMDA variant). Import only from `.base` inside the package, then add the
+class to `multi_objective/__init__.py` and its `__all__`. Operators (mutation, crossover, attribute
+generators) go in `operators.py`.
 
 **Contract for SO algorithms**, from `OptimisationAlgorithm` and `experiments/runner.py`:
 
@@ -1038,9 +1083,11 @@ hypervolume lists that `mo_algo_data_single` reads: `pareto_*`, `true_pareto_*`,
 **Worked flow:**
 
 1. **Implement** the class next to its siblings.
-2. **Export.** Nothing extra is needed: `noisyvis/algorithms/__init__.py` star-imports both modules.
-   Configs name the class by its module path anyway:
-   `_target_: noisyvis.algorithms.single_objective.MyEA`.
+2. **Export.** For SO nothing extra is needed: `noisyvis/algorithms/__init__.py` star-imports
+   `single_objective`, and configs name the class by its module path anyway:
+   `_target_: noisyvis.algorithms.single_objective.MyEA`. For MO, add the class to
+   `multi_objective/__init__.py` and its `__all__`, then target
+   `noisyvis.algorithms.multi_objective.MyMOEA`.
 3. **Config.** Copy a neighbouring config (e.g. `defaults/algos/pcea.yaml` for a reusable component,
    or a standalone SO file). Change `algo.name`, `algo.type` and `algo.init_args`.
 4. **Resolution test.** `tests/test_config_resolution.py` automatically routes and resolves the new
@@ -1373,6 +1420,8 @@ regression; each is deferred as a separate behavioural decision.
 |---|---|
 | **B1** `MoMuPlusLamdaEA` does not exist | The only strict xfail (`tests/known_broken_configs.py`). Do not use `Multiobjective/MO_knapsack_test/mo_1p1ea.yaml`. |
 | **B4** Stale `@hydra.main` default config names | Always pass `--config-name` (and, for the LON runners, `--config-path`), as documented above. |
+| Historical `MoUMDA_noDuplicates` results | Runs made before the duplicate-prevention fix behaved like ordinary `MoUMDA`. Do not compare them with new duplicate-free runs as if they were the same algorithm. See [The MoUMDA family](#the-moumda-family). |
+| `MoUMDA_ParetoArchive` genotype duplicates | Deliberately unchanged: the archive can hold copies of one genotype with different noisy objectives. Whether to deduplicate is an open research question. |
 | MLflow browser with an empty store | `noisyvis.results.mlflow_query.list_experiments_df()` raises `KeyError: 'name'` when the store has no experiments, before the page's "No experiments found." message could be shown. At the time of writing `data/mlruns` holds no experiments (the history is archived in `data/old_mlruns`), so the `/experiments` page errors until the next run creates an experiment. |
 | Dash assets are never served | `assets/` sits at the repository root, not next to the app module, so `GET :8050/assets/custom.css` returns **HTTP 500** (a Werkzeug `NotFound` raised inside the app). The custom CSS and MathJax have never loaded. Enabling them would be a visible UI change. |
 | The dashboard loads data eagerly | `DashboardData.load()` runs once at import, which is why a restart is needed to see new results. |
