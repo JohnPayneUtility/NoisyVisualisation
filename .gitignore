@@ -6,11 +6,7 @@ fast_storage/
 data/
 plots/
 outputs/
-plans/
-
-# notes
-tasks.txt
-tasks.md
+notes/
 
 # additional
 temp/
