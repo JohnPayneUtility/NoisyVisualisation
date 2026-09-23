@@ -1,0 +1,17 @@
+# @package _global_
+# MoUMDA variant that keeps an archive of non-dominated solutions. Each generation adds the selected
+# parents to the archive, fits the probability vector on the archive rather than on the parents, and
+# samples pop_size offspring from it. The recorded Pareto front and hypervolumes describe the
+# archive, not the sampled population. The archive keeps genotype duplicates on purpose: under noisy
+# evaluation, copies of one genotype can carry different observed objectives.
+# This class does not accept prevent_duplicates.
+algo:
+  name: MoUMDA_ParetoArchive
+  type: MoUMDA_ParetoArchive
+  use_dynamic_pop_size: false
+  init_args:
+    _target_: noisyvis.algorithms.multi_objective.MoUMDA_ParetoArchive
+    pop_size: 100
+    select_size: 50
+    prob_margin: false
+    # margin_scale: 1.0   # clamps probabilities to [s/n, 1-s/n]; only used when prob_margin: true

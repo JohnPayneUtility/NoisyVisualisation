@@ -8,3 +8,4 @@ algo:
     pop_size: 100
     select_size: 50
     prob_margin: false
+    # margin_scale: 1.0   # clamps probabilities to [s/n, 1-s/n]; only used when prob_margin: true

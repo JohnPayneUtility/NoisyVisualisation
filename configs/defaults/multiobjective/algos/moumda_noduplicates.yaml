@@ -1,0 +1,18 @@
+# @package _global_
+# MoUMDA variant whose initial population and every sampled population hold pairwise-distinct
+# genotypes. Offspring are drawn by rejection sampling, so the run stops before a generation it
+# cannot build: "probability_vector_converged" when the next probability vector supports a single
+# genotype, "insufficient_unique_support" when it supports fewer than pop_size (a vector with k
+# entries strictly between 0 and 1 supports 2**k). Needs pop_size <= 2 ** problem.dimensions.
+algo:
+  name: MoUMDA_noDuplicates
+  type: MoUMDA_noDuplicates
+  use_dynamic_pop_size: false
+  init_args:
+    _target_: noisyvis.algorithms.multi_objective.MoUMDA_noDuplicates
+    pop_size: 100
+    select_size: 50
+    prob_margin: false
+    # must be true for this class; false raises ValueError (use moumda.yaml instead)
+    prevent_duplicates: true
+    # margin_scale: 1.0   # clamps probabilities to [s/n, 1-s/n]; only used when prob_margin: true
