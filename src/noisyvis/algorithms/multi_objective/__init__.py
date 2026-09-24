@@ -13,6 +13,7 @@ from .umda import (
     MoUMDA,
     MoUMDA_noDuplicates,
     MoUMDA_ParetoArchive,
+    MoUMDA_KMeans,
     mo_umda_update_full,
     mo_umda_update_with_archive,
 )
@@ -28,6 +29,7 @@ __all__ = [
     "MoUMDA",
     "MoUMDA_noDuplicates",
     "MoUMDA_ParetoArchive",
+    "MoUMDA_KMeans",
     "mo_umda_update_full",
     "mo_umda_update_with_archive",
     "NSGA2",

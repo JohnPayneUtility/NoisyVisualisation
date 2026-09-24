@@ -17,7 +17,8 @@ hydra:
       +defaults/multiobjective/problems: kp10_mo_v1, kp10_mo_v1_violation
       # +defaults/multiobjective/problems: kp10_mo_v1,kp10_mo_violation
       # +defaults/multiobjective/algos: moumda_noduplicates,moumda_paretoarchive
-      +defaults/multiobjective/algos: semo,nsga2
+      # +defaults/multiobjective/algos: semo,nsga2
+      +defaults/multiobjective/algos: moumda_kmeans
       problem.fitness_params.noise_intensity: 0,1,2
   sweep:
     dir: data/outputs

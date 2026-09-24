@@ -55,11 +55,13 @@ MO_PREFIX = "noisyvis.algorithms.multi_objective."
 
 # Public names a config, the runner or a user can reach at the flat MO path today.
 PUBLIC_MO_NAMES = (
-    "OptimisationAlgorithm", "MoUMDABase", "SEMO", "MoUMDA", "MoUMDA_noDuplicates", "MoUMDA_ParetoArchive", "NSGA2",
+    "OptimisationAlgorithm", "MoUMDABase", "SEMO", "MoUMDA", "MoUMDA_noDuplicates", "MoUMDA_ParetoArchive",
+    "MoUMDA_KMeans", "NSGA2",
     "mo_umda_update_full", "mo_umda_update_with_archive", "record_pareto_data", "front_sig",
     "mut_flip_one_bit",
 )
-MO_ALGORITHM_CLASSES = frozenset({"SEMO", "MoUMDA", "MoUMDA_noDuplicates", "MoUMDA_ParetoArchive", "NSGA2"})
+MO_ALGORITHM_CLASSES = frozenset({"SEMO", "MoUMDA", "MoUMDA_noDuplicates", "MoUMDA_ParetoArchive", "MoUMDA_KMeans",
+                                  "NSGA2"})
 
 # B1 (known_broken_configs.py): the one MO target that does not exist.
 KNOWN_UNRESOLVABLE_TARGETS = frozenset({MO_PREFIX + "MoMuPlusLamdaEA"})

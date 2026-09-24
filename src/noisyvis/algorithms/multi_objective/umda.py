@@ -1,12 +1,16 @@
-"""The multi-objective UMDA family: MoUMDA, MoUMDA_noDuplicates, MoUMDA_ParetoArchive and their helpers."""
+"""The multi-objective UMDA family: MoUMDA, MoUMDA_noDuplicates, MoUMDA_ParetoArchive, MoUMDA_KMeans and their helpers."""
 
 # IMPORTS
+import math
+import warnings
 import numpy as np
 
 from typing import Optional
 
 from deap import creator
 from deap import tools
+from sklearn.cluster import KMeans
+from sklearn.exceptions import ConvergenceWarning
 
 from .base import OptimisationAlgorithm, record_pareto_data
 
@@ -465,3 +469,121 @@ class MoUMDA_ParetoArchive(MoUMDABase):
             self.seed_signature,
             self.verbose_rate
             )
+
+class MoUMDA_KMeans(MoUMDABase):
+    """
+    Clustering MoUMDA with one binary UMDA model per cluster. Each generation:
+      1. NSGA-II selects μ = select_size parents from the λ = pop_size population (λ = 2μ required);
+      2. K-means splits the parents into k = floor(sqrt(μ)) clusters in OBJECTIVE space, on the raw
+         stored (noisy) fitness.values: no normalisation, no extra or true-fitness evaluations;
+      3. every non-empty cluster i (q_i members) fits a margin-free probability vector on its genotypes
+         and samples 2*q_i offspring from it, so sum(2*q_i) = λ; empty clusters contribute nothing;
+      4. the offspring replace the whole population (no elitism, duplicates allowed, no mutation).
+
+    Binary genes only. The initial λ individuals are Bernoulli(0.5), the distribution of the published
+    k identical all-0.5 models, whatever attr_function is configured; starting_solution is rejected.
+
+    There is no single model, so probability_vector stays None and the single-vector convergence and
+    support stops of MoUMDABase never apply: only the generic stop criteria do.
+
+    Diagnostics of the last completed generation, indexed by K-means label (labels carry no identity
+    across generations): cluster_sizes (q_i, zeros included), cluster_probability_vectors (None for an
+    empty cluster), cluster_labels (per parent, in selection order) and cluster_centers.
+
+    K-means settings are implementation choices, not publication details: k-means++ initialisation,
+    n_init=10, max_iter=300, tol=1e-4, Lloyd's algorithm, and a random_state drawn from the global
+    NumPy stream each generation, so clustering follows the run seed.
+    """
+    def __init__(self,
+                 pop_size: int,
+                 select_size: Optional[int] = None,
+                 **kwargs):
+        # no prob_margin / margin_scale / prevent_duplicates parameters: passing one raises TypeError
+        super().__init__(pop_size, select_size, prob_margin=False, margin_scale=1.0, prevent_duplicates=False,
+                         **kwargs)
+
+        self.name = f"MoUMDA_KMeans(λ={pop_size}, μ={self.select_size}, k={self.n_clusters})"
+        self.type = "MoUMDA_KMeans"
+
+    def _initialise_umda_population(self):
+        # validated before anything is sampled or evaluated
+        if self.select_size < 1:
+            raise ValueError(f"MoUMDA_KMeans requires select_size >= 1, got {self.select_size}.")
+        if self.pop_size != 2 * self.select_size:
+            raise ValueError(
+                f"MoUMDA_KMeans requires pop_size = 2 * select_size (λ = 2μ), "
+                f"got pop_size={self.pop_size}, select_size={self.select_size}."
+            )
+        if self.starting_solution is not None:
+            raise ValueError("MoUMDA_KMeans does not accept starting_solution: its initial population is Bernoulli(0.5).")
+
+        self.n_clusters = math.isqrt(self.select_size)
+        self.cluster_sizes = []
+        self.cluster_probability_vectors = []
+        self.cluster_labels = None
+        self.cluster_centers = None
+
+        # the k initial models are identical all-0.5 vectors, so λ Bernoulli(0.5) strings
+        self.population = sample_from_probability_vector(np.full(self.sol_length, 0.5), self.pop_size)
+        for ind in self.population:
+            ind.fitness.values = self.toolbox.evaluate(ind)
+        self.evals += self.pop_size
+
+    def stop_condition(self) -> bool:
+        # generic criteria only: no single-vector convergence stop, no cluster-convergence stop
+        return OptimisationAlgorithm.stop_condition(self)
+
+    def _cluster(self, points):
+        """K-means labels and centres of the (μ, M) objective points."""
+        random_state = int(np.random.randint(np.iinfo(np.int32).max))
+        kmeans = KMeans(
+            n_clusters=self.n_clusters,
+            init="k-means++",
+            n_init=10,
+            max_iter=300,
+            tol=1e-4,
+            algorithm="lloyd",
+            random_state=random_state,
+        )
+        with warnings.catch_warnings():
+            # fewer distinct points than k: the resulting empty clusters are handled (q_i = 0)
+            warnings.simplefilter("ignore", ConvergenceWarning)
+            kmeans.fit(points)
+        return kmeans.labels_, kmeans.cluster_centers_
+
+    def perform_generation(self):
+        """One generation: construct offspring, evaluate them, and only then commit."""
+        if _gene_kind(self.population) != "binary":
+            raise ValueError("MoUMDA_KMeans supports binary (int) genes only.")
+
+        # Construct
+        parents = self._select_parents()
+        points = np.asarray([ind.fitness.values for ind in parents], dtype=float)
+        labels, centers = self._cluster(points)
+
+        offspring = []
+        cluster_sizes = []
+        cluster_probability_vectors = []
+        for cluster_id in range(self.n_clusters):
+            members = [parent for parent, label in zip(parents, labels) if label == cluster_id]
+            cluster_sizes.append(len(members))
+            if not members:
+                cluster_probability_vectors.append(None)
+                continue
+            probability_vector = calculate_probability_vector(members, self.sol_length, False, 1.0)
+            cluster_probability_vectors.append(probability_vector)
+            offspring.extend(sample_from_probability_vector(probability_vector, 2 * len(members)))
+        assert len(offspring) == self.pop_size, (len(offspring), self.pop_size)
+
+        # Evaluate
+        fitnesses = list(map(self.toolbox.evaluate, offspring))
+        for ind, fit in zip(offspring, fitnesses):
+            ind.fitness.values = fit
+
+        # Commit, only after successful evaluation
+        self.population = offspring
+        self.evals += self.pop_size
+        self.cluster_sizes = cluster_sizes
+        self.cluster_probability_vectors = cluster_probability_vectors
+        self.cluster_labels = np.asarray(labels)
+        self.cluster_centers = np.asarray(centers)

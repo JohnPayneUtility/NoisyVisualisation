@@ -111,7 +111,7 @@ src/noisyvis/
 
 | Package | Responsibility |
 |---|---|
-| `noisyvis.algorithms` | Search algorithms. `single_objective.py` holds the SO base class `OptimisationAlgorithm` and `MuPlusLamdaEA` (+ `_forgetful`, `_estimated`), `PCEA`, `UMDA` (+ `_estimated`) and `CompactGA`. `multi_objective/` is a package: `base.py` holds the MO `OptimisationAlgorithm` and the Pareto/hypervolume recording, `umda.py` the MoUMDA family (`MoUMDABase`, `MoUMDA`, `MoUMDA_noDuplicates`, `MoUMDA_ParetoArchive` and the probability-vector helpers), `semo.py` `SEMO` and `nsga2.py` `NSGA2`; its `__init__.py` re-exports the public names with an explicit `__all__`, so targets keep the flat `noisyvis.algorithms.multi_objective.<Class>` form. `operators.py` holds attribute generators (`binary_attribute`, `Rastrigin_attribute`) and bit-level operators. The package namespace is built by star imports and is the lookup table for `problem.attr_function`. |
+| `noisyvis.algorithms` | Search algorithms. `single_objective.py` holds the SO base class `OptimisationAlgorithm` and `MuPlusLamdaEA` (+ `_forgetful`, `_estimated`), `PCEA`, `UMDA` (+ `_estimated`) and `CompactGA`. `multi_objective/` is a package: `base.py` holds the MO `OptimisationAlgorithm` and the Pareto/hypervolume recording, `umda.py` the MoUMDA family (`MoUMDABase`, `MoUMDA`, `MoUMDA_noDuplicates`, `MoUMDA_ParetoArchive`, `MoUMDA_KMeans` and the probability-vector helpers), `semo.py` `SEMO` and `nsga2.py` `NSGA2`; its `__init__.py` re-exports the public names with an explicit `__all__`, so targets keep the flat `noisyvis.algorithms.multi_objective.<Class>` form. `operators.py` holds attribute generators (`binary_attribute`, `Rastrigin_attribute`) and bit-level operators. The package namespace is built by star imports and is the lookup table for `problem.attr_function`. |
 | `noisyvis.problems` | Fitness functions grouped by family, the knapsack instance loader (`load_problem_KP`), instance statistics and `knap_violation`. `__init__.py` re-exports every evaluator explicitly, because runners look up `problem.fitness_fn` by name in this namespace. |
 | `noisyvis.networks` | Landscape-network builders. `BinaryLON` builds iterated-local-search LONs. `BinaryCoLON` builds constrained LONs with feasibility, neighbour-feasibility and visit counts. `compress_lon_aggregated` merges optima whose fitness lies within an accuracy threshold. |
 | `noisyvis.tracking` | `ExperimentLogger`, with an in-memory or LMDB fit-history backend. It records every noisy evaluation and every generation so that STN trajectories can be rebuilt. The module-level active-logger singleton is how fitness functions reach it. |
@@ -369,6 +369,24 @@ together, and whether they should be merged is an open question. It records its 
 (Pareto front and hypervolumes), not the sampled population, so the final population sampled from
 a converged vector is evaluated but does not appear in the recorded Pareto history.
 `probability_vector` on the finished instance identifies the genotype it collapsed to.
+
+`MoUMDA_KMeans` is the clustering MoUMDA and uses several models. It also subclasses `MoUMDABase`
+but has its own generation and stopping rules. It requires λ = 2μ (`pop_size = 2 * select_size`).
+Each generation NSGA-II selects μ parents. K-means then splits them into k = ⌊√μ⌋ clusters in
+**objective space**: the points are the parents' stored (noisy) `fitness.values`, with no
+normalisation, no extra evaluations and no true fitness. Each non-empty cluster of `q_i` parents
+fits its own margin-free probability vector on its genotypes and samples `2 * q_i` offspring. An
+empty cluster samples none and its share is not redistributed. The λ offspring replace the whole
+population: no elitism, duplicates allowed, no mutation. Binary genes only. The initial population
+is λ Bernoulli(0.5) strings whatever `attr_function` is, and `starting_solution` is rejected. It
+accepts no `prob_margin`, `margin_scale` or `prevent_duplicates`. There is no single model, so
+`probability_vector` stays `None`, and only the generic stop criteria apply: there is no convergence
+stop. After each generation, `cluster_sizes`, `cluster_probability_vectors` (`None` for an empty
+cluster), `cluster_labels` and `cluster_centers` describe that generation's clustering. Labels have
+no identity across generations. The K-means settings are this repository's choices, not published
+details: `k-means++`, `n_init=10`, `max_iter=300`, `tol=1e-4`, Lloyd's algorithm, and a
+`random_state` drawn from the seeded global NumPy stream each generation, so clustering follows the
+run seed. Select it with `+defaults/multiobjective/algos: moumda_kmeans`.
 
 ### LON experiments (`run_lon.py`, `run_lon_parallel.py`)
 

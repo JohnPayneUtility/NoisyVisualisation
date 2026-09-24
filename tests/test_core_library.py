@@ -108,8 +108,9 @@ FORWARDER_PUBLIC_NAMES = {
     # monolithic module (typing names, np, optuna, deap modules, unused operator imports) are no
     # longer bound there; every class and helper a config, runner or user reached is kept.
     # MoUMDABase (Stage 3) is the new shared base class of the three MoUMDA variants.
+    # MoUMDA_KMeans (clustering MoUMDA) was added to the package later, in umda.py.
     "MOAlgorithms": frozenset({
-        "MoUMDA", "MoUMDABase", "MoUMDA_ParetoArchive", "MoUMDA_noDuplicates", "NSGA2", "OptimisationAlgorithm",
+        "MoUMDA", "MoUMDABase", "MoUMDA_KMeans", "MoUMDA_ParetoArchive", "MoUMDA_noDuplicates", "NSGA2", "OptimisationAlgorithm",
         "SEMO", "front_sig", "mo_umda_update_full", "mo_umda_update_with_archive", "mut_flip_one_bit",
         "record_pareto_data",
         "base", "nsga2", "semo", "umda",  # submodules

@@ -1,0 +1,15 @@
+# @package _global_
+# Clustering MoUMDA. NSGA-II selects select_size (μ) parents, K-means splits them into
+# floor(sqrt(μ)) clusters on their stored objective values, and each cluster of q_i parents fits its
+# own probability vector and samples 2*q_i offspring, which replace the whole population.
+# Requires pop_size = 2 * select_size. Binary problems only; the initial population is always
+# Bernoulli(0.5) and starting_solution is rejected. This class accepts no prob_margin, margin_scale
+# or prevent_duplicates: it never uses a margin and always allows duplicates.
+algo:
+  name: MoUMDA_KMeans
+  type: MoUMDA_KMeans
+  use_dynamic_pop_size: false
+  init_args:
+    _target_: noisyvis.algorithms.multi_objective.MoUMDA_KMeans
+    pop_size: 100
+    select_size: 50
