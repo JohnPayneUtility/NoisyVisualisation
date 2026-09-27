@@ -497,10 +497,10 @@ DEFINITIONS = {'AXIS_LABELS': {'ast': '00451c08df9142812bfad4b670d56466a3ad5c898
                       'ast': '97a3c69fd0f4348af42abad1d286584ff01d81a0fb0628586cdc6c435894dfd1',
                       'kind': 'def',
                       'literals': 'dab2532e77318662c0c3ee4a978edccc60272a66f0329c21b318669c41856ec6'},
- 'plot_ind_vs_dist': {'args': ['frontdata', 'series_labels', 'distance_method', 'nruns'],
-                      'ast': '0b492122dd7e138c9389e5e78eecdad1d1cb836d14ed3aadf7dfabaf56a89fcf',
+ 'plot_ind_vs_dist': {'args': ['frontdata', 'series_labels', 'distance_method', 'nruns', 'IndVsDist_IndType'],
+                      'ast': '295f16a6ed516704b9f24410dc83559447875e6835b343c1875a4d701b0382c6',
                       'kind': 'def',
-                      'literals': 'a407eec03ff7e4d133ea582192d0d622904ad76e89861b0011ce7e91662e4a7a'},
+                      'literals': '796a73c83cf9786a0c959ff726ea3e45488c6e1081eec5a69fe9e452b96166b3'},
  'plot_line': {'args': ['dataframe', 'fitness_mode', 'problem_goal', 'xaxis_title', 'colorscale'],
                'ast': 'cafd6966fcb48402fa63c19ab77c6a0c2ac9979e4ec3541a306cfd6493c68ef0',
                'kind': 'def',
@@ -814,7 +814,7 @@ REGISTRY = {'alias_names_present': ['PlotparetoFrontSubplotsHighlighted',
             'IGDVsDist': {'ast': '97a3c69fd0f4348af42abad1d286584ff01d81a0fb0628586cdc6c435894dfd1',
                           'lookup_is_same': True,
                           'name': 'plot_igd_vs_dist'},
-            'IndVsDist': {'ast': '0b492122dd7e138c9389e5e78eecdad1d1cb836d14ed3aadf7dfabaf56a89fcf',
+            'IndVsDist': {'ast': '295f16a6ed516704b9f24410dc83559447875e6835b343c1875a4d701b0382c6',
                           'lookup_is_same': True,
                           'name': 'plot_ind_vs_dist'},
             'MoveCorr': {'ast': '15796867a31fab3b3acd19f98009ecd5e0adc9a90b13bf112c73c3f0592d420c',
@@ -976,7 +976,7 @@ LON_STATS = {'correlation_pairs': {'error|abs_error': {'dict': [['pearson', {'fl
  'violin|neigh_feas|error': '43801d4a26345925b25b00e42e3e68126fc23c0cc7e96daa4c607bc60ef400f5',
  'violin|neigh_feas|iqr': '0e3b292bcfd0abc3adc7df55e547ebda136fceac43ec834ecbef2285a35960f0'}
 
-BODIES = {'dashboard/Dashboard.py': {'ast': '0d5341c4f0d00aeaf3e0425dfa682d40af43e5b7a33385b4a744e79c5b735bc9',
+BODIES = {'dashboard/Dashboard.py': {'ast': 'ca3a537f33a5f7c12c5cdbdec22f17daf8fb597001f8c154c65588b2d7bdaaf4',
                             'literals': '132f86940a8cf3f9891b2d3ab6fd25514e312cec6ee3e635e313ea7ec0467e58',
                             'statements': 75},
  'dashboard/DashboardHelpers.py': {'ast': 'a2f8637b5bc9b75f30cdfbe3954a31adffac64281b8bbcc355ebf87af53fa714',
@@ -1221,11 +1221,12 @@ PARETO_FIGURES = {'Basic|{}': 'dcfa2f98b9f812460ba0df35f383508ec3392d74d83e59cea
  'IGDVsDist|{"distance_method": "mds", "nruns": 1}': '991beaee895ae166b42b58636cab55c82ac62c23e587c814ff9b5f908baa54e9',
  'IGDVsDist|{"distance_method": "raw", "nruns": 1}': '293eb90986a6631bcae7077a42e2270ed31ea87d6eeeafc1dfa3d8fc08119109',
  'IGDVsDist|{"distance_method": "tsne", "nruns": 1}': '181da8433881a64939f65545a2d5de673fe383da2d6cc126cf746f61c90a5bd0',
- 'IndVsDist|{"distance_method": "cumulative", "nruns": 1}': 'bbf6192b754ac6e92158dfde1870db6d8c81f71194b8bbcc7e4f9dccac1f06b7',
- 'IndVsDist|{"distance_method": "isomap", "nruns": 1}': '627922079855afd8fd4fbb6b5e691c7344ea8695d7f00b6ed4d60750b609d960',
- 'IndVsDist|{"distance_method": "mds", "nruns": 1}': '035fa11297697bd0fd9a035d3e3ee803850a80f82d8f767785e982289d9d7793',
- 'IndVsDist|{"distance_method": "raw", "nruns": 1}': '1d26e1a3f6281392bbdaa846a0ac71ae0b2c49a6dade871c10310f7d91f62e63',
- 'IndVsDist|{"distance_method": "tsne", "nruns": 1}': 'a0dbce819493083b08250e1d651bab6c191e1026deafc14b23124d765176ca00',
+ 'IndVsDist|{"IndVsDist_IndType": "CleanHV", "distance_method": "cumulative", "nruns": 1}': 'cad32b0033fbc65abc4223a4cb447cc83d3732fc79762bd0b90774bc6b38078f',
+ 'IndVsDist|{"distance_method": "cumulative", "nruns": 1}': '9cc7d4fd91221511b1f5a3b6fb93b10a552a34bc30db3c24070ec9b844abe558',
+ 'IndVsDist|{"distance_method": "isomap", "nruns": 1}': '59748b0bb7a5706ffe925f6430bd8f09768a39a6fa84572b371d13888367ea8c',
+ 'IndVsDist|{"distance_method": "mds", "nruns": 1}': '55d21cd07fea7de091515844618830ff02a55c80bd887ab335947faff742825f',
+ 'IndVsDist|{"distance_method": "raw", "nruns": 1}': 'e2be1d6c895fdd814d1ea1ed76b5d67cfc7ff1c91b7643fc97590ea3ba72f3ed',
+ 'IndVsDist|{"distance_method": "tsne", "nruns": 1}': '1012d6581ef1472aeac8fb0e75db4ad97fb8f15974d5dd9a07701cc89d6e07ea',
  'MoveCorr|{"IndVsDist_IndType": "CleanHV", "window": 5}': '63334c1b26881667d464d17e8ae10eab20aeff26085761b0bfa27e6e6d056124',
  'MoveCorr|{"IndVsDist_IndType": "IGD", "window": 5}': '63334c1b26881667d464d17e8ae10eab20aeff26085761b0bfa27e6e6d056124',
  'MoveCorr|{"IndVsDist_IndType": "NoisyHV", "window": 5}': '2c3d4b24321cc6a2d09ae680fb43ca520d1331001d664c2cabdc8ca16c375c77',
@@ -3169,6 +3170,7 @@ PARETO_CASES = [
 for _method in ("cumulative", "raw", "mds", "tsne", "isomap"):
     PARETO_CASES.append(("IndVsDist", {"distance_method": _method, "nruns": 1}))
     PARETO_CASES.append(("IGDVsDist", {"distance_method": _method, "nruns": 1}))
+PARETO_CASES.append(("IndVsDist", {"distance_method": "cumulative", "nruns": 1, "IndVsDist_IndType": "CleanHV"}))
 for _indicator in ("NoisyHV", "CleanHV", "IGD"):
     PARETO_CASES.append(("MoveCorr", {"IndVsDist_IndType": _indicator, "window": 5}))
     PARETO_CASES.append(("Hist", {"IndVsDist_IndType": _indicator}))

@@ -30,7 +30,8 @@ def updateParetoPlot(frontdata, series_labels, paretoFrontPlotType, IndVsDist_In
     if paretoFrontPlotType == 'SubplotsMulti':
         return plot_func(frontdata, series_labels, nruns=nruns)
     elif paretoFrontPlotType == 'IndVsDist':
-        return plot_func(frontdata, series_labels, distance_method=IndVsDist_DistType, nruns=nruns)
+        return plot_func(frontdata, series_labels, distance_method=IndVsDist_DistType, nruns=nruns,
+                         IndVsDist_IndType=IndVsDist_IndType)
     elif paretoFrontPlotType == 'IGDVsDist':
         return plot_func(frontdata, series_labels, distance_method=IndVsDist_DistType, nruns=nruns)
     elif paretoFrontPlotType == 'MoveCorr':

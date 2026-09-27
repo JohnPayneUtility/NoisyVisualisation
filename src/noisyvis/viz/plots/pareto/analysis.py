@@ -18,7 +18,7 @@ from ..base import (
 )
 
 
-def plot_ind_vs_dist(frontdata, series_labels, distance_method='cumulative', nruns=1):
+def plot_ind_vs_dist(frontdata, series_labels, distance_method='cumulative', nruns=1, IndVsDist_IndType="NoisyHV"):
     """
     Plot hypervolume vs front distance using various distance methods.
 
@@ -33,6 +33,7 @@ def plot_ind_vs_dist(frontdata, series_labels, distance_method='cumulative', nru
             - 'tsne': t-SNE 1D embedding
             - 'isomap': Isomap 1D embedding
         nruns: Number of runs to include
+        IndVsDist_IndType: 'CleanHV' for clean hypervolume; anything else uses noisy hypervolume
 
     Returns:
         go.Figure: Plotly figure with hypervolume vs distance
@@ -40,7 +41,12 @@ def plot_ind_vs_dist(frontdata, series_labels, distance_method='cumulative', nru
     fig = go.Figure()
 
     solution_set = "algo_front_solutions"
-    metric = "algo_front_noisy_hypervolume"
+    if IndVsDist_IndType == 'CleanHV':
+        metric = "algo_front_clean_hypervolume"
+        metric_label = "Clean Hypervolume"
+    else:
+        metric = "algo_front_noisy_hypervolume"
+        metric_label = "Noisy Hypervolume"
     num_runs = nruns
 
     if not frontdata:
@@ -253,7 +259,7 @@ def plot_ind_vs_dist(frontdata, series_labels, distance_method='cumulative', nru
     fig.update_layout(
         title=plot_title,
         xaxis_title=xaxis_title,
-        yaxis_title=f"Hypervolume ({metric})",
+        yaxis_title=metric_label,
         template=DEFAULT_TEMPLATE,
     )
 
