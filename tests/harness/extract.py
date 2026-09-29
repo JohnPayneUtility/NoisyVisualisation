@@ -2,8 +2,8 @@
 
 This runs *inside* the harness child process, after the entry point has returned, for two reasons:
 
-* MO results contain DEAP `creator.Individual` objects, which only unpickle in a process where
-  `creator.create` has been called -- that is, the process that just ran the experiment;
+* result rows may reference classes of the packages that produced them, which only unpickle in the
+  process that just ran the experiment;
 * it keeps the pytest process free of any dependency on the science packages.
 
 Output is plain JSON-safe data. Ordering that carries meaning (hypervolume time series, the
@@ -48,6 +48,9 @@ MO_SCALARS = [
     "max_noisy_pf_hv",
     "min_noisy_pf_hv",
 ]
+# Read from the row; the other MO fields are the removed legacy recorder's outputs, projected from the
+# row's mo_record (tests/harness/mo_legacy.py) so baselines/mo.json keeps comparing the same data.
+MO_RUN_FIELDS = ["n_gens", "n_evals", "stop_trigger", "seed_signature"]
 MO_SERIES = [
     "noisy_pf_noisy_hypervolumes",
     "noisy_pf_true_hypervolumes",
@@ -201,20 +204,33 @@ def _front_snapshots(solutions, noisy_fits, true_fits) -> list:
     return snapshots
 
 
+def _legacy_projection():
+    """tests/harness/mo_legacy.py, loaded by path like this module (the legacy recorder's outputs from a
+    run's mo_record: the multi-objective baseline stays the recorder's frozen output)."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("_harness_mo_legacy", Path(__file__).with_name("mo_legacy.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def _extract_mo(root: Path) -> dict:
+    legacy = _legacy_projection()
     df = _read_pickle(root / "data" / "temp" / "results.pkl")
     cases = {}
     for row in df.to_dict(orient="records"):
         seed = str(int(row["seed"]))
-        case = {field: _py(row[field]) for field in MO_SCALARS}
+        columns = legacy.legacy_columns(legacy.MORunView(row["mo_record"]))
+        case = {field: _py(row[field] if field in MO_RUN_FIELDS else columns[field]) for field in MO_SCALARS}
         for field in MO_SERIES:
-            case[field] = _py(row[field])
+            case[field] = _py(columns[field])
 
         case["noisy_pareto_history"] = _front_snapshots(
-            row["pareto_solutions"], row["pareto_fitnesses"], row["pareto_true_fitnesses"]
+            columns["pareto_solutions"], columns["pareto_fitnesses"], columns["pareto_true_fitnesses"]
         )
         case["true_pareto_history"] = _front_snapshots(
-            row["true_pareto_solutions"], row["true_pareto_fitnesses"], row["true_pareto_fitnesses"]
+            columns["true_pareto_solutions"], columns["true_pareto_fitnesses"], columns["true_pareto_fitnesses"]
         )
 
         if seed in cases:

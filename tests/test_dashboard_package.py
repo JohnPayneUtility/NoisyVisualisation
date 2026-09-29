@@ -118,14 +118,14 @@ CALLBACK_LIST_DIGEST = 'b7a4a16319eb00fd832e7bb6a7a7ab64b605e8ad80954c4142453a2f
 
 DEPENDENCIES_DIGEST = 'd50097e2d22e719cb510eb8bd7e9c84c7db3e12a5116fa16059e4862d3e7c953'
 
-CALLBACKS = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_data.data...STN_MO_data.data...STN_MO_series_labels.data...MO_data_PPP.data..': {'ast': '1793c27aedfc8e3d2fd69cef326b81ad0b86ab0f46759ef63f2c025a0ee98b4c',
+CALLBACKS = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_data.data...STN_MO_data.data...STN_MO_series_labels.data...MO_data_PPP.data..': {'ast': '48b1f2274964f30c5d80bfb3ae6b52ef9d813cbbbedc916a463321bc8100ea8c',
                                                                                                                                                         'inputs': ['STN_data.data',
                                                                                                                                                                    'mo_plot_type.value'],
-                                                                                                                                                        'literals': '837e8d5b88f3efde50184fe8ed40b24368a05a93b22c553d8e31f6579c3b5021',
+                                                                                                                                                        'literals': 'faa5ec224e0461295135f49759b947de448edc4ec964c44de6b9957f06beea78',
                                                                                                                                                         'module': 'dashboard/Dashboard.py',
                                                                                                                                                         'name': 'process_STN_data',
                                                                                                                                                         'order': 34,
-                                                                                                                                                        'params': ['df',
+                                                                                                                                                        'params': ['stn_rows',
                                                                                                                                                                    'mo_plot_type',
                                                                                                                                                                    'group_cols'],
                                                                                                                                                         'prevent_initial_call': False,
@@ -469,9 +469,9 @@ CALLBACKS = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitness
                    'params': ['selected_rows', 'LON_table_data'],
                    'prevent_initial_call': False,
                    'state': ['LON_table.data']},
- 'STN_data.data': {'ast': '6702ad38db765439edb27c9de4f58911dfe6f112a38958cf79d1660ab156139c',
+ 'STN_data.data': {'ast': '86ee7b53df4599658f8de242858be52e34d298f2d5560a72c49a9203837020f0',
                    'inputs': ['table2.selected_rows', 'penalty-filter-dropdown.value'],
-                   'literals': 'a4e1ecfec49831194e6d4f8cc40d23a063262a6a0e5cb6f9a9565103b5a7cea5',
+                   'literals': '90c49c4e121e4a828c1df1486f7683af004618a086d9f49b53b235aaacda1e81',
                    'module': 'dashboard/Dashboard.py',
                    'name': 'update_filtered_view',
                    'order': 33,
@@ -884,8 +884,19 @@ GLOBALS = {'bindings': {'noisyvis.dashboard.Dashboard:LON_display_columns': 'lon
 
 SCRIPTS = {'noisyvis-dashboard': 'ModuleNotFoundError', 'noisyvis-mlflow': 'ModuleNotFoundError'}
 
-FREE_NAMES = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_data.data...STN_MO_data.data...STN_MO_series_labels.data...MO_data_PPP.data..': {'pd': {'kind': 'module',
-                                                                                                                                                               'name': 'pandas'}},
+FREE_NAMES = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_data.data...STN_MO_data.data...STN_MO_series_labels.data...MO_data_PPP.data..': {'df': {'attr': 'df',
+                                                                                                                                                               'kind': 'data'},
+                                                                                                                                                        'front_entries': {'ast': '8125723095d1354870e005d5ba00cda724917e4135d992a6f912a7a748d2a71e',
+                                                                                                                                                                          'kind': 'callable',
+                                                                                                                                                                          'name': 'front_entries'},
+                                                                                                                                                        'pd': {'kind': 'module',
+                                                                                                                                                               'name': 'pandas'},
+                                                                                                                                                        'row_view': {'ast': '1a7234f1b9afe6eb58b9383f9be8b7ddd014355129f514c435c804027ba34f32',
+                                                                                                                                                                     'kind': 'callable',
+                                                                                                                                                                     'name': 'row_view'},
+                                                                                                                                                        'stn_entries': {'ast': '0ce9067f4096f4db7c2a09591900ba1ad308e28288447884378af3aa8a3d5cce',
+                                                                                                                                                                        'kind': 'callable',
+                                                                                                                                                                        'name': 'stn_entries'}},
  '..advanced-misjudgement-algo-dropdown.options...advanced-misjudgement-algo-dropdown.value..': {'pd': {'kind': 'module',
                                                                                                         'name': 'pandas'}},
  '..annotation-options.value...axes-text-scale.value...annotation-text-scale.value..': {'dash': {'kind': 'module',
@@ -1098,7 +1109,7 @@ FREE_NAMES = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnes
                                          'kind': 'callable',
                                          'name': '_hide_series'},
                         'pd': {'kind': 'module', 'name': 'pandas'},
-                        'plot2d_box_mo': {'ast': '0455279f7a4c88b5b0bd3b95293ad16b9f4d321473706414d8f00720f7779dee',
+                        'plot2d_box_mo': {'ast': '90c69f635abf3606ec69c2996f920f5d1eca88e830183d3bffa819c22aafdf6e',
                                           'kind': 'callable',
                                           'name': 'plot_box_mo'}},
  '2DBoxPlotMisjudgementsSO.figure': {'_cap_noise': {'ast': '59cf9b3bc8ad75a2deb32ca733d18abd1e000007da2f99d36404c3448c5c5f34',
@@ -1167,7 +1178,7 @@ FREE_NAMES = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnes
                                           'kind': 'callable',
                                           'name': '_hide_series'},
                          'pd': {'kind': 'module', 'name': 'pandas'},
-                         'plot2d_line_mo': {'ast': 'd244a841dbe682f342bb92294ac1a234096e16992270a1b6f86f16554a1c0632',
+                         'plot2d_line_mo': {'ast': '2e94410e6a49831911e969004fa03595cc03d82a66b7c87b60adb04d634406eb',
                                             'kind': 'callable',
                                             'name': 'plot_line_mo'}},
  '2DPlotTabContent.children': {'dash_table': {'kind': 'module', 'name': 'dash.dash_table'},
@@ -1314,8 +1325,8 @@ FREE_NAMES = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnes
  'table2-selected-store.data': {},
  'table2.data': {'pd': {'kind': 'module', 'name': 'pandas'}}}
 
-HTTP = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_data.data...STN_MO_data.data...STN_MO_series_labels.data...MO_data_PPP.data..': {'digest': 'a568383257859c07be83fb749dd368320e3f82c5753d738051e0f30c00ddc04d',
-                                                                                                                                                        'length': 2303,
+HTTP = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_data.data...STN_MO_data.data...STN_MO_series_labels.data...MO_data_PPP.data..': {'digest': '25a2235c2e66e19aedfd155906b07b1aa89190fd421f90b6ca5632ae8db0d545',
+                                                                                                                                                        'length': 2891,
                                                                                                                                                         'props': ['MO_data_PPP.data',
                                                                                                                                                                   'STN_MO_data.data',
                                                                                                                                                                   'STN_MO_series_labels.data',
@@ -1376,11 +1387,11 @@ HTTP = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_da
                              'props': ['2DBoxPlotEvalsSO.figure'],
                              'status': 200,
                              'traces': {'2DBoxPlotEvalsSO.figure': 2}},
- '2DBoxPlotMO.figure': {'digest': '170e526d74935b7dc3e12dc0de6b0fcb307bca0ede39c88834d13cb5535ed30e',
-                        'length': 7089,
+ '2DBoxPlotMO.figure': {'digest': '4cdb2665abdf1490862661e594c18615f0774e52edaa8b8486163009d21d5ad3',
+                        'length': 7993,
                         'props': ['2DBoxPlotMO.figure'],
                         'status': 200,
-                        'traces': {'2DBoxPlotMO.figure': 0}},
+                        'traces': {'2DBoxPlotMO.figure': 1}},
  '2DBoxPlotMisjudgementsSO.figure': {'digest': 'a750c983779ef630640e2f8d1052fb8af1056d7a9f973d4c6003fa7cbbf4ece8',
                                      'length': 8914,
                                      'props': ['2DBoxPlotMisjudgementsSO.figure'],
@@ -1401,11 +1412,11 @@ HTTP = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_da
                               'props': ['2DLinePlotEvalsSO.figure'],
                               'status': 200,
                               'traces': {'2DLinePlotEvalsSO.figure': 2}},
- '2DLinePlotMO.figure': {'digest': '1cda20100b544dc8097b5a383617a23048018e79fd3e7de2e12c541a029dd79e',
-                         'length': 7090,
+ '2DLinePlotMO.figure': {'digest': '175debf948aa129fdd7172d93eb838cb520133c536ae6f372efba19ab69f50fd',
+                         'length': 7513,
                          'props': ['2DLinePlotMO.figure'],
                          'status': 200,
-                         'traces': {'2DLinePlotMO.figure': 0}},
+                         'traces': {'2DLinePlotMO.figure': 1}},
  '2DPlotTabContent.children': {'digest': 'fde343961819b9eb366d263785b879bc6c949e3c7b891859b5578a6c3ca8ca6d',
                                'length': 212,
                                'props': ['2DPlotTabContent.children'],
@@ -1416,8 +1427,8 @@ HTTP = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_da
                    'props': ['LON_data.data'],
                    'status': 200,
                    'traces': {}},
- 'STN_data.data': {'digest': 'cd68ca5e86e4cfa1fc61bfce82b8f9bf04de7f78f52a100bb43457052858d73a',
-                   'length': 3201,
+ 'STN_data.data': {'digest': '6ea6117aeb982d76867013318904edda16c547c7e5994f2aa4847938ac0522d6',
+                   'length': 3369,
                    'props': ['STN_data.data'],
                    'status': 200,
                    'traces': {}},
@@ -1491,13 +1502,13 @@ HTTP = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_da
                             'props': ['plotParetoFront.figure'],
                             'status': 200,
                             'traces': {'plotParetoFront.figure': 0}},
- 'plot_2d_data.data': {'digest': '0a27021e9f34d619642d060cf84eba960773fdd95052a483abc55bf7758fb6da',
-                       'length': 12517,
+ 'plot_2d_data.data': {'digest': '1031f407648258c1e374ba8e69c96a0329a7cd395c032c6d3084bd9eb15ec22c',
+                       'length': 18176,
                        'props': ['plot_2d_data.data'],
                        'status': 200,
                        'traces': {}},
- 'plot_2d_data_table.data': {'digest': '6a577e552fff515bb13537998e7aa0e754bafa935faceb198185dfc8ca1dbefb',
-                             'length': 12523,
+ 'plot_2d_data_table.data': {'digest': '010b513ed6f48993c9d7d742749d4b0acc82f27500a4531a89e696c24a9fc8d8',
+                             'length': 18182,
                              'props': ['plot_2d_data_table.data'],
                              'status': 200,
                              'traces': {}},
@@ -1572,8 +1583,8 @@ CHAIN = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_d
                    'props': ['LON_data.data'],
                    'status': 200,
                    'traces': {}},
- 'STN_data.data': {'digest': 'cd68ca5e86e4cfa1fc61bfce82b8f9bf04de7f78f52a100bb43457052858d73a',
-                   'length': 3201,
+ 'STN_data.data': {'digest': '6ea6117aeb982d76867013318904edda16c547c7e5994f2aa4847938ac0522d6',
+                   'length': 3369,
                    'props': ['STN_data.data'],
                    'status': 200,
                    'traces': {}},
@@ -1582,12 +1593,16 @@ CHAIN = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_d
                                 'props': ['data-problem-specific.data'],
                                 'status': 200,
                                 'traces': {}},
- 'plot_2d_data.data': {'digest': '0a27021e9f34d619642d060cf84eba960773fdd95052a483abc55bf7758fb6da',
-                       'length': 12517,
+ 'plot_2d_data.data': {'digest': '1031f407648258c1e374ba8e69c96a0329a7cd395c032c6d3084bd9eb15ec22c',
+                       'length': 18176,
                        'props': ['plot_2d_data.data'],
                        'status': 200,
                        'traces': {}}}
 
+# MO recording plan v6, Work Group 6 (deliberate amendment): the multi-objective row of the synthetic
+# warehouse carries its mo_record and summary scalars (a legacy row is skipped); the tables are built
+# from the frame as DashboardData.load prepares it; the legacy Pareto list and scalar columns are gone
+# from the column constants. Re-captured for that change only.
 TABLES = {'constants': {'DISPLAY1_COLUMNS': ['problem_type',
                                     'problem_goal',
                                     'problem_name',
@@ -1619,24 +1634,6 @@ TABLES = {'constants': {'DISPLAY1_COLUMNS': ['problem_type',
                                          'alternative_rep_fits',
                                          'seed',
                                          'seed_signature',
-                                         'pareto_solutions',
-                                         'pareto_fitnesses',
-                                         'pareto_true_fitnesses',
-                                         'true_pareto_solutions',
-                                         'true_pareto_fitnesses',
-                                         'noisy_pf_noisy_hypervolumes',
-                                         'noisy_pf_true_hypervolumes',
-                                         'true_pf_hypervolumes',
-                                         'n_gens_pareto_best',
-                                         'final_true_hv',
-                                         'max_true_hv',
-                                         'min_true_hv',
-                                         'final_noisy_pf_hv',
-                                         'max_noisy_pf_hv',
-                                         'min_noisy_pf_hv',
-                                         # MO recording plan v6, Work Group 5 (deliberate amendment):
-                                         # the per-run final summaries stored beside mo_record stay out of
-                                         # the algorithm-selection table, as the legacy final_* do
                                          'final_hv_current_noisy_front__noisy',
                                          'final_hv_current_noisy_front__clean',
                                          'final_hv_current_clean_front__clean',
@@ -1674,15 +1671,6 @@ TABLES = {'constants': {'DISPLAY1_COLUMNS': ['problem_type',
                                 'sol_transitions',
                                 'alternative_rep_sols',
                                 'alternative_rep_fits',
-                                'pareto_solutions',
-                                'pareto_fitnesses',
-                                'pareto_true_fitnesses',
-                                'true_pareto_solutions',
-                                'true_pareto_fitnesses',
-                                'noisy_pf_noisy_hypervolumes',
-                                'noisy_pf_true_hypervolumes',
-                                'true_pf_hypervolumes',
-                                'n_gens_pareto_best',
                                 'mo_record'],
                'LON_HIDDEN_COLUMNS': ['problem_name',
                                       'problem_type',
@@ -1719,6 +1707,15 @@ TABLES = {'constants': {'DISPLAY1_COLUMNS': ['problem_type',
                              'min_fit',
                              'penalty',
                              'peak_ram_mb',
+                             'final_hv_current_noisy_front__noisy',
+                             'final_hv_current_noisy_front__clean',
+                             'final_hv_current_clean_front__clean',
+                             'final_hv_noisy_archive__noisy',
+                             'final_hv_noisy_archive__clean',
+                             'final_hv_clean_archive__clean',
+                             'n_generated_genotypes',
+                             'final_noisy_archive_size',
+                             'final_clean_archive_size',
                              'evals_to_best',
                              'evals_to_final',
                              'evals_to_best_noisy',
@@ -1730,7 +1727,7 @@ TABLES = {'constants': {'DISPLAY1_COLUMNS': ['problem_type',
                              'n_increasing_noise',
                              'n_comparison_misjudgements',
                              'n_constraint_misjudgements'],
-                 'digest': 'ca2a66fea01306bfdf8b63b7d20a6a10cabf30410b1a3be78bc4da731d745260',
+                 'digest': 'a6dea7d9268755a1aefb0efe7ad2be6fc9adeef6e67e5176120f739a9895967e',
                  'dtypes': ['object',
                             'object',
                             'object',
@@ -1761,11 +1758,20 @@ TABLES = {'constants': {'DISPLAY1_COLUMNS': ['problem_type',
                             'float64',
                             'float64',
                             'float64',
+                            'float64',
+                            'float64',
+                            'float64',
+                            'float64',
+                            'float64',
+                            'float64',
+                            'float64',
+                            'float64',
+                            'float64',
                             'int64',
                             'int64',
                             'int64',
                             'int64'],
-                 'shape': [17, 34]},
+                 'shape': [17, 43]},
  'display1_df': {'columns': ['problem_type',
                              'problem_goal',
                              'problem_name',
@@ -3536,6 +3542,9 @@ NEW_MODULES = (
     # (nondominated_mask, hypervolume) moved from multi_objective.base to noisyvis.common.pareto so the
     # MO evaluation logger can share them; base imports them from there. No third-party package changes.
     "noisyvis.common.pareto",
+    # MO recording plan v6, Work Group 6 (deliberate amendment): the dashboard builds its multi-objective
+    # plot data server-side (dashboard.mo_frames) through the read view (results.mo_view).
+    "noisyvis.dashboard.mo_frames", "noisyvis.results.mo_view",
 )
 
 # Where an import's module moves. The imported *names* never change (A1).
@@ -3578,14 +3587,19 @@ WILDCARD_REPLACEMENTS = {
 ALLOWED_CHANGES = {
     ("dataio/__init__.py", "doc|"): "the package docstring becomes dashboard/data.py's",
     ("dataio/transformers.py", "doc|"): "the module docstring follows the split",
-    # MO recording plan v6, Work Group 5 (deliberate amendment): DashboardData.load drops the columns the
-    # dashboard does not read yet (DEFERRED_MO_COLUMNS: the persistent mo_record), so no table, store or
-    # callback carries it until the consumers migrate to MORunView (Work Group 6).
-    ("dataio/__init__.py", "def|DashboardData"): "load() drops DEFERRED_MO_COLUMNS",
+    # MO recording plan v6, Work Groups 5-6 (deliberate amendment): DashboardData.load keeps each row's
+    # mo_record on the server and skips legacy MO rows (dashboard.mo_frames.without_legacy_mo_rows).
+    ("dataio/__init__.py", "def|DashboardData"): "load() skips legacy MO rows; mo_record stays server-side",
     # ...and the nine final-generation summaries stored beside mo_record join DISPLAY2_DROP_COLUMNS (its
     # value is pinned in TABLES["constants"]).
     ("dataio/column_config.py", "assign|DISPLAY2_DROP_COLUMNS"): "the Work Group 5 summary scalars and mo_record are dropped",
     ("dataio/column_config.py", "assign|LIST_COLUMNS"): "mo_record is never a table column (defence in depth)",
+    # MO recording plan v6, Work Group 6 (deliberate amendment): the STN store carries row ids, not rows'
+    # mo_record, and the multi-objective plot data is built server-side from each record (mo_frames).
+    ("dashboard/Dashboard.py", "cb|STN_data.data"): "returns records without mo_record, with their _row id",
+    ("dashboard/Dashboard.py",
+     "cb|..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_data.data...STN_MO_data.data..."
+     "STN_MO_series_labels.data...MO_data_PPP.data.."): "builds the MO plot data from mo_record via MORunView",
 }
 
 # `dataio.__all__` is the one structural deletion: a package export list, with no consumer, for a
@@ -3748,6 +3762,46 @@ def trajectory(offset, minimising):
     return fits, noisy
 
 
+def mo_record_fixture():
+    """A small valid mo_record, built by hand (NumPy only): genotypes A = bits(3), B = bits(5) with
+    f(A) = (5, 3), f(B) = (4, 2) (maximise value, minimise weight); generation 0 evaluates A then B, and
+    generation 1 re-evaluates A. Hypervolumes by hand, reference point (0, 20)."""
+    i32, f64 = np.int32, np.float64
+    return {
+        "schema": "noisyvis.mo_record", "version": 1,
+        "meta": {"opt_weights": (1.0, -1.0), "ref_point": (0.0, 20.0), "n_obj": 2, "sol_length": BITS,
+                 "gene_dtype": "uint8", "n_evals": 3, "n_generations": 2, "n_genotypes": 2,
+                 "n_observations": 3, "prior_noise_observed": False},
+        "genotypes": {"values": np.array([bits(3), bits(5)], dtype=np.uint8),
+                      "true_obj": np.array([[5.0, 3.0], [4.0, 2.0]], dtype=f64),
+                      "first_orig_eval": np.array([0, 1], dtype=i32)},
+        "events": {"orig_geno": np.array([0, 1, 0], dtype=i32), "eval_geno": None,
+                   "obs_obj": np.array([[5.5, 3.1], [4.2, 2.1], [5.0, 2.9]], dtype=f64),
+                   "obs_id": np.array([0, 1, 2], dtype=i32)},
+        "gen_last_eval": np.array([2, 3], dtype=np.int64),
+        "current_noisy_front": {"gen": np.array([0, 1], dtype=i32), "member_offsets": np.array([0, 2, 4]),
+                                "members": np.array([0, 1, 1, 2], dtype=i32),
+                                "hv_noisy": np.array([97.15, 88.86]), "hv_clean": np.array([89.0, 89.0])},
+        "current_clean_front": {"gen": np.array([0], dtype=i32), "member_offsets": np.array([0, 2]),
+                                "members": np.array([0, 1], dtype=i32), "hv_clean": np.array([89.0])},
+        "noisy_archive": {"member": np.array([0, 1, 2], dtype=i32), "enter_eval": np.array([0, 1, 2], dtype=i32),
+                          "exit_eval": np.array([-1, -1, -1], dtype=i32), "exit_by": np.array([-1, -1, -1], dtype=i32),
+                          "hv_eval": np.array([0, 1, 2], dtype=i32), "hv_noisy": np.array([92.95, 97.15, 97.31]),
+                          "hv_clean": np.array([85.0, 89.0, 89.0])},
+        "clean_archive": {"member": np.array([0, 1], dtype=i32), "enter_eval": np.array([0, 1], dtype=i32),
+                          "exit_eval": np.array([-1, -1], dtype=i32), "exit_by": np.array([-1, -1], dtype=i32),
+                          "hv_eval": np.array([0, 1], dtype=i32), "hv_clean": np.array([85.0, 89.0])},
+    }
+
+
+MO_SUMMARY = {
+    "final_hv_current_noisy_front__noisy": 88.86, "final_hv_current_noisy_front__clean": 89.0,
+    "final_hv_current_clean_front__clean": 89.0, "final_hv_noisy_archive__noisy": 97.31,
+    "final_hv_noisy_archive__clean": 89.0, "final_hv_clean_archive__clean": 89.0,
+    "n_generated_genotypes": 2, "final_noisy_archive_size": 3, "final_clean_archive_size": 2,
+}
+
+
 def algo_rows():
     rows = []
     problems = [
@@ -3785,11 +3839,12 @@ def algo_rows():
                     )
                     rows.append(row)
 
-    # One multi-objective row: rep_fits is NaN, as in the real warehouse, with Pareto columns.
-    mo = dict(problems[0])
-    mo.update(
-        algo_type="MO", algo_name="NSGA2", noise=1.0, seed=1, seed_signature="sig-mo",
-        n_gens=3, n_evals=90, stop_trigger="gen_limit", n_unique_sols=0,
+    # MO rows (MO recording plan v6, Work Group 6): rep_fits is NaN, as in the real warehouse. The current
+    # row carries its plain-data mo_record and summary scalars; a legacy row (the removed recorder's Pareto
+    # lists, no mo_record) is skipped by DashboardData.load.
+    mo_base = dict(problems[0])
+    mo_base.update(
+        algo_type="MO", noise=1.0, seed=1, stop_trigger="gen_limit", n_unique_sols=0,
         final_fit=np.nan, max_fit=np.nan, min_fit=np.nan, penalty=0.0, peak_ram_mb=120.0,
         rep_sols=None, rep_fits=np.nan, rep_noisy_fits=np.nan, rep_noisy_sols=None,
         rep_fitness_boxplot_stats=[], rep_estimated_fits_whenadopted=[],
@@ -3797,18 +3852,18 @@ def algo_rows():
         count_estimated_fits_whendiscarded=[], sol_iterations=None,
         sol_iterations_evals=None, sol_transitions=None,
         alternative_rep_sols=[], alternative_rep_fits=[],
-        pareto_solutions=[[bits(3), bits(5)], [bits(9), bits(12)]],
-        pareto_fitnesses=[[[1.0, 2.0], [2.0, 1.0]], [[1.5, 2.5], [2.5, 1.5]]],
-        pareto_true_fitnesses=[[[1.1, 2.1], [2.1, 1.1]], [[1.6, 2.6], [2.6, 1.6]]],
-        true_pareto_solutions=[[bits(4), bits(6)], [bits(10), bits(13)]],
-        true_pareto_fitnesses=[[[1.2, 2.2], [2.2, 1.2]], [[1.7, 2.7], [2.7, 1.7]]],
-        noisy_pf_noisy_hypervolumes=[3.0, 4.0], noisy_pf_true_hypervolumes=[3.1, 4.1],
-        true_pf_hypervolumes=[3.2, 4.2], n_gens_pareto_best=[1, 2],
-        # MO recording plan v6, Work Group 5: new MO rows carry the plain-data mo_record (a small stand-in
-        # here). DashboardData.load drops it, so every pinned table, store and callback is unchanged.
-        mo_record={"schema": "noisyvis.mo_record", "version": 1,
-                   "events": {"obs_obj": np.zeros((2, 2)), "orig_geno": np.arange(2, dtype=np.int32)}},
     )
+    mo = dict(mo_base, algo_name="NSGA2", seed_signature="sig-mo", n_gens=1, n_evals=3,
+              mo_record=mo_record_fixture(), **MO_SUMMARY)
+    legacy_mo = dict(mo_base, algo_name="SEMO", seed_signature="sig-legacy", n_gens=3, n_evals=90,
+                     pareto_solutions=[[bits(3), bits(5)], [bits(9), bits(12)]],
+                     pareto_fitnesses=[[[1.0, 2.0], [2.0, 1.0]], [[1.5, 2.5], [2.5, 1.5]]],
+                     pareto_true_fitnesses=[[[1.1, 2.1], [2.1, 1.1]], [[1.6, 2.6], [2.6, 1.6]]],
+                     true_pareto_solutions=[[bits(4), bits(6)], [bits(10), bits(13)]],
+                     true_pareto_fitnesses=[[[1.2, 2.2], [2.2, 1.2]], [[1.7, 2.7], [2.7, 1.7]]],
+                     noisy_pf_noisy_hypervolumes=[3.0, 4.0], noisy_pf_true_hypervolumes=[3.1, 4.1],
+                     true_pf_hypervolumes=[3.2, 4.2], n_gens_pareto_best=[1, 2], final_true_hv=4.2)
+    rows.append(legacy_mo)
     rows.append(mo)
     return rows
 
@@ -3970,8 +4025,11 @@ def build_values(data):
     display2 = json_safe(data.display2_df)
     plot_2d = json_safe(data.df_no_lists)
     lon_table = json_safe(data.df_lon[data.lon_display_columns])
-    stn_rows = json_safe(
-        data.df[(data.df["algo_name"] == "MuPlusLambda") & (data.df["noise"] == 1.0)])
+    # the STN store as update_stn_data fills it: rows without mo_record, with their row id (_row); the MO
+    # row makes process_STN_data build its plot data server-side from the record
+    stn_frame = data.df[((data.df["algo_name"] == "MuPlusLambda") & (data.df["noise"] == 1.0))
+                        | (data.df["algo_type"] == "MO")]
+    stn_rows = json_safe(stn_frame.drop(columns=["mo_record"]).assign(_row=stn_frame.index))
     values = {
         "experiment-selector.value": "exp-a",
         "table1.data": display1,
@@ -4187,6 +4245,9 @@ def frame_report(frame):
 def tables_report(algo, lon):
     tables = import_first("noisyvis.dashboard.tables", "noisyvis.dataio.transformers")
     columns = import_first("noisyvis.dashboard.columns", "noisyvis.dataio.column_config")
+    # the frame the tables are built from, as DashboardData.load prepares it (MO recording plan v6,
+    # Work Group 6: legacy MO rows skipped, mo_record kept server-side)
+    algo = importlib.import_module("noisyvis.dashboard.mo_frames").without_legacy_mo_rows(algo)
     report = {
         "df_no_lists": frame_report(tables.create_df_no_lists(algo)),
         "display1_df": frame_report(tables.create_display1_df(algo)),

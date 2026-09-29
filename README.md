@@ -396,23 +396,45 @@ These rules are the same for every MO algorithm (`SEMO`, `NSGA2` and the MoUMDA 
 - **Generation 0 is the evaluated initial population.** Every constructor builds and evaluates its
   initial population; `run()` observes it once, before the first stop check, with no extra
   evaluation or RNG draw. Generation `g >= 1` is the state after the `g`-th update, so a run records
-  generations `0..n_gens` (`n_gens` counts updates).
-- **Current fronts describe the current population.** After each generation the recorder receives
-  the algorithm's current population. The noisy front is its non-dominated subset under the
-  observed (noisy) objectives the algorithm sees; the clean front is the non-dominated subset of its
-  unique genotypes under the true objectives. Algorithm-specific state, such as
-  `MoUMDA_ParetoArchive`'s internal archive, is never the source.
+  generations `0..n_gens` (`n_gens` counts updates). Every recorded series is indexed by these real
+  generation numbers.
+- **Current fronts describe the current population.** The current noisy front is the non-dominated
+  subset of the population under the observed (noisy) objectives the algorithm sees, identified by
+  observation; the current clean front is the non-dominated subset of the population's unique
+  genotypes under the true objectives f(x), computed independently of the noisy front.
+  Algorithm-specific state, such as `MoUMDA_ParetoArchive`'s internal archive, is never the source.
+- **Passive historical archives describe everything evaluated so far.** The noisy archive holds the
+  non-dominated observations seen anywhere in the run; the clean archive holds the non-dominated
+  genotypes the optimiser genuinely generated (a genotype only ever seen as a prior-noise perturbation
+  x~ does not count), judged by f(x). Both are rebuilt from the evaluation events, never from the
+  population, and the optimiser never reads them. `lost_clean_solutions(g)` is the clean archive minus
+  the current clean front: truly non-dominated solutions the population no longer holds.
 - **`stop_without_improvement_in_gens: L`** stops with `stop_trigger = no_improvement` once the
   genotype set of the population's noisy non-dominated front has been unchanged for `L` consecutive
   observations, counting generation 0: a front that never changes stops the run after generation
-  `L - 1`. The algorithm owns this counter (`_front_unchanged_gens`); stopping does not depend on the
-  recorder, which only mirrors the run lengths in `n_gens_pareto_best`.
+  `L - 1`. The algorithm owns this counter (`_front_unchanged_gens`); stopping never depends on
+  recording.
 - **The MoUMDA convergence stops are separate.** `probability_vector_converged` and
   `insufficient_unique_support` (see [The MoUMDA family](#the-moumda-family)) read the probability
   vector and its support, never the fronts. The generic criteria, `no_improvement` included, are
   checked first.
-- **Clean evaluation draws no RNG.** The recorder evaluates true objectives with the problem's own
-  evaluator at `noise_intensity=0`, which draws nothing, so recording cannot change the search.
+- **Recording is observational.** The evaluators compute f(x) during the genuine evaluation (no extra
+  evaluation) and draw no RNG at zero noise, so a run is identical with recording on or off.
+
+**What a result row holds.** Each MO result row is its identity and configuration, nine
+final-generation summaries (`final_hv_<metric>` for `current_noisy_front__noisy`,
+`current_noisy_front__clean`, `current_clean_front__clean`, `noisy_archive__noisy`,
+`noisy_archive__clean` and `clean_archive__clean`; `n_generated_genotypes`;
+`final_noisy_archive_size`, `final_clean_archive_size`) and `mo_record`, the single detailed record of
+the run: plain NumPy arrays and Python values (no DEAP objects) holding every evaluation (x, x~, f(x),
+y), the generation boundaries, both current-front histories, both archives' evaluation-precision
+membership intervals and every hypervolume. Read it with
+`noisyvis.results.mo_view.MORunView(row["mo_record"])`, which answers fronts and archives at any
+generation (archives also at any evaluation), histories, intervals, hypervolume trajectories and
+`lost_clean_solutions(g)` from the stored data, without replaying the run. The dashboard keeps each
+row's `mo_record` on the server and sends the browser only row ids; its multi-objective plots are
+built server-side (`noisyvis.dashboard.mo_frames`). Rows written by the earlier Pareto-list recorder
+(removed) have no `mo_record` and are skipped by the dashboard; regenerate those experiments.
 
 ### LON experiments (`run_lon.py`, `run_lon_parallel.py`)
 
@@ -1119,35 +1141,20 @@ generators) go in `operators.py`.
   per seed. The base class draws `seed_signature` with one `random.randint` in `__post_init__`.
   Do not reorder anything in the base class.
 
-**MO algorithms** get `true_fitness_function`, `ref_point`, `stop_without_improvement_in_gens` and
-`verbose_rate` in addition. They do not use `ExperimentLogger` (B10). The constructor builds and
+**MO algorithms** get `ref_point`, `stop_without_improvement_in_gens`, `verbose_rate` and
+`log_evaluations` in addition. They do not use `ExperimentLogger` (B10). The constructor builds and
 evaluates the initial population; `perform_generation()` keeps the current population in
 `self.population`. The inherited `run()` observes generation 0 and every later generation through
-`_observe_generation()`, which updates the `no_improvement` state and fills the Pareto and
-hypervolume lists that `mo_algo_data_single` reads (`pareto_*`, `true_pareto_*`, the three
-`*_hypervolumes` lists and `n_gens_pareto_best`). Do not record or observe from the constructor or
-from `perform_generation()`, and do not override `_observe_generation()` to change its source; see
-[Recorded fronts and the no_improvement stop](#recorded-fronts-and-the-no_improvement-stop).
+`_observe_generation()`, which updates the `no_improvement` state, lets the evaluation log record the
+generation, and prints a progress line every `verbose_rate` generations. Do not observe from the
+constructor or from `perform_generation()`, and do not override `_observe_generation()` to change its
+source; see [Recorded fronts and the no_improvement stop](#recorded-fronts-and-the-no_improvement-stop).
 Evaluate only through `self.toolbox.evaluate(ind)` and assign its result to `ind.fitness.values`.
-With `log_evaluations=True` (off by default, and not yet set by the runner) that call logs each
-evaluation exactly once in `self.eval_log` (`noisyvis.tracking.mo_logger`) and tags the individual
-with `_eval_tag`. This needs an MO evaluator that reports through `log_mo_eval`, as the three in
-`problems/knapsack_mo.py` do. `_observe_generation()` then also records, in `self.eval_log`, each
-generation's evaluation boundary and the current noisy and clean fronts of the population with their
-hypervolumes, as change-point histories (the same semantics as the recorded fronts below).
-The log also replays two passive historical archives from its events alone, never from the
-population: the noisy archive (non-dominated observations seen so far, under the observed values) and
-the clean archive (non-dominated genotypes generated as x so far, under f(x)), with
-evaluation-precision membership intervals and their hypervolumes. Neither is read by the optimiser.
-The MO runner turns this logging on for every run (it is recording infrastructure, not a config
-setting), freezes the log once with `eval_log.finalise()` into a plain-data `mo_record` (NumPy arrays
-and Python primitives only) and stores it in the result row, next to the unchanged legacy Pareto
-columns and nine final-generation summaries (`final_hv_<metric>` for the six current-front and archive
-hypervolumes, `n_generated_genotypes`, `final_noisy_archive_size`, `final_clean_archive_size`). Read a
-record with `noisyvis.results.mo_view.MORunView(row["mo_record"])`: fronts and archives at any
-generation (archives also at any evaluation), their histories, membership intervals, every
-hypervolume trajectory and `lost_clean_solutions(g)`, all from the stored data without replaying the
-run. The dashboard does not read `mo_record` yet.
+With `log_evaluations=True` (the MO runner always sets it; off means optimisation only, nothing
+recorded) that call logs each evaluation exactly once in `self.eval_log` (`noisyvis.tracking.mo_logger`)
+and tags the individual with its provenance; the evaluator must report through `log_mo_eval`, as the
+three in `problems/knapsack_mo.py` do. After `run()`, `mo_algo_data_single` freezes the log with
+`eval_log.finalise()` into the row's `mo_record` and adds the summary scalars.
 
 **Worked flow:**
 

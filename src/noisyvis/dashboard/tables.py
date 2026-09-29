@@ -36,7 +36,7 @@ def _evals_to_visit(rep_fits, sol_iters_evals, idx) -> object:
     """
     # MO rows and old SO rows (pre-Logger rename) have rep_fits=NaN, not a list.
     # NaN is truthy so `not rep_fits` doesn't catch it — guard with isinstance.
-    # TODO: compute MO equivalent from true_pf_hypervolumes + eval counts per PF snapshot
+    # TODO: compute MO equivalent from the mo_record hypervolume histories (results.mo_view.MORunView)
     #       (requires recording evals alongside each HV measurement in run_mo.py)
     if not isinstance(rep_fits, (list, np.ndarray)) or not isinstance(sol_iters_evals, (list, np.ndarray)):
         return None

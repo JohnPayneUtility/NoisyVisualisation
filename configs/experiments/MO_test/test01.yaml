@@ -16,7 +16,7 @@ hydra:
       +defaults/multiobjective/run: run_mo_test
       +defaults/multiobjective/problems: kp10_mo_v1, kp10_mo_v1_violation
       # +defaults/multiobjective/problems: kp10_mo_v1,kp10_mo_violation
-      +defaults/multiobjective/algos: semo,moumda,nsga2
+      +defaults/multiobjective/algos: semo,nsga2,moumda
       problem.fitness_params.noise_intensity: 0,1,2
   sweep:
     dir: data/outputs

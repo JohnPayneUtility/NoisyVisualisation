@@ -61,7 +61,7 @@ MO_PREFIX = "noisyvis.algorithms.multi_objective."
 PUBLIC_MO_NAMES = (
     "OptimisationAlgorithm", "MoUMDABase", "SEMO", "MoUMDA", "MoUMDA_noDuplicates", "MoUMDA_ParetoArchive",
     "MoUMDA_KMeans", "NSGA2",
-    "mo_umda_update_full", "mo_umda_update_with_archive", "record_pareto_data", "front_sig",
+    "mo_umda_update_full", "mo_umda_update_with_archive", "front_sig",
     "mut_flip_one_bit",
 )
 MO_ALGORITHM_CLASSES = frozenset({"SEMO", "MoUMDA", "MoUMDA_noDuplicates", "MoUMDA_ParetoArchive", "MoUMDA_KMeans",
@@ -198,6 +198,11 @@ from omegaconf import OmegaConf
 import noisyvis.algorithms
 import noisyvis.problems
 from noisyvis.experiments.config.workflows import resolve_mo_config
+from noisyvis.results.mo_view import MORunView
+from noisyvis.tracking.logger import get_active_logger
+
+sys.path.insert(0, str(Path(ARGS["workspace"]) / "tests"))
+from harness.mo_legacy import legacy_columns  # noqa: E402  (the removed recorder's outputs, from mo_record)
 
 WORKSPACE = Path(ARGS["workspace"])
 MO_PREFIX = ARGS["mo_prefix"]
@@ -226,8 +231,6 @@ def runner_algo_params(cfg):
     """The algo_params of run_mo_experiment (src/noisyvis/experiments/runner.py), built the same way."""
     fitness_fn = getattr(problems, cfg.problem.fitness_fn)
     fit_params = dict(cfg.problem.fitness_params)
-    true_fit_params = fit_params.copy()
-    true_fit_params["noise_intensity"] = 0
     cfg_start_sol = getattr(cfg.algo, "starting_solution", None)
     start_sol = list(cfg_start_sol) if cfg_start_sol is not None else None
     return {
@@ -240,7 +243,6 @@ def runner_algo_params(cfg):
         "gen_limit": cfg.run.max_gens,
         "stop_without_improvement_in_gens": cfg.run.get("stop_without_improvement_in_gens", None),
         "fitness_function": (fitness_fn, fit_params),
-        "true_fitness_function": (fitness_fn, true_fit_params),
         "ref_point": cfg.problem.get("ref_point", None),
         "verbose_rate": cfg.run.get("verbose_rate", 0),
     }
@@ -289,7 +291,7 @@ def case_config(case):
 def build(case, seed):
     cfg = case_config(case)
     params = runner_algo_params(cfg)
-    params["record_every_gen"] = case["record_every_gen"]
+    params["log_evaluations"] = True  # as mo_algo_data_single: the MO record is always kept
     params.update(case.get("params", {}))  # optional overrides; the characterisation cases have none
     seed_all(seed)
     return instantiate(cfg.algo.init_args, **params)
@@ -407,7 +409,10 @@ def generation_fingerprint(algo, collapsed):
     return fp
 
 
-def run_summary(algo):
+def run_summary(algo, every_generation):
+    """The run's outcome and the (removed) legacy recorder's outputs, projected from its mo_record:
+    every generation (the cases' record_every_gen) or only where the noisy front's genotype set changed."""
+    legacy = legacy_columns(MORunView(algo.eval_log.finalise()), every_generation)
     return {
         "class": type(algo).__name__,
         "name": algo.name,
@@ -415,15 +420,15 @@ def run_summary(algo):
         "gens": algo.gens,
         "evals": algo.evals,
         "stop_trigger": algo.stop_trigger,
-        "noisy_pf_noisy_hypervolumes": [float(x) for x in algo.noisy_pf_noisy_hypervolumes],
-        "noisy_pf_true_hypervolumes": [float(x) for x in algo.noisy_pf_true_hypervolumes],
-        "true_pf_hypervolumes": [float(x) for x in algo.true_pf_hypervolumes],
-        "n_gens_pareto_best": [int(x) for x in algo.n_gens_pareto_best],
-        "pareto_solutions_sha": [sha(genotypes(front)) for front in algo.pareto_solutions],
-        "pareto_fitnesses_sha": [sha(fitness_rows(front)) for front in algo.pareto_fitnesses],
-        "pareto_true_fitnesses_sha": [sha(fitness_rows(front)) for front in algo.pareto_true_fitnesses],
-        "true_pareto_solutions_sha": [sha(genotypes(front)) for front in algo.true_pareto_solutions],
-        "true_pareto_fitnesses_sha": [sha(fitness_rows(front)) for front in algo.true_pareto_fitnesses],
+        "noisy_pf_noisy_hypervolumes": [float(x) for x in legacy["noisy_pf_noisy_hypervolumes"]],
+        "noisy_pf_true_hypervolumes": [float(x) for x in legacy["noisy_pf_true_hypervolumes"]],
+        "true_pf_hypervolumes": [float(x) for x in legacy["true_pf_hypervolumes"]],
+        "n_gens_pareto_best": [int(x) for x in legacy["n_gens_pareto_best"]],
+        "pareto_solutions_sha": [sha(genotypes(front)) for front in legacy["pareto_solutions"]],
+        "pareto_fitnesses_sha": [sha(fitness_rows(front)) for front in legacy["pareto_fitnesses"]],
+        "pareto_true_fitnesses_sha": [sha(fitness_rows(front)) for front in legacy["pareto_true_fitnesses"]],
+        "true_pareto_solutions_sha": [sha(genotypes(front)) for front in legacy["true_pareto_solutions"]],
+        "true_pareto_fitnesses_sha": [sha(fitness_rows(front)) for front in legacy["true_pareto_fitnesses"]],
         "final_population_genotypes_sha": sha(genotypes(algo.population)),
         "final_population_fitnesses_sha": sha(fitness_rows(ind.fitness.values for ind in algo.population)),
     }
@@ -449,44 +454,30 @@ def drive(algo, observe=None):
 
 
 def characterisation():
-    cases = {}
-    for name, case in ARGS["cases"].items():
-        cases[name] = {}
-        for seed in ARGS["seeds"]:
-            algo = build(case, seed)
-            per_generation = drive(algo)
-            cases[name][str(seed)] = {"summary": run_summary(algo), "per_generation": per_generation}
-    return cases
-
-
-def characterisation_logged():
-    """characterisation() with MO evaluation logging on (Work Group 2). It must equal the same corrected
-    reference, and at every generation the log must hold exactly one event per counted evaluation, with
-    every population member resolving to its event."""
+    """Every reference case, logged as in production. The run summaries and per-generation fingerprints
+    must equal the corrected reference; at every generation the log holds exactly one event per counted
+    evaluation, every population member resolves to its event, the generation boundary equals the
+    counted evaluations and the passive archives replay mid-run; the finalised record opens as a view."""
     cases, exactly_one = {}, {}
     for name, case in ARGS["cases"].items():
-        logged_case = dict(case, params=dict(case.get("params", {}), log_evaluations=True))
         cases[name], exactly_one[name] = {}, {}
         for seed in ARGS["seeds"]:
-            algo = build(logged_case, seed)
+            algo = build(case, seed)
             checks = []
 
             def observe(algo):
                 log = algo.eval_log
                 checks.append(len(log) == algo.evals
                               and all(log.event(log.resolve(ind)).x == tuple(ind) for ind in algo.population)
-                              # Work Group 3: one boundary per generation, an exclusive end offset
                               and log.n_generations == algo.gens + 1
                               and log.gen_last_eval[-1] == algo.evals
-                              # Work Group 4: the passive archives replay mid-run, observationally
                               and len(log.noisy_archive_at(algo.gens)) > 0
                               and len(log.clean_archive_at(algo.gens)) > 0)
 
             per_generation = drive(algo, observe)
-            # Work Group 5: freeze the log into mo_record and open the read view, after the reference run
-            from noisyvis.results.mo_view import MORunView
             view = MORunView(algo.eval_log.finalise())
-            cases[name][str(seed)] = {"summary": run_summary(algo), "per_generation": per_generation}
+            cases[name][str(seed)] = {"summary": run_summary(algo, case["record_every_gen"]),
+                                      "per_generation": per_generation}
             exactly_one[name][str(seed)] = {"generations": len(checks), "all_hold": all(checks),
                                             "events": len(algo.eval_log), "evals": algo.evals,
                                             "record": [view.n_evals, view.n_generations]}
@@ -502,7 +493,7 @@ def run_equivalence():
         drive(stepped)
         plain = build(case, seed)
         plain.run()
-        found[name] = run_summary(plain) == run_summary(stepped)
+        found[name] = run_summary(plain, case["record_every_gen"]) == run_summary(stepped, case["record_every_gen"])
     return found
 
 
@@ -740,13 +731,19 @@ class FailingFitness:
         self.calls += 1
         if self.calls == self.fail_on:
             raise RuntimeError("injected evaluation failure")
-        return (float(sum(individual)), float(sum(individual)))
+        observed = (float(sum(individual)), float(sum(individual)))
+        # reports to an active MO evaluation log exactly as the MO evaluators do
+        log_mo_eval = getattr(get_active_logger(), "log_mo_eval", None)
+        if log_mo_eval is not None:
+            log_mo_eval(individual, observed, observed)
+        return observed
 
 
 def commit_on_success():
     found = {}
     for name in ("moumda_margin_on", "moumda_margin_off", "pareto_archive_margin_on"):
         algo = build(ARGS["cases"][name], 1)
+        algo._observe_generation()  # generation 0, as run() observes it
         record = {"vector_before_first_generation": None if algo.probability_vector is None else "set"}
 
         # A successful generation stores exactly the vector it sampled from.
@@ -798,7 +795,15 @@ def inject_identical_population(algo, genotype):
 
 
 def records(algo):
-    return len(algo.true_pf_hypervolumes)
+    """Recorded generations (these cases record every generation)."""
+    return algo.eval_log.n_generations
+
+
+def recorded_front_genotypes(algo):
+    """Genotypes of the current noisy front at the last recorded generation."""
+    log = algo.eval_log
+    return sorted({tuple(int(x) for x in log.genotypes[log.obs_orig_geno(o)])
+                   for o in log.noisy_front_at(log.n_generations - 1)})
 
 
 def stop_check(algo):
@@ -817,6 +822,7 @@ def step(algo):
 def ordinary_collapse():
     algo = build(moumda_case(), 1)
     inject_identical_population(algo, COLLAPSED_GENOTYPE)
+    algo._observe_generation()  # generation 0, as run() observes it
     found = {"first_check": stop_check(algo), "evals_before": algo.evals}
     step(algo)
     found.update({
@@ -825,7 +831,7 @@ def ordinary_collapse():
         "vector": [float(p) for p in algo.probability_vector],
         "genotypes": sorted({tuple(int(x) for x in ind) for ind in algo.population}),
         "distinct_fitnesses": len({tuple(ind.fitness.values) for ind in algo.population}),
-        "recorded_front_genotypes": sorted({tuple(int(x) for x in ind) for ind in algo.pareto_solutions[-1]}),
+        "recorded_front_genotypes": recorded_front_genotypes(algo),
     })
     found["next_check"] = stop_check(algo)
     found["trigger"] = algo.stop_trigger
@@ -844,6 +850,7 @@ def archive_collapse():
     dominant = creator.Individual(list(COLLAPSED_GENOTYPE))
     dominant.fitness.values = (1.0e6, -1.0e6)  # dominates every knapsack evaluation
     algo.archive = [dominant]
+    algo._observe_generation()  # generation 0, as run() observes it
     diverse_parents = sorted({tuple(int(x) for x in ind) for ind in algo.population})
     found = {"first_check": stop_check(algo), "population_diverse": len(diverse_parents) > 1}
     archive_before_generation = algo.archive
@@ -856,7 +863,7 @@ def archive_collapse():
         "vector": [float(p) for p in algo.probability_vector],
         "population_genotypes": sorted({tuple(int(x) for x in ind) for ind in algo.population}),
         "population_evaluated": all(ind.fitness.valid for ind in algo.population),
-        "recorded_front_genotypes": sorted({tuple(int(x) for x in ind) for ind in algo.pareto_solutions[-1]}),
+        "recorded_front_genotypes": recorded_front_genotypes(algo),
     })
     archive_object = algo.archive
     archive_snapshot = [[list(a), list(a.fitness.values)] for a in algo.archive]
@@ -870,6 +877,7 @@ def archive_collapse():
 
     # The same diverse start on ordinary MoUMDA does not converge after one generation.
     ordinary = build(moumda_case(), 1)
+    ordinary._observe_generation()  # generation 0, as run() observes it
     step(ordinary)
     found["ordinary_same_start_stops"] = ordinary.stop_condition()
     return found
@@ -1098,10 +1106,11 @@ def duplicate_free_natural_runs():
     for seed in ARGS["seeds"]:
         runs = {}
         for target, extra in (("MoUMDA_noDuplicates", {}), ("MoUMDA", {"prevent_duplicates": True})):
-            algo = build(moumda_case(target, init_args=extra, gen_limit=150), seed)
+            case = moumda_case(target, init_args=extra, gen_limit=150)
+            algo = build(case, seed)
             initial_duplicates = duplicate_genotypes(algo.population)
             per_generation = drive(algo)
-            summary = run_summary(algo)
+            summary = run_summary(algo, case["record_every_gen"])
             summary.pop("class")
             runs[target] = {"summary": summary, "per_generation": per_generation,
                             "initial_duplicates": initial_duplicates}
@@ -1138,7 +1147,6 @@ report = {
     "public_names": section(public_names),
     "config_sweep": section(config_sweep),
     "characterisation": section(characterisation),
-    "characterisation_logged": section(characterisation_logged),
     "run_equivalence": section(run_equivalence),
     "archive_duplicate_semantics": section(archive_duplicate_semantics),
     "no_duplicates_generation": section(no_duplicates_generation),
@@ -1297,25 +1305,18 @@ def first_collapsed_generation(run: dict):
 
 @pytest.mark.parametrize("case", sorted(CHARACTERISATION_CASES))
 def test_characterisation_matches_baseline(probe, baseline, case):
-    """Exact: run summary and every per-generation fingerprint equal the corrected reference."""
-    _assert_matches_reference(_section(probe, "characterisation")[case], baseline["cases"][case], case)
-
-
-@pytest.mark.parametrize("case", sorted(CHARACTERISATION_CASES))
-def test_characterisation_with_evaluation_logging_matches_baseline(probe, baseline, case):
-    """MO evaluation logging (Work Group 2) is observational: with log_evaluations=True every run equals
-    the same corrected reference exactly, which is compared here and never re-recorded."""
-    logged = _section(probe, "characterisation_logged")
-    _assert_matches_reference(logged["cases"][case], baseline["cases"][case], case)
+    """Exact: run summary and every per-generation fingerprint equal the corrected reference. The runs
+    are logged as in production; the summary's recorder fields (fronts, hypervolume lists,
+    n_gens_pareto_best) are the removed legacy recorder's outputs, projected from each run's mo_record."""
+    _assert_matches_reference(_section(probe, "characterisation")["cases"][case], baseline["cases"][case], case)
 
 
 def test_logged_characterisation_logs_every_evaluation_once(probe):
-    """In every logged reference run, at every generation from 0: one event per counted evaluation,
-    every population member's _eval_tag resolves to the event of its own genotype, the generation
-    boundary recorded with the current fronts equals the counted evaluations, the passive archives
-    replay (non-empty) mid-run without changing the reference, and the finalised mo_record opens as a
-    MORunView covering every evaluation and generation."""
-    found = _section(probe, "characterisation_logged")["exactly_one"]
+    """In every reference run, at every generation from 0: one event per counted evaluation, every
+    population member's _eval_tag resolves to the event of its own genotype, the generation boundary
+    equals the counted evaluations, the passive archives replay (non-empty) mid-run without changing the
+    reference, and the finalised mo_record opens as a MORunView covering every evaluation and generation."""
+    found = _section(probe, "characterisation")["exactly_one"]
     assert set(found) == set(CHARACTERISATION_CASES)
     for case, seeds in found.items():
         assert set(seeds) == {str(seed) for seed in SEEDS}
@@ -1425,7 +1426,7 @@ def test_ordinary_moumda_keeps_the_converged_generation_then_stops(probe):
 
     # Generation 1 runs normally from the collapsed parents: sampled, evaluated, counted, recorded.
     assert found["first_check"] == NO_RNG_NOT_STOPPED
-    assert (found["gens"], found["evals"], found["records"]) == (1, found["evals_before"] + 20, 1)
+    assert (found["gens"], found["evals"], found["records"]) == (1, found["evals_before"] + 20, 2)  # g0, g1
     assert found["vector"] == [float(bit) for bit in COLLAPSED]
     assert found["genotypes"] == [list(COLLAPSED)]
     assert found["distinct_fitnesses"] > 1, "noisy copies of one genotype should get different observed fitness"
@@ -1434,8 +1435,8 @@ def test_ordinary_moumda_keeps_the_converged_generation_then_stops(probe):
     assert found["trigger_before_next_check"] == ""
     assert found["next_check"] == NO_RNG_STOPPED
     assert found["trigger"] == "probability_vector_converged"
-    assert (found["gens_after"], found["evals_after"], found["records_after"]) == (1, found["evals"], 1)
-    # run() also records generation 0, the evaluated initial population.
+    assert (found["gens_after"], found["evals_after"], found["records_after"]) == (1, found["evals"], 2)
+    # run() records generations 0 and 1 the same way.
     assert found["run"] == {"gens": 1, "evals": found["evals"], "records": 2,
                             "trigger": "probability_vector_converged"}
 
@@ -1449,7 +1450,7 @@ def test_pareto_archive_keeps_the_converged_generation_and_stop_checks_leave_the
     # a converged vector, whose sampled population is evaluated, and the archive is recorded.
     assert found["archive_replaced_by_generation"] is True
     assert found["archive_genotypes"] == [list(COLLAPSED)]
-    assert (found["gens"], found["records"]) == (1, 1)
+    assert (found["gens"], found["records"]) == (1, 2)  # g0, g1
     assert found["vector"] == [float(bit) for bit in COLLAPSED]
     assert found["population_genotypes"] == [list(COLLAPSED)]
     assert found["population_evaluated"] is True
@@ -1459,7 +1460,7 @@ def test_pareto_archive_keeps_the_converged_generation_and_stop_checks_leave_the
     assert found["next_checks"] == [NO_RNG_STOPPED, NO_RNG_STOPPED]
     assert found["trigger"] == "probability_vector_converged"
     assert found["archive_object_kept"] is True and found["archive_contents_kept"] is True
-    assert (found["gens_after"], found["evals_after"], found["records_after"]) == (1, found["evals"], 1)
+    assert (found["gens_after"], found["evals_after"], found["records_after"]) == (1, found["evals"], 2)
     assert found["ordinary_same_start_stops"] is False
 
 

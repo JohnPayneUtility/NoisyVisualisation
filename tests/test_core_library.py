@@ -112,7 +112,8 @@ FORWARDER_PUBLIC_NAMES = {
     "MOAlgorithms": frozenset({
         "MoUMDA", "MoUMDABase", "MoUMDA_KMeans", "MoUMDA_ParetoArchive", "MoUMDA_noDuplicates", "NSGA2", "OptimisationAlgorithm",
         "SEMO", "front_sig", "mo_umda_update_full", "mo_umda_update_with_archive", "mut_flip_one_bit",
-        "record_pareto_data",
+        # record_pareto_data removed (deliberate, MO recording plan v6 Work Group 6): the legacy Pareto
+        # recorder is gone; the MO record is the evaluation log's (tracking.mo_logger / results.mo_view).
         "base", "nsga2", "semo", "umda",  # submodules
     }),
 }

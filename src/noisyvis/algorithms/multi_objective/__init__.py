@@ -6,7 +6,7 @@ is explicit. Without it the star import would also export the submodule attribut
 `noisyvis.algorithms.base` (deap's `base`) to this package's `base` submodule.
 """
 
-from .base import OptimisationAlgorithm, record_pareto_data, front_sig
+from .base import OptimisationAlgorithm, front_sig
 from .semo import SEMO, mut_flip_one_bit
 from .umda import (
     MoUMDABase,
@@ -21,7 +21,6 @@ from .nsga2 import NSGA2
 
 __all__ = [
     "OptimisationAlgorithm",
-    "record_pareto_data",
     "front_sig",
     "SEMO",
     "mut_flip_one_bit",

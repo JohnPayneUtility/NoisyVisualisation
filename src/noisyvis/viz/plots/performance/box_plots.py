@@ -439,7 +439,8 @@ def plot_box_mo(dataframe, colorscale='Viridis'):
         dataframe: DataFrame with columns:
             - algo_name: Algorithm identifier
             - noise: Noise level
-            - final_true_hv: Final true hypervolume value
+            - final_hv_current_clean_front__clean: hypervolume under f(x) of the current clean
+              front at the final generation
 
     Returns:
         go.Figure: Box plot comparing algorithms
@@ -447,16 +448,16 @@ def plot_box_mo(dataframe, colorscale='Viridis'):
     df = dataframe.copy()
 
     # Check if we have MO data
-    if 'final_true_hv' not in df.columns:
+    if 'final_hv_current_clean_front__clean' not in df.columns:
         return create_empty_figure('No multi-objective data available')
 
     # Remove rows with None values
-    df = df.dropna(subset=['final_true_hv'])
+    df = df.dropna(subset=['final_hv_current_clean_front__clean'])
 
     if df.empty:
         return create_empty_figure('No multi-objective data available')
 
-    df = df[['algo_name', 'noise', 'final_true_hv']]
+    df = df[['algo_name', 'noise', 'final_hv_current_clean_front__clean']]
 
     noise_levels = sorted(df['noise'].unique())
     algos = sorted(df['algo_name'].unique())
@@ -465,7 +466,7 @@ def plot_box_mo(dataframe, colorscale='Viridis'):
     fig = px.box(
         df,
         x="noise",
-        y="final_true_hv",
+        y="final_hv_current_clean_front__clean",
         color="algo_name",
         category_orders={"noise": noise_levels, "algo_name": algos},
         color_discrete_sequence=colors,

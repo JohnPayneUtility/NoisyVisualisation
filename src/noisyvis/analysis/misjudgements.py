@@ -20,7 +20,7 @@ def _compute_n_misjudgements(row) -> int:
     rep_fits = row.get('rep_fits') if hasattr(row, 'get') else row['rep_fits']
     # MO rows and old SO rows (pre-Logger rename) have rep_fits=NaN, not a list.
     # NaN is truthy so `not rep_fits` doesn't catch it — guard with isinstance.
-    # TODO: compute MO equivalent from noisy_pf_true_hypervolumes (HV decreased steps)
+    # TODO: compute MO equivalent from the current_noisy_front__clean HV history (HV decreased steps)
     if not isinstance(rep_fits, (list, np.ndarray)) or len(rep_fits) < 2:
         return 0
     problem_goal = row.get('problem_goal', 'maximise') if hasattr(row, 'get') else row['problem_goal']

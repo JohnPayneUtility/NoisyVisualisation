@@ -322,15 +322,10 @@ def mo_algo_data_single(prob_info: Dict[str, Any],
     algo_instance = instantiate(algo_config, **{**algo_params, "log_evaluations": True})
     algo_instance.run()  # This updates the instance's internal data.
 
-    # Freeze the run's evaluation log into the persistent plain-data mo_record (no evaluation, no RNG)
-    # and validate it by opening the read view once.
+    # Freeze the run's evaluation log into the persistent plain-data mo_record (no evaluation, no RNG),
+    # the row's single detailed MO record, and validate it by opening the read view once.
     mo_record = algo_instance.eval_log.finalise()
     mo_summary = MORunView(mo_record).summary_scalars()
-    # Transitional (until the legacy recorder is removed): the legacy front lists store deep copies of
-    # individuals, which would carry their provenance tags into the warehouse; strip them.
-    for front in algo_instance.pareto_solutions + algo_instance.true_pareto_solutions:
-        for ind in front:
-            ind.__dict__.pop("_eval_tag", None)
 
     # Retrieve derived data from the run.
     # unique_sols, unique_fits, noisy_fits, sol_iterations, sol_transitions = algo_instance.get_trajectory_data()
@@ -366,29 +361,8 @@ def mo_algo_data_single(prob_info: Dict[str, Any],
         # "sol_transitions": sol_transitions,
         "seed": seed,
         "seed_signature": algo_instance.seed_signature,
-        # PARETO DATA
-        # noisy PF data (as the algorithm optimises)
-        "pareto_solutions": algo_instance.pareto_solutions,
-        "pareto_fitnesses": algo_instance.pareto_fitnesses,
-        "pareto_true_fitnesses": algo_instance.pareto_true_fitnesses,
-        # true PF (approx) built from full-pop true evals
-        "true_pareto_solutions": algo_instance.true_pareto_solutions,
-        "true_pareto_fitnesses": algo_instance.true_pareto_fitnesses,
-        # hypervolumes (full lists)
-        "noisy_pf_noisy_hypervolumes": algo_instance.noisy_pf_noisy_hypervolumes,
-        "noisy_pf_true_hypervolumes": algo_instance.noisy_pf_true_hypervolumes,
-        "true_pf_hypervolumes": algo_instance.true_pf_hypervolumes,
-        # hypervolume scalar values (for dashboard plotting/tables)
-        "final_true_hv": algo_instance.true_pf_hypervolumes[-1] if algo_instance.true_pf_hypervolumes else None,
-        "max_true_hv": max(algo_instance.true_pf_hypervolumes) if algo_instance.true_pf_hypervolumes else None,
-        "min_true_hv": min(algo_instance.true_pf_hypervolumes) if algo_instance.true_pf_hypervolumes else None,
-        "final_noisy_pf_hv": algo_instance.noisy_pf_true_hypervolumes[-1] if algo_instance.noisy_pf_true_hypervolumes else None,
-        "max_noisy_pf_hv": max(algo_instance.noisy_pf_true_hypervolumes) if algo_instance.noisy_pf_true_hypervolumes else None,
-        "min_noisy_pf_hv": min(algo_instance.noisy_pf_true_hypervolumes) if algo_instance.noisy_pf_true_hypervolumes else None,
-        # iterations
-        "n_gens_pareto_best": algo_instance.n_gens_pareto_best,
-        # MO recording (plan v6, Work Group 5): the persistent record read by results.mo_view.MORunView,
-        # and its final-generation summaries (current fronts, passive archives, genotype counts)
+        # The multi-objective record (read with results.mo_view.MORunView) and its final-generation
+        # summaries: current-front and passive-archive hypervolumes, genotype and archive counts
         "mo_record": mo_record,
         **mo_summary,
     }
@@ -451,8 +425,6 @@ def run_mo_experiment(cfg: DictConfig):
     fit_params = dict(cfg.problem.fitness_params)
 
     # Algorithm class and params
-    true_fit_params = fit_params.copy()
-    true_fit_params['noise_intensity'] = 0
     ref_point = cfg.problem.get("ref_point", None)
 
     # check for starting solution
@@ -475,7 +447,6 @@ def run_mo_experiment(cfg: DictConfig):
         'gen_limit':             cfg.run.max_gens,
         'stop_without_improvement_in_gens': cfg.run.get("stop_without_improvement_in_gens", None),
         'fitness_function':      (fitness_fn, fit_params),
-        'true_fitness_function': (fitness_fn, true_fit_params),
         'ref_point': ref_point,
         'verbose_rate': cfg.run.get("verbose_rate", 0),
     }
@@ -503,16 +474,12 @@ def run_mo_experiment(cfg: DictConfig):
 
         # Log metrics and artifacts
         for row in df.itertuples():
-            # Log final hypervolume instead of single fitness
-            if row.true_pf_hypervolumes:
-                mlflow.log_metric('final_true_hypervolume', row.true_pf_hypervolumes[-1], step=row.seed)
-            if row.noisy_pf_true_hypervolumes:
-                mlflow.log_metric('final_noisy_pf_hypervolume', row.noisy_pf_true_hypervolumes[-1], step=row.seed)
+            # Final-generation hypervolumes of the current fronts and passive archives
             for metric in MO_HV_METRICS:
                 value = getattr(row, f"final_hv_{metric}")
                 if value is not None and not np.isnan(value):
                     mlflow.log_metric(f"final_hv_{metric}", value, step=row.seed)
-        df.drop(columns=['mo_record']).to_csv(TEMP_DIR / 'results.csv', index=False) # save csv (scalars and legacy lists)
+        df.drop(columns=['mo_record']).to_csv(TEMP_DIR / 'results.csv', index=False) # save csv (identity, config, scalars)
         mlflow.log_artifact(str(TEMP_DIR / 'results.csv'))
         df.to_pickle(TEMP_DIR / "results.pkl") # save pickle
         save_or_append_results(df, WAREHOUSE_DIR / 'algo_results.pkl')
@@ -523,7 +490,7 @@ def run_mo_experiment(cfg: DictConfig):
 
     # Print summary - show final hypervolume instead of final_fit
     summary_df = df[['seed', 'n_gens', 'n_evals']].copy()
-    summary_df['final_hv'] = df['true_pf_hypervolumes'].apply(lambda x: x[-1] if x else None)
+    summary_df['final_hv'] = df['final_hv_current_clean_front__clean']
     print(summary_df)
 
     compute_time = time.perf_counter() - start_time

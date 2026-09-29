@@ -1,11 +1,14 @@
-"""Shared multi-objective infrastructure: the MO base class and Pareto-front / hypervolume recording."""
+"""Shared multi-objective infrastructure: the MO base class, its generation lifecycle and front stagnation.
+
+Recording is the evaluation log's (noisyvis.tracking.mo_logger, on with log_evaluations); the MO runner
+freezes it into the persistent mo_record read by noisyvis.results.mo_view.MORunView.
+"""
 
 # IMPORTS
 import random
-import numpy as np
 
 from abc import abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable, Optional, Tuple, List, Any
 
 # deap.base is aliased: this module is itself the package's `base`
@@ -13,7 +16,7 @@ from deap import base as deap_base
 from deap import creator
 from deap import tools
 
-from noisyvis.common.pareto import hypervolume, nondominated_mask
+from noisyvis.common.pareto import nondominated_mask
 
 # ==============================
 # Helper Functions
@@ -34,130 +37,20 @@ def front_signature(individuals):
     mask = nondominated_mask([ind.fitness.wvalues for ind in individuals])
     return front_sig([ind for ind, keep in zip(individuals, mask) if keep])
 
-def record_pareto_data(
-    population,
-    pareto_solutions,  # noisy PF solutions
-    pareto_fitnesses,  # noisy PF noisy fitnesses
-    pareto_true_fitnesses,  # noisy PF true fitnesses
-    true_pareto_solutions,  # true PF approx. solutions
-    true_pareto_fitnesses,  # true PF approx. fitnesses
-    noisy_pf_noisy_hypervolumes,  # noisy HV of noisy PF
-    noisy_pf_true_hypervolumes,  # true HV of noisy PF
-    true_pf_hypervolumes,  # HV of true PF approximation
-    n_gens_pareto_best,
-    toolbox,
-    opt_weights,  # optimisation weights for multiobjective
-    true_fitness_function=None,
-    ref_point=None,  # reference point for HV calculation
-    record_every_gen=False,
-    gen=None,
-    eval=None,
-    seed_signature=None,
-    verbose_rate=0
-):
+def plain_fitness_function(fitness_function):
     """
+    The (fitness function, keyword parameters) pair with plain-Python parameters. Hydra's instantiate hands
+    the pair over as OmegaConf containers (the knapsack items_dict as a DictConfig), which are slow to read
+    on every evaluation; they are converted once, with OmegaConf.to_container, keeping exactly the values
+    the container holds (the evaluator results are unchanged). Anything else is returned as given.
     """
-    # Asserts
-    assert true_fitness_function is not None, "true_fitness_function must be provided."
-    assert ref_point is not None, "ref_point must be provided for hypervolume calculation."
-
-    # Use config ref point and objectives to determine ref for HV calculation
-    w = np.asarray(opt_weights, dtype=float)
-    sign = np.where(w > 0, -1.0, 1.0)  # flip max->min for HV
-    hv_ref = np.asarray(ref_point, dtype=float) * sign
-
-    def _should_print(g: int) -> bool:
-        # Check if should print update statement to terminal
-        if verbose_rate == 0:
-            return False
-        return (g % verbose_rate) == 0
-
-    # =========================
-    # 1) Noisy Pareto front
-    # =========================
-    pareto_front = tools.ParetoFront()
-    pareto_front.update(population)
-    pf_clone = [toolbox.clone(ind) for ind in pareto_front]
-
-    # Check if PF changed and report
-    curr_sig = front_sig(pf_clone)
-    n_improvements = len(n_gens_pareto_best)
-
-    if pareto_solutions:
-        last_sig = front_sig(pareto_solutions[-1])
-        if curr_sig == last_sig:
-            n_gens_pareto_best[-1] += 1
-            if _should_print(gen):
-                print(
-                    f"[SeedSig {seed_signature}] | "
-                    f"[Gen {gen}] No PF change | "
-                    f"[Eval {eval}] No PF Change | "
-                    f"total improvements: {n_improvements} | "
-                    f"since last improvement: {n_gens_pareto_best[-1]}"
-                )
-            if not record_every_gen:
-                return
-            pareto_solutions.append(pf_clone)
-        else:
-            n_gens_pareto_best.append(1)
-            pareto_solutions.append(pf_clone)
-            if _should_print(gen):
-                print(
-                    f"[SeedSig {seed_signature}] | "
-                    f"[Gen {gen}] PF Changed | "
-                    f"[Eval {eval}] PF Changed | "
-                    f"PF size: {len(pf_clone)} | "
-                    f"total improvements: {n_improvements + 1}"
-                )
-    else: # Initial Record
-        n_gens_pareto_best.append(1)
-        pareto_solutions.append(pf_clone)
-        if verbose_rate != 0:
-            print(f"[Gen {gen}] Initial PF recorded | PF size: {len(pf_clone)}")
-
-    # noisy evals of the noisy PF
-    noisy_fit_list = [ind.fitness.values for ind in pareto_front]
-    pareto_fitnesses.append(noisy_fit_list)
-
-    # true evals of the noisy PF
-    tf, tf_kwargs = true_fitness_function
-    true_fit_list = [tf(ind, **tf_kwargs) for ind in pareto_front]
-    pareto_true_fitnesses.append(true_fit_list)
-
-    # =========================
-    # 2) HV for noisy pareto front
-    # =========================
-    noisy_pts = np.asarray(noisy_fit_list, dtype=float) * sign
-    hv_noisy = hypervolume(noisy_pts, hv_ref)
-    noisy_pf_noisy_hypervolumes.append(float(hv_noisy))
-
-    true_pts_for_noisy_pf = np.asarray(true_fit_list, dtype=float) * sign
-    hv_noisy_true = hypervolume(true_pts_for_noisy_pf, hv_ref)
-    noisy_pf_true_hypervolumes.append(float(hv_noisy_true))
-
-    # =========================
-    # 3) TRUE Pareto front (FULL POP, TRUE EVALS) — without touching originals
-    # =========================
-    pop_true = [toolbox.clone(ind) for ind in population]
-    for ind_clone, ind_orig in zip(pop_true, population):
-        ind_clone.fitness.values = tf(ind_orig, **tf_kwargs)
-
-    true_pf = tools.ParetoFront()
-    true_pf.update(pop_true)
-
-    if true_pareto_solutions is not None:
-        true_pareto_solutions.append([toolbox.clone(ind) for ind in true_pf])
-
-    true_pf_fit_true = [ind.fitness.values for ind in true_pf]
-    if true_pareto_fitnesses is not None:
-        true_pareto_fitnesses.append(true_pf_fit_true)
-
-    # =========================
-    # 4) TRUE HV (of the TRUE PF)
-    # =========================
-    true_pts = np.asarray(true_pf_fit_true, dtype=float) * sign
-    hv_true = hypervolume(true_pts, hv_ref)
-    true_pf_hypervolumes.append(float(hv_true))
+    if fitness_function is None:
+        return None
+    fn, params = fitness_function
+    if type(params).__module__.startswith("omegaconf."):
+        from omegaconf import OmegaConf  # only reached on the Hydra path, where omegaconf is loaded
+        params = OmegaConf.to_container(params, resolve=True)
+    return (fn, params)
 
 # ==============================
 # Base Algorithm Class
@@ -174,37 +67,23 @@ class OptimisationAlgorithm:
     attr_function: Optional[Callable] = None
     fitness_function: Optional[Tuple[Callable, dict]] = None
     starting_solution: Optional[List[Any]] = None
-    true_fitness_function: Optional[Tuple[Callable, dict]] = None
     ref_point: Optional[list[Any]] = None
-    record_every_gen: bool = False
+    # Print a progress line every verbose_rate generations (0: never); see _report_progress.
     verbose_rate: int = 0
     # Log every genuine evaluation (x, x~, f(x), y) and tag individuals with their provenance
     # (noisyvis.tracking.mo_logger). Observational only; requires an evaluator that reports log_mo_eval.
+    # Off: optimisation only, nothing recorded. The MO runner turns it on.
     log_evaluations: bool = False
-
-    # Create lists to store data, seperate for each instance
-    # multi objective data
-    # noisy pareto front data
-    pareto_solutions: List[List[Any]] = field(default_factory=list)
-    pareto_fitnesses: List[List[Any]] = field(default_factory=list)
-    pareto_true_fitnesses:List[List[Any]] = field(default_factory=list)
-    # true approximated pareto front data
-    true_pareto_solutions: List[List[Any]] = field(default_factory=list)
-    true_pareto_fitnesses: List[List[Tuple[float, ...]]] = field(default_factory=list)
-    # hypervolume data
-    noisy_pf_noisy_hypervolumes: List[float] = field(default_factory=list)
-    noisy_pf_true_hypervolumes: List[float] = field(default_factory=list)
-    true_pf_hypervolumes: List[float] = field(default_factory=list)
-    # iterations
-    n_gens_pareto_best: List[int] = field(default_factory=list)
 
     def __post_init__(self):
         self.stop_trigger = ''
+        self.fitness_function = plain_fitness_function(self.fitness_function)
         # Front stagnation (the no_improvement stop), owned by the algorithm, not the recorder:
         # the genotype set of the noisy non-dominated front at the last observation, and for how many
         # consecutive observations it has been unchanged (None before the first observation).
         self._front_signature = None
         self._front_unchanged_gens = None
+        self._front_size = None  # members of that front (a progress-report detail)
         self.seed_signature = random.randint(0, 10**6)
         # Run-scoped evaluation log (None when logging is off). Imported here, not at module level, so
         # the module loads only for runs that log.
@@ -293,48 +172,40 @@ class OptimisationAlgorithm:
     def _observe_generation(self):
         """
         Observe the current population, for every algorithm alike: update the algorithm's own
-        front-stagnation state, then hand the population to the recorder. The current fronts and the
+        front-stagnation state, then (with evaluation logging on) let the evaluation log record this
+        generation's boundary and current fronts, then report progress. The current fronts and the
         no_improvement stop describe the solutions the algorithm currently holds; algorithm-specific
         state (such as MoUMDA_ParetoArchive's internal archive) is never the source. Stopping never
-        depends on what the recorder does; it reads only the state updated here. With evaluation
-        logging on, the evaluation log also records this generation's boundary and current fronts.
+        depends on the log; it reads only the state updated here.
         """
         self._update_front_stagnation(self.population)
         if self.eval_log is not None:
             self.eval_log.observe_generation(self.gens, self.population)
-        self.record_state_pareto(self.population)
+        self._report_progress()
 
     def _update_front_stagnation(self, population):
         """
         no_improvement bookkeeping: the first observation sets the counter to 1; an unchanged
         genotype set of the population's noisy non-dominated front adds 1; a changed one resets it to 1.
         """
-        signature = front_signature(population)
+        mask = nondominated_mask([ind.fitness.wvalues for ind in population]) if population else []
+        front = [ind for ind, keep in zip(population, mask) if keep]
+        signature = front_sig(front)
         if self._front_unchanged_gens is not None and signature == self._front_signature:
             self._front_unchanged_gens += 1
         else:
             self._front_unchanged_gens = 1
         self._front_signature = signature
+        self._front_size = len(front)
 
-    def record_state_pareto(self, population):
-        record_pareto_data(
-            population,
-            self.pareto_solutions,
-            self.pareto_fitnesses,
-            self.pareto_true_fitnesses,
-            self.true_pareto_solutions,
-            self.true_pareto_fitnesses,
-            self.noisy_pf_noisy_hypervolumes,
-            self.noisy_pf_true_hypervolumes,
-            self.true_pf_hypervolumes,
-            self.n_gens_pareto_best,
-            self.toolbox,
-            self.opt_weights,
-            self.true_fitness_function,
-            self.ref_point,
-            self.record_every_gen,
-            self.gens,
-            self.evals,
-            self.seed_signature,
-            self.verbose_rate
-            )
+    def _report_progress(self):
+        """
+        Every verbose_rate generations, one line from the algorithm's own state: the generation, the
+        cumulative evaluations, the current noisy front's size (non-dominated members and distinct
+        genotypes) and whether its genotype set changed at this generation. Draws no RNG.
+        """
+        if not self.verbose_rate or self.gens % self.verbose_rate:
+            return
+        changed = "changed" if self._front_unchanged_gens == 1 else f"unchanged for {self._front_unchanged_gens}"
+        print(f"[SeedSig {self.seed_signature}] gen {self.gens} | evals {self.evals} | noisy front "
+              f"{self._front_size} members, {len(self._front_signature)} genotypes | {changed}", flush=True)

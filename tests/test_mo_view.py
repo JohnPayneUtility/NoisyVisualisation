@@ -13,7 +13,8 @@ runtime API exactly, from the persisted structures alone (no replay, no HV recom
     lost_clean_solutions(g)    clean archive members the population no longer holds
 
 It also checks the snapshot semantics, the NumPy-only import footprint, the result row the MO runner
-now writes, and that the dashboard tables never carry mo_record.
+now writes (plain data: no DEAP object, no legacy columns), and that the dashboard tables never
+carry mo_record.
 
 Runs in-process (plus one clean subprocess) and writes nothing.
 """
@@ -33,6 +34,7 @@ from omegaconf import OmegaConf
 
 import noisyvis.algorithms
 import noisyvis.problems
+from harness.mo_legacy import legacy_columns
 from harness.mo_runs import A, ALGORITHM_NAMES, B, C, F_A, F_B, F_C, Lab, build, step_run
 from noisyvis.results.mo_view import (
     ARCHIVE_METRICS,
@@ -238,8 +240,9 @@ def test_the_view_is_numpy_only():
 
 # ------------------------------------------------------------------------------ the MO runner's row
 
-def runner_row(target):
-    """One seed through the real MO runner function on the harness knapsack config."""
+def runner_row(target, wrap=None):
+    """One seed through the real MO runner function on the harness knapsack config (the evaluator
+    optionally wrapped, e.g. by a spy)."""
     from noisyvis.experiments.config.workflows import resolve_mo_config
     from noisyvis.experiments.runner import mo_algo_data_single
 
@@ -250,14 +253,15 @@ def runner_row(target):
         cfg.run.max_gens, cfg.run.eval_limit = 12, None
     cfg = resolve_mo_config(cfg)
     fitness_fn = getattr(noisyvis.problems, cfg.problem.fitness_fn)
-    fit_params = dict(cfg.problem.fitness_params)
+    if wrap is not None:
+        fitness_fn = wrap(fitness_fn)
+    fit_params = dict(cfg.problem.fitness_params)  # as run_mo_experiment builds it: items_dict a DictConfig
     algo_params = {
         "sol_length": cfg.problem.dimensions, "opt_weights": tuple(cfg.problem.weights),
         "eval_limit": cfg.run.eval_limit, "starting_solution": None, "target_stop": None,
         "attr_function": getattr(noisyvis.algorithms, cfg.problem.attr_function),
         "gen_limit": cfg.run.max_gens, "stop_without_improvement_in_gens": None,
         "fitness_function": (fitness_fn, fit_params),
-        "true_fitness_function": (fitness_fn, dict(fit_params, noise_intensity=0)),
         "ref_point": cfg.problem.get("ref_point", None), "verbose_rate": 0,
     }
     prob_info = {key: None for key in ("name", "type", "goal", "dimensions", "opt_global", "mean_value",
@@ -276,36 +280,84 @@ def legacy_change_generations(view):
     return generations
 
 
+ROW_COLUMNS = {
+    "problem_name", "problem_type", "problem_goal", "dimensions", "opt_global", "mean_value", "mean_weight",
+    "PID", "experiment_name", "experiment_description", "fit_func", "noise", "algo_type", "algo_name",
+    "n_gens", "n_evals", "stop_trigger", "seed", "seed_signature", "mo_record", *SUMMARY_COLUMNS,
+}
+
+
+def assert_plain_row(value, where="row"):
+    """Only primitives, NumPy scalars and numeric arrays, and plain containers: no DEAP object anywhere."""
+    if isinstance(value, dict):
+        for key, item in value.items():
+            assert_plain_row(item, f"{where}.{key}")
+    elif isinstance(value, (list, tuple)):
+        assert type(value) in (list, tuple), f"{where}: {type(value).__module__}.{type(value).__name__}"
+        for i, item in enumerate(value):
+            assert_plain_row(item, f"{where}[{i}]")
+    elif isinstance(value, np.ndarray):
+        assert value.dtype.kind in "biuf", f"{where}: array dtype {value.dtype}"
+    else:
+        assert isinstance(value, (str, int, float, bool, type(None), np.generic)), \
+            f"{where}: {type(value).__module__}.{type(value).__name__}"
+        assert not type(value).__module__.startswith("deap"), where
+
+
 @pytest.mark.parametrize("target", ["SEMO", "MoUMDA"])
-def test_the_mo_runner_writes_mo_record_beside_the_legacy_columns(target):
-    """The runner enables logging and finalises: its row holds mo_record and the nine summaries (equal to
-    the view's), while the legacy columns are unchanged in meaning, reproduced entry by entry by the view,
-    and carry no provenance tags."""
+def test_the_mo_runner_writes_a_plain_row_with_mo_record(target):
+    """The runner's row is identity, configuration, the nine summaries and mo_record, and nothing else:
+    no legacy Pareto lists or scalars, no DEAP Individual or Fitness anywhere, no provenance tag. It
+    unpickles in an interpreter that imports neither deap nor noisyvis. The removed recorder's outputs
+    remain derivable from the record (the frozen baselines are compared through that projection)."""
     row = runner_row(target)
+    assert set(row) == ROW_COLUMNS
+    assert_plain_row(row)
     view = MORunView(row["mo_record"])
     assert {k: row[k] for k in SUMMARY_COLUMNS} == view.summary_scalars()
     assert (row["n_evals"], row["n_gens"] + 1) == (view.n_evals, view.n_generations)
-    for front in row["pareto_solutions"] + row["true_pareto_solutions"]:
-        assert all("_eval_tag" not in vars(ind) for ind in front)
 
-    changes = legacy_change_generations(view)
-    assert len(changes) == len(row["pareto_solutions"])
-    for k, g in enumerate(changes):
-        noisy, clean = view.current_noisy_front(g), view.current_clean_front(g)
-        assert sorted((tuple(map(int, ind)), tuple(map(float, fit)))
-                      for ind, fit in zip(row["pareto_solutions"][k], row["pareto_fitnesses"][k])) == \
-            sorted((tuple(map(int, x)), tuple(map(float, y))) for x, y in zip(noisy.x, noisy.observed))
-        assert sorted((tuple(map(int, ind)), tuple(map(float, fit)))
-                      for ind, fit in zip(row["true_pareto_solutions"][k], row["true_pareto_fitnesses"][k])) == \
-            sorted((tuple(map(int, x)), tuple(map(float, t))) for x, t in zip(clean.x, clean.true_obj))
-        assert (row["noisy_pf_noisy_hypervolumes"][k], row["noisy_pf_true_hypervolumes"][k],
-                row["true_pf_hypervolumes"][k]) == \
-            (noisy.hv["current_noisy_front__noisy"], noisy.hv["current_noisy_front__clean"],
-             clean.hv["current_clean_front__clean"])
-    assert row["final_true_hv"] == view.hv("current_clean_front__clean").at_generation(changes[-1])
-    assert row["n_gens_pareto_best"] == [b - a for a, b in zip(changes, changes[1:] + [view.n_generations])]
+    script = ("import pickle, sys\n"
+              "row = pickle.loads(sys.stdin.buffer.read())\n"
+              "assert row['mo_record']['schema'] == 'noisyvis.mo_record'\n"
+              "print(sorted({m.split('.')[0] for m in sys.modules} & {'deap', 'noisyvis'}))\n")
+    done = subprocess.run([sys.executable, "-c", script], input=pickle.dumps(row), capture_output=True, timeout=120)
+    assert done.returncode == 0, done.stderr.decode()[-2000:]
+    assert done.stdout.decode().strip() == "[]"
 
-    pickle.loads(pickle.dumps(row["mo_record"]))
+    legacy = legacy_columns(view)
+    assert legacy["n_gens_pareto_best"] == [b - a for a, b in zip(legacy_change_generations(view),
+                                                                   legacy_change_generations(view)[1:] + [view.n_generations])]
+    assert legacy["final_true_hv"] == view.hv("current_clean_front__clean").at_generation(legacy_change_generations(view)[-1])
+
+
+def test_the_runner_hands_the_evaluator_plain_items():
+    """Hydra's instantiate passes the fitness parameters as OmegaConf containers; reading those on every
+    evaluation made knapsack runs ~100x slower. The algorithm converts them once: every evaluation of the
+    runner path receives the same plain dict (no OmegaConf object anywhere inside), holding exactly the
+    values the configuration held (item values and weights as floats)."""
+    seen = []
+
+    def wrap(fn):
+        def eval_noisy_kp_v1_mo(individual, **kwargs):
+            seen.append(kwargs["items_dict"])
+            return fn(individual, **kwargs)
+        return eval_noisy_kp_v1_mo
+
+    row = runner_row("MoUMDA", wrap=wrap)
+    assert len(seen) == row["n_evals"] > 0
+    items = seen[0]
+    assert type(items) is dict and all(item is items for item in seen), "one plain dict, converted once"
+
+    def omegaconf_free(value):
+        if isinstance(value, dict):
+            return all(omegaconf_free(k) and omegaconf_free(v) for k, v in value.items())
+        if isinstance(value, (list, tuple)):
+            return all(omegaconf_free(v) for v in value)
+        return not type(value).__module__.startswith("omegaconf")
+
+    assert omegaconf_free(items)
+    assert all(type(k) is int and type(v) is list and all(type(x) is float for x in v) for k, v in items.items())
 
 
 def test_dashboard_tables_never_carry_mo_record():

@@ -434,7 +434,7 @@ def trace(name, prob, query):
         states.append(snapshot(algo))
 
     step_run(algo, observe)
-    return states, algo.fitness_function[0].log, logger_columns(algo.eval_log), algo.pareto_fitnesses
+    return states, algo.fitness_function[0].log, logger_columns(algo.eval_log)
 
 
 @pytest.mark.parametrize("prob", ["kp1", "prior"])
@@ -442,9 +442,8 @@ def trace(name, prob, query):
 def test_querying_the_archives_changes_nothing(name, prob):
     """A run whose archives are replayed after every generation is identical, generation by generation,
     to one that never replays them: x, x~, y, populations, PA archive, probability vectors, KMeans
-    state, gens/evals/stop, stagnation, both RNGs, the WG3 histories and the legacy recorder."""
+    state, gens/evals/stop, stagnation, both RNGs and the WG3 histories."""
     queried, plain = trace(name, prob, True), trace(name, prob, False)
     assert queried[0] == plain[0]
     assert queried[1] == plain[1]
     assert queried[2] == plain[2]
-    assert repr(queried[3]) == repr(plain[3])

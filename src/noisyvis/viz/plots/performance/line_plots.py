@@ -180,7 +180,8 @@ def plot_line_mo(dataframe, colorscale='Viridis'):
         dataframe: DataFrame with columns:
             - algo_name: Algorithm identifier
             - noise: Noise level
-            - final_true_hv: Final true hypervolume value
+            - final_hv_current_clean_front__clean: hypervolume under f(x) of the current clean
+              front at the final generation
 
     Returns:
         go.Figure: Line plot with error bars
@@ -188,19 +189,19 @@ def plot_line_mo(dataframe, colorscale='Viridis'):
     df = dataframe.copy()
 
     # Check if we have MO data
-    if 'final_true_hv' not in df.columns:
+    if 'final_hv_current_clean_front__clean' not in df.columns:
         return create_empty_figure('No multi-objective data available')
 
     # Remove rows with None values
-    df = df.dropna(subset=['final_true_hv'])
+    df = df.dropna(subset=['final_hv_current_clean_front__clean'])
 
     if df.empty:
         return create_empty_figure('No multi-objective data available')
 
-    df = df[['algo_name', 'noise', 'final_true_hv']]
+    df = df[['algo_name', 'noise', 'final_hv_current_clean_front__clean']]
 
     # Calculate statistics
-    stats = df.groupby(['algo_name', 'noise'])['final_true_hv'].agg(['mean', 'std']).reset_index()
+    stats = df.groupby(['algo_name', 'noise'])['final_hv_current_clean_front__clean'].agg(['mean', 'std']).reset_index()
 
     algos = list(stats['algo_name'].unique())
     colors = _viridis_colors(len(algos), colorscale)

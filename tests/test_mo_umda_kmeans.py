@@ -59,9 +59,9 @@ def noisy_objectives(individual):
     return (t[0] + random.gauss(0, 1), t[1] + random.gauss(0, 1))
 
 
-def build(pop_size=12, select_size=6, seed=1, fitness=None, true_fitness=None, **params):
+def build(pop_size=12, select_size=6, seed=1, fitness=None, **params):
+    # the algorithm has no clean evaluator at all: it only ever sees the noisy fitness function
     fitness = fitness if fitness is not None else Counted(noisy_objectives)
-    true_fitness = true_fitness if true_fitness is not None else Counted(true_objectives)
     random.seed(seed)
     np.random.seed(seed)
     kwargs = dict(
@@ -69,7 +69,6 @@ def build(pop_size=12, select_size=6, seed=1, fitness=None, true_fitness=None, *
         opt_weights=WEIGHTS,
         attr_function=binary_attribute,
         fitness_function=(fitness, {}),
-        true_fitness_function=(true_fitness, {}),
         ref_point=[0.0, 1000.0],
         gen_limit=100,
     )
@@ -131,10 +130,10 @@ def test_margin_and_duplicate_options_are_not_accepted(option):
 
 
 def test_initial_population_is_lambda_binary_individuals_evaluated_once():
-    fitness, true_fitness = Counted(noisy_objectives), Counted(true_objectives)
-    algo = build(fitness=fitness, true_fitness=true_fitness)
+    fitness = Counted(noisy_objectives)
+    algo = build(fitness=fitness)
     assert len(algo.population) == 12
-    assert algo.evals == 12 and fitness.calls == 12 and true_fitness.calls == 0
+    assert algo.evals == 12 and fitness.calls == 12
     assert all(type(bit) is int and bit in (0, 1) for ind in algo.population for bit in ind)
     assert all(ind.fitness.valid for ind in algo.population)
     assert algo.gens == 0 and algo.probability_vector is None
@@ -160,8 +159,8 @@ def test_initial_population_is_sampled_from_the_all_half_vector():
 
 
 def test_selection_is_nsga2_of_mu_and_kmeans_sees_their_stored_objectives():
-    fitness, true_fitness = Counted(noisy_objectives), Counted(true_objectives)
-    algo = build(fitness=fitness, true_fitness=true_fitness)
+    fitness = Counted(noisy_objectives)
+    algo = build(fitness=fitness)
     before = list(algo.population)
     seen = {}
 
@@ -174,7 +173,7 @@ def test_selection_is_nsga2_of_mu_and_kmeans_sees_their_stored_objectives():
 
     def cluster(points):
         seen["points"] = np.array(points, copy=True)
-        seen["calls_during_clustering"] = (fitness.calls, true_fitness.calls)
+        seen["calls_during_clustering"] = fitness.calls
         return np.zeros(len(points), dtype=int), np.zeros((algo.n_clusters, 2))
 
     with mock.patch.object(umda.tools, "selNSGA2", side_effect=select) as spy, \
@@ -191,8 +190,8 @@ def test_selection_is_nsga2_of_mu_and_kmeans_sees_their_stored_objectives():
     np.testing.assert_array_equal(points, [p.fitness.values for p in seen["parents"]])
     # the noisy stored values, not true fitness
     assert not np.array_equal(points, [true_objectives(p) for p in seen["parents"]])
-    assert seen["calls_during_clustering"] == (12, 0)
-    assert fitness.calls == 24 and true_fitness.calls == 0
+    assert seen["calls_during_clustering"] == 12
+    assert fitness.calls == 24
 
 
 def test_kmeans_settings_and_raw_objective_points():
@@ -366,7 +365,7 @@ def run_seeded(seed):
         "fitness": [ind.fitness.values for ind in algo.population],
         "cluster_sizes": algo.cluster_sizes,
         "labels": algo.cluster_labels.tolist(),
-        "hv": algo.true_pf_hypervolumes,
+        "stop": (algo.gens, algo.evals, algo.stop_trigger),
         "kmeans_seeds": [c.kwargs["random_state"] for c in spy.call_args_list],
     }
 
@@ -396,7 +395,6 @@ def test_default_config_runs_through_the_mo_runner():
 
     fitness_fn = getattr(noisyvis.problems, cfg.problem.fitness_fn)
     fit_params = dict(cfg.problem.fitness_params)
-    true_fit_params = dict(fit_params, noise_intensity=0)
     algo_params = {
         "sol_length": cfg.problem.dimensions,
         "opt_weights": tuple(cfg.problem.weights),
@@ -407,7 +405,6 @@ def test_default_config_runs_through_the_mo_runner():
         "gen_limit": cfg.run.max_gens,
         "stop_without_improvement_in_gens": None,
         "fitness_function": (fitness_fn, fit_params),
-        "true_fitness_function": (fitness_fn, true_fit_params),
         "ref_point": cfg.problem.get("ref_point", None),
         "verbose_rate": 0,
     }
@@ -417,4 +414,4 @@ def test_default_config_runs_through_the_mo_runner():
     assert row["algo_type"] == "MoUMDA_KMeans"
     assert row["algo_name"] == "MoUMDA_KMeans(λ=100, μ=50, k=7)"
     assert (row["n_gens"], row["n_evals"], row["stop_trigger"]) == (3, 400, "gen_limit")
-    assert row["true_pf_hypervolumes"]
+    assert row["mo_record"]["meta"]["n_generations"] == 4 and row["final_hv_current_clean_front__clean"] > 0

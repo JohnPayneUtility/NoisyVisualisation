@@ -64,7 +64,7 @@ def load_algo_results(
         DataFrame with algorithm run results containing columns like:
         - algo_name, algo_type, noise, fit_func
         - unique_sols, unique_fits, noisy_fits (trajectory data)
-        - pareto_solutions, pareto_fitnesses (MO data)
+        - mo_record plus final_hv_* summaries (MO data; read with results.mo_view.MORunView)
         - final_fit, max_fit, min_fit (summary statistics)
 
     Raises:

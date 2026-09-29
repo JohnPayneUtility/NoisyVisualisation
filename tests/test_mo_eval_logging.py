@@ -3,9 +3,9 @@
 Pins the evaluator-level event stream and its provenance tags:
 
     every genuine algorithm evaluation      exactly one event (x, x~, f(x), y), initial population included
-    nothing else                            no event for the legacy recorder's clean re-evaluations,
-                                            for duplicates rejected before evaluation, or for any extra
-                                            evaluation (there is none)
+    nothing else                            no event for duplicates rejected before evaluation or for
+                                            any extra evaluation (recording makes none: f(x) comes from
+                                            the genuine evaluation itself)
     x vs x~                                 kept apart: posterior noise x~ == x, prior noise may differ
     f(x)                                    computed during the genuine evaluation, equal in value and type
                                             to the clean evaluator; zero extra evaluations, no RNG
@@ -221,7 +221,7 @@ def test_posterior_events_record_x_and_the_clean_objectives(name, prob):
     type, compared by repr."""
     algo = build(name, prob=prob)
     step_run(algo)
-    tf, tf_kwargs = algo.true_fitness_function
+    tf, tf_kwargs = algo.test_true_fitness
     log = algo.eval_log
     for i in range(len(log)):
         event = log.event(i)
@@ -249,7 +249,7 @@ def scripted_semo(script=()):
     """A logged SEMO on counting ones / counting zeros with scripted prior noise, for exact cases."""
     fitness = ScriptedPriorCOCZ()
     algo = build("SEMO", prob="cocz1", opt_weights=COCZ_WEIGHTS,
-                 fitness_function=(fitness, {}), true_fitness_function=(cocz_objectives, {}))
+                 fitness_function=(fitness, {}), true_fitness=(cocz_objectives, {}))
     fitness.script.extend(script)
     return algo
 
@@ -403,13 +403,6 @@ def snapshot(algo):
     return state
 
 
-def legacy_record(algo):
-    return repr((algo.n_gens_pareto_best, algo.noisy_pf_noisy_hypervolumes, algo.noisy_pf_true_hypervolumes,
-                 algo.true_pf_hypervolumes, algo.pareto_fitnesses, algo.pareto_true_fitnesses,
-                 algo.true_pareto_fitnesses, [[tuple(i) for i in f] for f in algo.pareto_solutions],
-                 [[tuple(i) for i in f] for f in algo.true_pareto_solutions]))
-
-
 def trace(name, prob, log):
     algo = build(name, prob=prob, log=log)
     states = [snapshot(algo)]  # after construction: the initial evaluations
@@ -417,7 +410,7 @@ def trace(name, prob, log):
     fitness = algo.fitness_function[0]
     evaluated_x_tilde = getattr(fitness.fn, "evaluated", None)
     return {"states": states, "calls": [(x, repr(y)) for x, y in fitness.log],
-            "x_tilde": evaluated_x_tilde, "legacy": legacy_record(algo), "algo": algo}
+            "x_tilde": evaluated_x_tilde, "algo": algo}
 
 
 @pytest.mark.parametrize("prob", ["kp0", "kp1", "prior"])
@@ -425,8 +418,8 @@ def trace(name, prob, log):
 def test_logging_on_and_off_give_the_identical_search(name, prob):
     """With logging on vs off (same seed and config): the generated x, the evaluated x~ and the returned
     y sequences; the populations; the PA archive; the probability vectors; the KMeans state;
-    gens/evals/stop; the stagnation state; the legacy recorder's output; and the Python and NumPy RNG
-    states after construction and after every generation are all identical."""
+    gens/evals/stop; the stagnation state; and the Python and NumPy RNG states after construction and
+    after every generation are all identical. (Front recording is part of logging on.)"""
     on, off = trace(name, prob, True), trace(name, prob, False)
     assert off["algo"].eval_log is None and on["algo"].eval_log is not None
     assert on["calls"] == off["calls"]
@@ -434,7 +427,6 @@ def test_logging_on_and_off_give_the_identical_search(name, prob):
     assert len(on["states"]) == len(off["states"])
     for got, want in zip(on["states"], off["states"]):
         assert got == want, f"generation {want['gens']} differs with logging on"
-    assert on["legacy"] == off["legacy"]
     if prob == "prior":
         assert on["x_tilde"] and any(x != xt for (x, _), xt in zip(on["calls"], on["x_tilde"]))
 
@@ -459,25 +451,6 @@ def test_interleaved_runs_keep_separate_logs():
     for algo in (a, b):
         log, fitness = algo.eval_log, algo.fitness_function[0]
         assert [log.event(i).x for i in range(len(log))] == [x for x, _ in fitness.log]
-
-
-@pytest.mark.parametrize("name", ALGORITHM_NAMES)
-def test_legacy_recorder_clean_evaluations_are_not_logged(name):
-    """The legacy recorder re-evaluates fronts cleanly through true_fitness_function, outside
-    toolbox.evaluate. Those calls see no active MO logger and add no event: the log holds exactly the
-    algorithm's counted evaluations."""
-    algo = build(name, prob="kp1")
-    tf, tf_kwargs = algo.true_fitness_function
-    seen = []
-
-    def spy(ind, **kwargs):
-        seen.append(get_active_logger())
-        return tf(ind, **kwargs)
-
-    algo.true_fitness_function = (spy, tf_kwargs)
-    step_run(algo, check_exactly_one_log)
-    assert seen, "the legacy recorder made clean evaluations"
-    assert all(active is None for active in seen)
 
 
 # ------------------------------------------------------------------------------ _eval_tag

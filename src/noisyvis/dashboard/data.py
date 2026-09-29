@@ -43,8 +43,8 @@ from .columns import (
     LIST_COLUMNS,
     DISPLAY2_DROP_COLUMNS,
     DISPLAY2_DEDUP_KEYS,
-    DEFERRED_MO_COLUMNS,
 )
+from .mo_frames import without_legacy_mo_rows
 
 
 @dataclass
@@ -100,8 +100,9 @@ class DashboardData:
         Raises:
             DataLoadError: If either file cannot be loaded
         """
-        # Load raw data (without the columns the dashboard does not read yet)
-        df = load_algo_results(algo_path).drop(columns=DEFERRED_MO_COLUMNS, errors='ignore')
+        # Load raw data. Multi-objective rows keep their mo_record here, on the server; rows from before
+        # it existed (legacy MO payload, no mo_record) are skipped. The index is the stable row id.
+        df = without_legacy_mo_rows(load_algo_results(algo_path))
         df_lon = load_lon_results(lon_path)
 
         # Transform for different uses

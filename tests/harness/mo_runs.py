@@ -167,17 +167,20 @@ ALGORITHMS = {
 }
 
 
-def build(name, prob="kp1", log=True, seed=1, **params):
-    """Construct one MO algorithm on a 10-bit problem as the MO runner would, logging on or off."""
+def build(name, prob="kp1", log=True, seed=1, true_fitness=None, **params):
+    """
+    Construct one MO algorithm on a 10-bit problem as the MO runner would, logging on or off. The
+    problem's clean evaluator (never called by the algorithm) is attached as `test_true_fitness`, the
+    tests' independent f(x) oracle.
+    """
     cls, init_args = ALGORITHMS[name]
     init_args = {**init_args, **{k: params.pop(k) for k in list(params) if k in init_args}}
-    fitness, fit_params, true_fitness, weights, ref_point = problem(prob)
+    fitness, fit_params, problem_true_fitness, weights, ref_point = problem(prob)
     kwargs = dict(
         sol_length=knapsack()[0],
         opt_weights=weights,
         attr_function=binary_attribute,
         fitness_function=(fitness, fit_params),
-        true_fitness_function=true_fitness,
         ref_point=ref_point,
         gen_limit=12,
         stop_without_improvement_in_gens=5,
@@ -186,7 +189,9 @@ def build(name, prob="kp1", log=True, seed=1, **params):
     kwargs.update(params)
     random.seed(seed)
     np.random.seed(seed)
-    return cls(**init_args, **kwargs)
+    algo = cls(**init_args, **kwargs)
+    algo.test_true_fitness = problem_true_fitness if true_fitness is None else true_fitness
+    return algo
 
 
 def step_run(algo, observe=lambda algo: None):

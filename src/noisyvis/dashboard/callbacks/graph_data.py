@@ -8,6 +8,7 @@ from ..instance import app
 from ..data import df, df_LONs, LON_display_columns
 from ..helpers import _filter_penalty, convert_to_split_edges_format
 from ..layout.stores import LON_TABLE_SELECTED_PID_STORE
+from ..mo_frames import front_entries, row_view, stn_entries
 
 
 # Store PID from selected LON row so it is accessible from the initial layout
@@ -150,7 +151,10 @@ def update_stn_data(selected_rows, penalty_value, table2_data):
         f"[STN filter] selected_rows={selected_rows} -> matched_rows={len(df_result)}",
         flush=True
     )
-    return df_result.to_dict('records')
+    # Multi-objective records stay on the server: the browser store gets each row's metadata and its
+    # row id (_row, the index of the server-side df), which process_STN_data resolves.
+    return (df_result.drop(columns=['mo_record'], errors='ignore')
+            .assign(_row=df_result.index).to_dict('records'))
 
 @app.callback(
     [Output('STN_data_processed', 'data'),
@@ -162,23 +166,23 @@ def update_stn_data(selected_rows, penalty_value, table2_data):
     [Input('STN_data', 'data'),
      Input('mo_plot_type', 'value')],
 )
-def process_STN_data(df, mo_plot_type, group_cols=['algo_name', 'noise']):
+def process_STN_data(stn_rows, mo_plot_type, group_cols=['algo_name', 'noise']):
     print('Processing data...', flush=True)
-    df = pd.DataFrame(df)
+    frame = pd.DataFrame(stn_rows)
     STN_data, STN_series, Noise_data = [], [], []
     MO_data, MO_series = [], []
     MO_data_PPP = []
 
-    if df.empty:
+    if frame.empty:
         return STN_data, STN_series, Noise_data, MO_data, MO_series, MO_data_PPP
 
     # default/fallback if somehow empty
     mode = mo_plot_type or 'npnhv'
 
-    grouped = df.groupby(group_cols)
+    grouped = frame.groupby(group_cols)
     
     required = {'rep_sols','rep_fits','rep_noisy_fits','sol_iterations','sol_transitions'}
-    has_required = required.issubset(df.columns)
+    has_required = required.issubset(frame.columns)
 
     for group_key, group_df in grouped:
         runs = []
@@ -210,97 +214,19 @@ def process_STN_data(df, mo_plot_type, group_cols=['algo_name', 'noise']):
         STN_data.append(runs)
         STN_series.append(group_key)
 
-        # --- MO runs (mode-dependent) ---
+        # --- MO runs (mode-dependent), built server-side from each row's mo_record ---
         mo_runs = []
         mo_runs_full = []
         for _, row in group_df.iterrows():
-            pareto_solutions = (row.get('pareto_solutions') or [])
-            nps_hv_noisy         = (row.get('noisy_pf_noisy_hypervolumes') or [])
-            nps_hv_true          = (row.get('noisy_pf_true_hypervolumes') or [])
-            true_pareto_solutions = (row.get('true_pareto_solutions') or [])
-            tps_hv_true         = (row.get('true_pf_hypervolumes') or [])
-            nps_noisy_fits      = (row.get('pareto_fitnesses') or [])
-            nps_clean_fits      = (row.get('pareto_true_fitnesses') or [])
-            tps_clean_fits      = (row.get('true_pareto_fitnesses') or [])
-
-            Gmax = min(len(pareto_solutions), len(nps_hv_noisy))
-
-            fronts = []
-            fronts_full = []
-            for g in range(Gmax):
-                if mode == 'bpbhv': # Both pareto front sets & both metrics
-                    fronts.append({
-                        'front1':   true_pareto_solutions[g],
-                        'front2':   pareto_solutions[g],
-                        'metric1':  tps_hv_true[g],
-                        'metric2':  nps_hv_noisy[g],
-                        'gen_idx':  g,
-                    })
-                elif mode == 'bpbhv_algo_pov': # Both pareto front sets & both metrics (algo POV)
-                    fronts.append({
-                        'front1':   pareto_solutions[g],
-                        'front2':   true_pareto_solutions[g],
-                        'metric1':  nps_hv_noisy[g],
-                        'metric2':  tps_hv_true[g],
-                        'gen_idx':  g,
-                    })
-                elif mode == 'tpthv':
-                    fronts.append({
-                        'front1':   true_pareto_solutions[g],
-                        'front2':   None,
-                        'metric1':  tps_hv_true[g],
-                        'metric2':  None,
-                        'gen_idx':  g,
-                    })
-                elif mode == 'npthv':
-                    fronts.append({
-                        'front1':   pareto_solutions[g],
-                        'front2':   None,
-                        'metric1':  nps_hv_true[g],
-                        'metric2':  None,
-                        'gen_idx':  g,
-                    })
-                elif mode == 'npbhv':
-                    fronts.append({
-                        'front1':   pareto_solutions[g],
-                        'front2':   None,
-                        'metric1':  nps_hv_true[g],
-                        'metric2':  nps_hv_noisy[g],
-                        'gen_idx':  g,
-                    })
-                elif mode == 'tpbhv':
-                    fronts.append({
-                        'front1':   pareto_solutions[g],
-                        'front2':   None,
-                        'metric1':  tps_hv_true[g],
-                        'metric2':  None,
-                        'gen_idx':  g,
-                    })
-                else:  # npnhv
-                    fronts.append({
-                        'front1':   pareto_solutions[g],
-                        'front2':   None,
-                        'metric1':  nps_hv_noisy[g],
-                        'metric2':  None,
-                        'gen_idx':  g,
-                    })
-                fronts_full.append({
-                    'algo_front_solutions': pareto_solutions[g],
-                    'algo_front_noisy_fitnesses': nps_noisy_fits[g],
-                    'algo_front_clean_fitnesses': nps_clean_fits[g],
-                    'algo_front_noisy_hypervolume': nps_hv_noisy[g],
-                    'algo_front_clean_hypervolume': nps_hv_true[g],
-                    'clean_front_solutions': true_pareto_solutions[g],
-                    'clean_front_fitnesses': tps_clean_fits[g],
-                    'clean_front_hypervolume': tps_hv_true[g],
-                    'gen_idx':  g,
-                })
-            if fronts:
-                mo_runs.append(fronts)
+            view = row_view(df, row['_row']) if '_row' in row and pd.notna(row['_row']) else None
+            if view is None:
+                continue
+            fronts_full = front_entries(view)
             if fronts_full:
+                mo_runs.append(stn_entries(fronts_full, mode))
                 mo_runs_full.append(fronts_full)
 
-        print(f'generations in data: {Gmax}', flush=True)
+        print(f'MO runs in series: {len(mo_runs)}', flush=True)
         MO_data.append(mo_runs)
         MO_series.append(group_key)
         MO_data_PPP.append(mo_runs_full)

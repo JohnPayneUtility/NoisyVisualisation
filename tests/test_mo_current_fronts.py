@@ -3,19 +3,20 @@
 Pins the population-based current-front histories of the MO evaluation log, for every MO algorithm:
 
     gen_last_eval[g]      exclusive end offset: genuine evaluations completed by the end of generation g
-                          (g0 included; never the legacy recorder's clean evaluations)
+                          (g0 included)
     current noisy front   ND(current population) under the observed y; members are canonical obs_ids
     current clean front   ND(unique original genotypes of the current population) under f(x); members
                           are genotype ids; computed independently, never the noisy front re-scored
     change points         a row only when membership changes; a membership that disappears and returns
                           is a new row; the state at g is the last row starting at or before g
     hypervolumes          current_noisy_front__noisy, current_noisy_front__clean (the same members
-                          re-scored with f(x)), current_clean_front__clean, with the legacy convention
+                          re-scored with f(x)), current_clean_front__clean, with the established
+                          sign-flip hypervolume convention
 
-The legacy recorder is the same-run oracle: its every-generation output and its production
-change-ordinal output (a new entry only when the noisy front's genotype set changes) are reproduced
-from the new histories. Recording stays observational (see also test_mo_eval_logging.py's on/off test,
-which runs with front recording active).
+The removed legacy recorder's outputs (a new entry only when the noisy front's genotype set changes)
+are reproduced from these histories against the frozen reference-#3 baselines (test_mo_algorithms.py,
+test_reproducibility.py, through tests/harness/mo_legacy.py). Recording stays observational (see also
+test_mo_eval_logging.py's on/off test, which runs with front recording active).
 
 Runs in-process and writes nothing.
 """
@@ -208,7 +209,7 @@ def test_stale_members_and_nondeterministic_true_objectives_are_refused():
 
 def test_a_new_y_for_the_same_genotypes_is_a_noisy_change_but_not_a_legacy_change():
     """g0 {obs1(x)} -> g1 {obs2(x)}: the current noisy front changes (new row), but its genotype set does
-    not, so the legacy recorder (record_every_gen=False) would not have recorded a new entry."""
+    not, so the removed legacy recorder would not have recorded a new entry."""
     lab = Lab()
     x1 = lab.evaluate(A, F_A, (80.0, 70.0))
     lab.observe([x1])
@@ -224,7 +225,7 @@ def fronts_observer(algo, observed):
     """Checks every generation of a logged run against brute force computed from the population."""
     log = algo.eval_log
     weights, ref = algo.opt_weights, algo.ref_point
-    tf, tf_kwargs = algo.true_fitness_function
+    tf, tf_kwargs = algo.test_true_fitness
     fitness = algo.fitness_function[0]
     g = algo.gens
 
@@ -277,17 +278,6 @@ def test_current_fronts_follow_the_population(name, prob):
     assert all(len(log.hv_trajectory(m)) == algo.gens + 1 for m in HV_METRICS)
 
 
-@pytest.mark.parametrize("name", ALGORITHM_NAMES)
-def test_legacy_recorder_evaluations_are_not_generation_events(name):
-    algo = build(name, prob="kp1")
-    tf, tf_kwargs = algo.true_fitness_function
-    calls = []
-    algo.true_fitness_function = (lambda ind, **kw: calls.append(1) or tf(ind, **kw), tf_kwargs)
-    step_run(algo)
-    assert calls, "the legacy recorder made clean evaluations"
-    assert algo.eval_log.gen_last_eval[-1] == algo.evals == len(algo.eval_log)
-
-
 def test_nsga2_without_variation_has_flat_boundaries():
     algo = build("NSGA2", prob="kp1", cxpb=0.0, mutpb=0.0)
     step_run(algo)
@@ -325,37 +315,10 @@ def test_observing_a_generation_changes_nothing(name, prob):
     assert calls == list(range(algo.gens + 1))
 
 
-# ------------------------------------------------------------------------------ legacy projection
-
-def legacy_entry(algo, k):
-    """Legacy recorder entry k, as the dashboard consumes it."""
-    return {
-        "noisy": sorted((tuple(ind), tuple(float(v) for v in fit))
-                        for ind, fit in zip(algo.pareto_solutions[k], algo.pareto_fitnesses[k])),
-        "rescored": sorted((tuple(ind), repr(t))
-                           for ind, t in zip(algo.pareto_solutions[k], algo.pareto_true_fitnesses[k])),
-        "clean": sorted((tuple(ind), tuple(float(v) for v in fit))
-                        for ind, fit in zip(algo.true_pareto_solutions[k], algo.true_pareto_fitnesses[k])),
-        "hv": (algo.noisy_pf_noisy_hypervolumes[k], algo.noisy_pf_true_hypervolumes[k],
-               algo.true_pf_hypervolumes[k]),
-    }
-
-
-def projected_entry(log, g):
-    """The same bundle, projected from the new current-front histories at generation g."""
-    noisy, clean = log.noisy_front_at(g), log.clean_front_at(g)
-    return {
-        "noisy": sorted((log.genotypes[log.obs_orig_geno(o)], tuple(float(v) for v in log.obs_observed(o)))
-                        for o in noisy),
-        "rescored": sorted((log.genotypes[log.obs_orig_geno(o)], repr(log.true_objectives_of(log.obs_orig_geno(o))))
-                           for o in noisy),
-        "clean": sorted((log.genotypes[i], tuple(float(v) for v in log.true_objectives_of(i))) for i in clean),
-        "hv": tuple(log.hv_trajectory(m)[g] for m in HV_METRICS),
-    }
-
+# ------------------------------------------------------------------------------ legacy change points
 
 def legacy_change_generations(log):
-    """Generations at which the legacy recorder (record_every_gen=False) appended an entry: those where
+    """Generations at which the removed legacy recorder appended an entry: those where
     the genotype set of the noisy front in force differs from the one of its last entry (generation 0
     always). A change of obs_ids alone (same genotypes, new y) is not one."""
     generations, last = [], None
@@ -366,49 +329,6 @@ def legacy_change_generations(log):
             generations.append(g)
             last = signature
     return generations
-
-
-def assert_entries_match(legacy, projected, prob, where):
-    if prob != "prior":
-        assert projected == legacy, where
-        return
-    # Prior noise: the legacy recorder collapses (x, y) twins, the new front keeps observations with a
-    # different x~ apart (approved semantics), so the noisy fronts are compared as (x, y) sets and the
-    # two noisy-front HVs up to the resulting last-ulp differences. The clean front is exact.
-    assert set(projected["noisy"]) == set(legacy["noisy"]), where
-    assert set(projected["rescored"]) == set(legacy["rescored"]), where
-    assert projected["clean"] == legacy["clean"], where
-    assert all(math.isclose(p, q, rel_tol=1e-12) for p, q in zip(projected["hv"][:2], legacy["hv"][:2])), where
-    assert projected["hv"][2] == legacy["hv"][2], where
-
-
-@pytest.mark.parametrize("prob", POSTERIOR + ["prior"])
-@pytest.mark.parametrize("name", ALGORITHM_NAMES)
-def test_every_generation_legacy_output_is_reproduced(name, prob):
-    """Same run, legacy recorder with record_every_gen=True: its entry g equals the new histories at
-    generation g, including all three HVs exactly (posterior noise)."""
-    algo = build(name, prob=prob, record_every_gen=True)
-    step_run(algo)
-    log = algo.eval_log
-    assert len(algo.pareto_solutions) == log.n_generations == algo.gens + 1
-    for g in range(log.n_generations):
-        assert_entries_match(legacy_entry(algo, g), projected_entry(log, g), prob, f"generation {g}")
-
-
-@pytest.mark.parametrize("prob", POSTERIOR + ["prior"])
-@pytest.mark.parametrize("name", ALGORITHM_NAMES)
-def test_production_legacy_output_is_reproduced(name, prob):
-    """Same run, production legacy recorder (record_every_gen=False): entry k is the state at the k-th
-    generation where the noisy front's genotype set changed, and n_gens_pareto_best is the run lengths
-    between those generations. The dashboard's current inputs are reproducible from the new data."""
-    algo = build(name, prob=prob)
-    step_run(algo)
-    log = algo.eval_log
-    changes = legacy_change_generations(log)
-    assert len(algo.pareto_solutions) == len(changes)
-    for k, g in enumerate(changes):
-        assert_entries_match(legacy_entry(algo, k), projected_entry(log, g), prob, f"entry {k} (generation {g})")
-    assert algo.n_gens_pareto_best == [b - a for a, b in zip(changes, changes[1:] + [log.n_generations])]
 
 
 def test_obs_only_noisy_changes_occur_in_real_runs():
@@ -429,10 +349,10 @@ def test_hypervolume_of_uses_the_legacy_convention(weights):
     rng = np.random.default_rng(4)
     values = [tuple(float(v) for v in rng.integers(0, 50, 2)) for _ in range(9)]
     ref = [(-10.0 if w > 0 else 60.0) for w in weights]
-    # the legacy recorder's inline formula
+    # the established convention, written out
     w = np.asarray(weights, dtype=float)
     sign = np.where(w > 0, -1.0, 1.0)
-    legacy = float(base.hypervolume(np.asarray(values, dtype=float) * sign, np.asarray(ref, dtype=float) * sign))
+    legacy = float(pareto.hypervolume(np.asarray(values, dtype=float) * sign, np.asarray(ref, dtype=float) * sign))
     assert pareto.hypervolume_of(values, weights, ref) == legacy == direct_hv(values, weights, ref)
     assert pareto.hypervolume_of([], weights, ref) == 0.0
     assert pareto.hypervolume_of(values, weights, None) is None
@@ -440,4 +360,3 @@ def test_hypervolume_of_uses_the_legacy_convention(weights):
 
 def test_the_moved_helpers_are_the_ones_the_algorithms_use():
     assert base.nondominated_mask is pareto.nondominated_mask
-    assert base.hypervolume is pareto.hypervolume

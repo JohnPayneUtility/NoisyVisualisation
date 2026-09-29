@@ -99,14 +99,15 @@ def build(name, noise=1.0, seed=1, **params):
         opt_weights=WEIGHTS,
         attr_function=binary_attribute,
         fitness_function=(Counting(eval_noisy_kp_v1_mo), fit_params),
-        true_fitness_function=(eval_noisy_kp_v1_mo, dict(fit_params, noise_intensity=0)),
         ref_point=[0.0, 2 * sum(float(v[1]) for v in items_dict.values())],
         gen_limit=10,
     )
     kwargs.update(params)
     random.seed(seed)
     np.random.seed(seed)
-    return cls(**init_args, **kwargs)
+    algo = cls(**init_args, **kwargs)
+    algo.test_true_fitness = (eval_noisy_kp_v1_mo, dict(fit_params, noise_intensity=0))  # the test's f(x) oracle
+    return algo
 
 
 def genotype(ind):
@@ -137,49 +138,58 @@ def noisy_signature(individuals):
 
 def clean_front(individuals, algo):
     """Genotypes of the unique members that are non-dominated under the true objectives."""
-    tf, tf_kwargs = algo.true_fitness_function
+    tf, tf_kwargs = algo.test_true_fitness
     unique = sorted({genotype(ind) for ind in individuals})
     values = [tuple(v * w for v, w in zip(tf(list(g), **tf_kwargs), WEIGHTS)) for g in unique]
     return {unique[i] for i in brute_force_nd(values)}
 
 
-def run_lengths(signatures):
-    """n_gens_pareto_best for a sequence of signatures: run lengths of equal consecutive values."""
-    lengths = []
-    for k, sig in enumerate(signatures):
-        if k and sig == signatures[k - 1]:
-            lengths[-1] += 1
-        else:
-            lengths.append(1)
-    return lengths
-
-
-class RecordedSources:
-    """Captures, at each call, the individuals the legacy recorder receives as its front source."""
+class ObservedSources:
+    """Captures, at each observation, the individuals the algorithm observes (its stagnation source) and
+    the stagnation counter after the update."""
 
     def __init__(self):
         self.sources = []
         self.objects = []
+        self.counters = []
 
     def __enter__(self):
-        original = base.record_pareto_data
+        original = base.OptimisationAlgorithm._update_front_stagnation
+        recorder = self
 
-        def spy(population, *args, **kwargs):
-            self.objects.append(population)
-            self.sources.append([creator.Individual(list(ind)) for ind in population])
-            for copy, ind in zip(self.sources[-1], population):
+        def spy(algo, population):
+            recorder.objects.append(population)
+            recorder.sources.append([creator.Individual(list(ind)) for ind in population])
+            for copy, ind in zip(recorder.sources[-1], population):
                 copy.fitness.values = ind.fitness.values
-            return original(population, *args, **kwargs)
+            original(algo, population)
+            recorder.counters.append(algo._front_unchanged_gens)
 
-        self._patches = [mock.patch.object(base, "record_pareto_data", spy)]
-        for patch in self._patches:
-            patch.start()
+        self._patch = mock.patch.object(base.OptimisationAlgorithm, "_update_front_stagnation", spy)
+        self._patch.start()
         return self
 
     def __exit__(self, *exc):
-        for patch in self._patches:
-            patch.stop()
+        self._patch.stop()
         return False
+
+
+def logged_noisy_front(log, gen):
+    """(genotype, observed values) of the evaluation log's current noisy front at a generation."""
+    return {(tuple(int(v) for v in log.genotypes[log.obs_orig_geno(o)]), tuple(log.obs_observed(o)))
+            for o in log.noisy_front_at(gen)}
+
+
+def logged_clean_front(log, gen):
+    return {tuple(int(v) for v in log.genotypes[g]) for g in log.clean_front_at(gen)}
+
+
+def counters_of(signatures):
+    """The no_improvement counter after each observation of a sequence of signatures."""
+    counters = []
+    for k, sig in enumerate(signatures):
+        counters.append(counters[-1] + 1 if k and sig == signatures[k - 1] else 1)
+    return counters
 
 
 # ------------------------------------------------------------------------------ zero-noise evaluators
@@ -303,33 +313,6 @@ def test_nonzero_noise_evaluation_is_unchanged(fn, bits, kwargs, noise):
     assert random.getstate() == expected_state, "the draw count per noisy objective is unchanged"
 
 
-def without_recording(name):
-    """The same algorithm class with the legacy recorder switched off."""
-    cls = ALGORITHMS[name][0]
-    return type(f"Unrecorded{cls.__name__}", (cls,), {"record_state_pareto": lambda self, population: None})
-
-
-def evaluation_sequence(name, recording, noise, gen_limit=15):
-    cls, init_args = ALGORITHMS[name]
-    if not recording:
-        ALGORITHMS[name] = (without_recording(name), init_args)
-    try:
-        algo = build(name, noise=noise, gen_limit=gen_limit)
-    finally:
-        ALGORITHMS[name] = (cls, init_args)
-    algo.run()
-    return algo.fitness_function[0].log
-
-
-@pytest.mark.parametrize("noise", [0.0, 1.0])
-@pytest.mark.parametrize("name", sorted(ALGORITHMS))
-def test_legacy_recording_does_not_perturb_the_search(name, noise):
-    """The recorder's clean evaluations (noise_intensity=0) draw no RNG, so switching the recorder
-    off leaves every evaluated solution and every returned objective vector unchanged. Before the
-    zero-noise fix, SEMO and NSGA-II diverged at noise 0 and every algorithm diverged at noise 1."""
-    assert evaluation_sequence(name, True, noise) == evaluation_sequence(name, False, noise)
-
-
 # ------------------------------------------------------------------------------ lifecycle
 
 
@@ -363,8 +346,8 @@ def population_snapshot(individuals):
 @pytest.mark.parametrize("name", sorted(ALGORITHMS))
 def test_constructors_observe_nothing(name):
     """No constructor records or counts anything: generation 0 is observed by run(), for every algorithm."""
-    algo = build(name, record_every_gen=True)
-    assert algo.n_gens_pareto_best == [] and algo.true_pf_hypervolumes == []
+    algo = build(name, log_evaluations=True)
+    assert algo.eval_log.n_generations == 0
     assert algo._front_unchanged_gens is None and algo._front_signature is None
 
 
@@ -372,45 +355,45 @@ def test_constructors_observe_nothing(name):
 def test_observing_generation_zero_draws_and_evaluates_nothing(name):
     """Observing generation 0 records the constructor's evaluated population with no evaluator call and
     no Python or NumPy RNG draw, and starts the stagnation counter at 1."""
-    algo = build(name, record_every_gen=True)
+    algo = build(name, log_evaluations=True)
     calls, evals = algo.fitness_function[0].calls, algo.evals
     before = rng_state()
     algo._observe_generation()
     assert rng_state() == before
     assert (algo.fitness_function[0].calls, algo.evals, algo.gens) == (calls, evals, 0)
-    assert len(algo.true_pf_hypervolumes) == 1 and algo.n_gens_pareto_best == [1]
+    assert algo.eval_log.n_generations == 1 and algo.eval_log.gen_last_eval == [evals]
     assert algo._front_unchanged_gens == 1
     assert algo._front_signature == noisy_signature(algo.population)
 
 
 @pytest.mark.parametrize("name", sorted(ALGORITHMS))
 def test_generation_zero_is_the_evaluated_initial_population(name):
-    """For every algorithm the first recorded state is the population the constructor built and
-    evaluated, and every generation 0..gens is recorded (record_every_gen)."""
-    with RecordedSources() as recorded:
-        algo = build(name, record_every_gen=True, gen_limit=4)
+    """For every algorithm the first observed state is the population the constructor built and
+    evaluated, and every generation 0..gens is observed and recorded."""
+    with ObservedSources() as observed:
+        algo = build(name, log_evaluations=True, gen_limit=4)
         initial, initial_object = population_snapshot(algo.population), algo.population
         algo.run()
-    assert recorded.objects[0] is initial_object
-    assert population_snapshot(recorded.sources[0]) == initial
-    assert {(genotype(ind), tuple(ind.fitness.values)) for ind in algo.pareto_solutions[0]} == \
-        noisy_front(recorded.sources[0])
+    assert observed.objects[0] is initial_object
+    assert population_snapshot(observed.sources[0]) == initial
+    assert logged_noisy_front(algo.eval_log, 0) == noisy_front(observed.sources[0])
     assert algo.gens == 4
-    assert len(recorded.sources) == len(algo.true_pf_hypervolumes) == sum(algo.n_gens_pareto_best) == 5
+    assert len(observed.sources) == algo.eval_log.n_generations == 5
 
 
 @pytest.mark.parametrize("name", sorted(ALGORITHMS))
 def test_generation_one_follows_exactly_one_update(name):
     """Generation 1 is the population after one perform_generation(): its evaluations are exactly that
-    update's, and it is the second recorded state."""
-    with RecordedSources() as recorded:
-        algo = build(name, record_every_gen=True, gen_limit=1)
+    update's, and it is the second observed state."""
+    with ObservedSources() as observed:
+        algo = build(name, log_evaluations=True, gen_limit=1)
         calls = algo.fitness_function[0].calls
         algo.run()
     assert algo.gens == 1 and algo.stop_trigger == "gen_limit"
-    assert len(recorded.objects) == 2 and recorded.objects[1] is algo.population
+    assert len(observed.objects) == 2 and observed.objects[1] is algo.population
     assert algo.fitness_function[0].calls - calls == algo.evals - calls  # one update's evaluations only
-    assert population_snapshot(recorded.sources[1]) == population_snapshot(algo.population)
+    assert population_snapshot(observed.sources[1]) == population_snapshot(algo.population)
+    assert algo.eval_log.gen_last_eval == [calls, algo.evals]
 
 
 # ------------------------------------------------------------------------------ front source and stagnation
@@ -418,20 +401,19 @@ def test_generation_one_follows_exactly_one_update(name):
 
 @pytest.mark.parametrize("name", sorted(ALGORITHMS))
 def test_recorded_fronts_and_stagnation_follow_the_current_population(name):
-    """For every algorithm the recorder receives the current population: the recorded noisy front is
+    """For every algorithm each observation reads the current population: the recorded noisy front is
     ND(population) under the observed fitness, the recorded clean front is the clean ND of the
-    population's unique genotypes, and n_gens_pareto_best is the run-length encoding of the noisy
-    genotype-set signature of the population. (Until Phase 2b, MoUMDA_ParetoArchive passed its
-    internal archive instead.)"""
-    with RecordedSources() as recorded:
-        algo = build(name, record_every_gen=True, gen_limit=6)  # NSGA-II records in its constructor
+    population's unique genotypes, and the no_improvement counter follows the noisy genotype-set
+    signature of the population. (Until Phase 2b, MoUMDA_ParetoArchive used its internal archive.)"""
+    with ObservedSources() as observed:
+        algo = build(name, log_evaluations=True, gen_limit=6)
         algo.run()
-    assert recorded.objects[-1] is algo.population
-    assert len(recorded.sources) == len(algo.pareto_solutions) == len(algo.true_pareto_solutions)
-    for source, noisy, clean in zip(recorded.sources, algo.pareto_solutions, algo.true_pareto_solutions):
-        assert {(genotype(ind), tuple(ind.fitness.values)) for ind in noisy} == noisy_front(source)
-        assert {genotype(ind) for ind in clean} == clean_front(source, algo)
-    assert algo.n_gens_pareto_best == run_lengths([noisy_signature(s) for s in recorded.sources])
+    assert observed.objects[-1] is algo.population
+    assert len(observed.sources) == algo.eval_log.n_generations == algo.gens + 1
+    for gen, source in enumerate(observed.sources):
+        assert logged_noisy_front(algo.eval_log, gen) == noisy_front(source)
+        assert logged_clean_front(algo.eval_log, gen) == clean_front(source, algo)
+    assert observed.counters == counters_of([noisy_signature(s) for s in observed.sources])
 
 
 def _crafted(bits, values):
@@ -469,13 +451,12 @@ def test_pareto_archive_stagnation_follows_its_population_not_its_archive():
     algo.archive = [_crafted(A_BITS, (9.0, 3.0))]
     algo._observe_generation()
     assert algo._front_unchanged_gens == 2, "case B: archive changed, population front did not: no reset"
-    assert algo.n_gens_pareto_best == [1, 2], "the legacy recorder mirrors the same counter"
-    assert {genotype(ind) for ind in algo.pareto_solutions[-1]} == {tuple(B_BITS)}, "records the population"
+    assert algo._front_signature == {tuple(B_BITS)}, "the signature is the population's front"
 
 
 def test_pareto_archive_has_no_generic_observation_override():
     """MoUMDA_ParetoArchive observes, records and stagnates through the shared base methods."""
-    for method in ("_observe_generation", "_update_front_stagnation", "record_state_pareto", "stop_condition"):
+    for method in ("_observe_generation", "_update_front_stagnation", "stop_condition"):
         assert method not in vars(MoUMDA_ParetoArchive), method
     assert MoUMDA_ParetoArchive._observe_generation is base.OptimisationAlgorithm._observe_generation
 
@@ -502,51 +483,22 @@ def test_pareto_archive_records_its_population_where_it_differs_from_the_archive
     def observe(self):
         fronts.append((noisy_front(self.population), noisy_front(self.archive)))
         base.OptimisationAlgorithm._observe_generation(self)
-        fronts[-1] += ({(genotype(ind), tuple(ind.fitness.values)) for ind in self.pareto_solutions[-1]},)
+        fronts[-1] += (logged_noisy_front(self.eval_log, self.gens),)
 
     with mock.patch.object(MoUMDA_ParetoArchive, "_observe_generation", observe, create=True):
-        algo = build("MoUMDA_ParetoArchive", noise=1.0, gen_limit=10, record_every_gen=True)
+        algo = build("MoUMDA_ParetoArchive", noise=1.0, gen_limit=10, log_evaluations=True)
         algo.run()
     assert fronts and all(recorded == population for population, _, recorded in fronts)
     assert any(population != archive for population, archive, _ in fronts)
 
 
-def test_stagnation_counter_logic_is_the_same_whether_or_not_every_generation_is_recorded():
-    """record_every_gen only decides whether unchanged fronts are appended to the recorded lists; the
-    run-length counter behind no_improvement evolves identically either way."""
-    def counters(record_every_gen):
-        algo = build("MoUMDA", noise=0.0)
-        populations = [[_crafted(A_BITS, (10.0, 5.0))], [_crafted(A_BITS, (10.0, 5.0))],
-                       [_crafted(B_BITS, (10.0, 4.0))], [_crafted(B_BITS, (10.0, 4.0))],
-                       [_crafted(B_BITS, (10.0, 4.0))], [_crafted(A_BITS, (10.0, 5.0))]]
-        found = []
-        for population in populations:
-            algo.population = population
-            base.record_pareto_data(
-                population, algo.pareto_solutions, algo.pareto_fitnesses, algo.pareto_true_fitnesses,
-                algo.true_pareto_solutions, algo.true_pareto_fitnesses, algo.noisy_pf_noisy_hypervolumes,
-                algo.noisy_pf_true_hypervolumes, algo.true_pf_hypervolumes, algo.n_gens_pareto_best,
-                algo.toolbox, algo.opt_weights, algo.true_fitness_function, algo.ref_point,
-                record_every_gen, len(found) + 1, 0)
-            found.append(list(algo.n_gens_pareto_best))
-        return found, len(algo.pareto_solutions)
-
-    every, n_every = counters(True)
-    changes, n_changes = counters(False)
-    assert every == changes == [[1], [2], [2, 1], [2, 2], [2, 3], [2, 3, 1]]
-    assert (n_every, n_changes) == (6, 3)
-
-
 def test_stop_condition_reads_the_algorithm_owned_counter():
-    """no_improvement fires when the algorithm's own counter reaches the limit; the recorder's
-    n_gens_pareto_best plays no part in stopping."""
+    """no_improvement fires when the algorithm's own counter reaches the limit."""
     algo = build("MoUMDA", stop_without_improvement_in_gens=3)
     assert algo._front_unchanged_gens is None and algo.stop_condition() is False
     algo._front_unchanged_gens = 2
-    algo.n_gens_pareto_best = [7]  # recorder state is ignored
     assert algo.stop_condition() is False and algo.stop_trigger == ""
     algo._front_unchanged_gens = 3
-    algo.n_gens_pareto_best = []
     assert algo.stop_condition() is True and algo.stop_trigger == "no_improvement"
 
 
@@ -564,7 +516,7 @@ def test_frozen_front_stops_after_limit_observations():
     algo = frozen_nsga2(stop_without_improvement_in_gens=4, gen_limit=50)
     algo.run()
     assert (algo.gens, algo.stop_trigger) == (3, "no_improvement")
-    assert algo.n_gens_pareto_best == [4]
+    assert algo._front_unchanged_gens == 4
 
 
 def test_generation_zero_counts_for_no_improvement_in_every_algorithm():
@@ -576,7 +528,7 @@ def test_generation_zero_counts_for_no_improvement_in_every_algorithm():
         ind.fitness.values = algo.toolbox.evaluate(ind)
     algo.run()
     assert (algo.gens, algo.stop_trigger) == (3, "no_improvement")
-    assert algo.n_gens_pareto_best == [4] and algo._front_unchanged_gens == 4
+    assert algo._front_unchanged_gens == 4
 
 
 def test_a_front_that_changes_after_generation_zero_stops_as_before():
@@ -605,24 +557,22 @@ def test_a_front_that_changes_after_generation_zero_stops_as_before():
 
 def observing(name):
     """The algorithm class, checking after every observation that the algorithm-owned stagnation
-    state agrees with the legacy definition: the signature is front_sig(ParetoFront(source)) and the
-    counter is the recorder's mirrored n_gens_pareto_best[-1]."""
+    state agrees with the legacy definition: the signature is front_sig(ParetoFront(source)), computed
+    independently with deap, and the counter is the run length of equal consecutive signatures."""
     cls = ALGORITHMS[name][0]
 
     def _update_front_stagnation(self, source):
         super(checked, self)._update_front_stagnation(source)
         pareto_front = tools.ParetoFront()
         pareto_front.update(source)
-        self.checks.append((self._front_signature == front_sig(list(pareto_front)), source is self.population))
-
-    def _observe_generation(self, *args):
-        super(checked, self)._observe_generation(*args)
-        self.checks.append(self._front_unchanged_gens == self.n_gens_pareto_best[-1])
+        expected = front_sig(list(pareto_front))
+        self.checks.append((self._front_signature == expected, source is self.population))
+        self.signatures.append(expected)
+        self.checks.append(self._front_unchanged_gens == counters_of(self.signatures)[-1])
 
     # a fresh class per call, so its `checks` list (filled from the constructor on) is per test
     checked = type(f"Checked{cls.__name__}", (cls,), {"_update_front_stagnation": _update_front_stagnation,
-                                                     "_observe_generation": _observe_generation,
-                                                     "checks": []})
+                                                     "checks": [], "signatures": []})
     return checked
 
 
@@ -638,7 +588,7 @@ def test_algorithm_owned_stagnation_matches_the_legacy_definition(name, noise):
     algo.run()
     signature_checks = [c for c in algo.checks if isinstance(c, tuple)]
     counter_checks = [c for c in algo.checks if not isinstance(c, tuple)]
-    assert len(signature_checks) == len(counter_checks) == sum(algo.n_gens_pareto_best) > 0
+    assert len(signature_checks) == len(counter_checks) == algo.gens + 1 > 1
     assert all(ok for ok, _ in signature_checks)
     assert all(counter_checks)
     assert all(is_population for _, is_population in signature_checks), "the source is always the population"
@@ -647,19 +597,42 @@ def test_algorithm_owned_stagnation_matches_the_legacy_definition(name, noise):
 @pytest.mark.parametrize("noise", [0.0, 1.0])
 @pytest.mark.parametrize("name", sorted(ALGORITHMS))
 def test_no_improvement_stop_is_independent_of_recording(name, noise):
-    """Stopping reads only algorithm state: with the recorder switched off, the same solutions are
-    evaluated and the run stops at the same generation with the same trigger."""
+    """Stopping reads only algorithm state: with recording (the evaluation log) switched on or off, the
+    same solutions are evaluated and the run stops at the same generation with the same trigger."""
     def run(recording):
-        cls, init_args = ALGORITHMS[name]
-        if not recording:
-            ALGORITHMS[name] = (without_recording(name), init_args)
-        try:
-            algo = build(name, noise=noise, gen_limit=200, stop_without_improvement_in_gens=3)
-        finally:
-            ALGORITHMS[name] = (cls, init_args)
+        algo = build(name, noise=noise, gen_limit=200, stop_without_improvement_in_gens=3,
+                     log_evaluations=recording)
         algo.run()
         return (algo.fitness_function[0].log, algo.gens, algo.evals, algo.stop_trigger,
                 algo._front_unchanged_gens, rng_state())
 
     recorded, unrecorded = run(True), run(False)
     assert recorded == unrecorded
+
+
+# ------------------------------------------------------------------------------ progress reporting
+
+
+def test_progress_line_is_algorithm_owned_and_changes_nothing(capsys):
+    """verbose_rate = k prints one line every k generations (0 prints nothing), from the algorithm's own
+    state: the generation, cumulative evaluations, the current noisy front's members and distinct
+    genotypes, and whether its genotype set changed. It needs no recorder, and the run (evaluations,
+    stop, stagnation, both RNGs) is identical with it on or off."""
+    def run(verbose_rate):
+        algo = build("MoUMDA", noise=1.0, gen_limit=6, verbose_rate=verbose_rate)
+        algo.run()
+        return algo, (algo.fitness_function[0].log, algo.gens, algo.evals, algo.stop_trigger,
+                      algo._front_signature, algo._front_unchanged_gens, rng_state())
+
+    quiet, quiet_state = run(0)
+    assert capsys.readouterr().out == ""
+    loud, loud_state = run(2)
+    lines = [line for line in capsys.readouterr().out.splitlines() if line.startswith("[SeedSig")]
+    assert loud_state == quiet_state and loud.eval_log is None
+    assert [int(line.split("gen ")[1].split(" ")[0]) for line in lines] == [0, 2, 4, 6]
+    last = lines[-1]
+    assert f"evals {loud.evals}" in last
+    assert f"noisy front {loud._front_size} members, {len(loud._front_signature)} genotypes" in last
+    expected = "changed" if loud._front_unchanged_gens == 1 else f"unchanged for {loud._front_unchanged_gens}"
+    assert last.endswith(expected)
+    assert loud._front_size == len(noisy_front(loud.population))
