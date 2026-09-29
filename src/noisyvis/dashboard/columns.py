@@ -8,6 +8,13 @@ This module centralizes all column name definitions used for:
 - Deduplication keys
 """
 
+# Result-row columns the dashboard does not read yet (MO recording plan v6, Work Group 5): the persistent
+# multi-objective record is consumed through results.mo_view.MORunView once the consumers migrate
+# (Work Group 6). Until then DashboardData.load drops it, so no table, store or callback carries it.
+DEFERRED_MO_COLUMNS = [
+    'mo_record',
+]
+
 # Columns to hide in LON table display
 LON_HIDDEN_COLUMNS = [
     'problem_name',
@@ -73,6 +80,7 @@ LIST_COLUMNS = [
     'noisy_pf_true_hypervolumes',
     'true_pf_hypervolumes',
     'n_gens_pareto_best',
+    'mo_record',  # also dropped at load (DEFERRED_MO_COLUMNS); never a table column
 ]
 
 # Columns to drop from display2_df (algorithm selection table)
@@ -116,6 +124,17 @@ DISPLAY2_DROP_COLUMNS = [
     'final_noisy_pf_hv',
     'max_noisy_pf_hv',
     'min_noisy_pf_hv',
+    # MO recording plan v6, Work Group 5: per-run final-generation summaries stored beside mo_record
+    'final_hv_current_noisy_front__noisy',
+    'final_hv_current_noisy_front__clean',
+    'final_hv_current_clean_front__clean',
+    'final_hv_noisy_archive__noisy',
+    'final_hv_noisy_archive__clean',
+    'final_hv_clean_archive__clean',
+    'n_generated_genotypes',
+    'final_noisy_archive_size',
+    'final_clean_archive_size',
+    'mo_record',
     'run_id',
     'parent_run_id',
     'payload_path',

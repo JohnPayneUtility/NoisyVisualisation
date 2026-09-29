@@ -13,11 +13,7 @@ from deap import base as deap_base
 from deap import creator
 from deap import tools
 
-try: # try import fast hypervolume else fallback to python implementation
-    from deap.tools._hypervolume import hv as _hv # fast compiled version
-    hypervolume = _hv.hypervolume
-except Exception:
-    from deap.tools._hypervolume.pyhv import hypervolume # python version
+from noisyvis.common.pareto import hypervolume, nondominated_mask
 
 # ==============================
 # Helper Functions
@@ -27,6 +23,16 @@ def front_sig(front_inds):
     # represent each solution as a tuple of ints, then frozenset for order-insensitivity
     sols = [tuple(int(x) for x in ind) for ind in (front_inds or [])]
     return frozenset(sols)
+
+def front_signature(individuals):
+    """
+    Genotype set of the noisy non-dominated members of `individuals`: front_sig of the individuals
+    tools.ParetoFront would keep, computed without building or deep-copying a ParetoFront.
+    """
+    if not individuals:
+        return frozenset()
+    mask = nondominated_mask([ind.fitness.wvalues for ind in individuals])
+    return front_sig([ind for ind, keep in zip(individuals, mask) if keep])
 
 def record_pareto_data(
     population,
@@ -172,6 +178,9 @@ class OptimisationAlgorithm:
     ref_point: Optional[list[Any]] = None
     record_every_gen: bool = False
     verbose_rate: int = 0
+    # Log every genuine evaluation (x, x~, f(x), y) and tag individuals with their provenance
+    # (noisyvis.tracking.mo_logger). Observational only; requires an evaluator that reports log_mo_eval.
+    log_evaluations: bool = False
 
     # Create lists to store data, seperate for each instance
     # multi objective data
@@ -191,7 +200,18 @@ class OptimisationAlgorithm:
 
     def __post_init__(self):
         self.stop_trigger = ''
+        # Front stagnation (the no_improvement stop), owned by the algorithm, not the recorder:
+        # the genotype set of the noisy non-dominated front at the last observation, and for how many
+        # consecutive observations it has been unchanged (None before the first observation).
+        self._front_signature = None
+        self._front_unchanged_gens = None
         self.seed_signature = random.randint(0, 10**6)
+        # Run-scoped evaluation log (None when logging is off). Imported here, not at module level, so
+        # the module loads only for runs that log.
+        self.eval_log = None
+        if self.log_evaluations:
+            from noisyvis.tracking.mo_logger import MOEvaluationLogger
+            self.eval_log = MOEvaluationLogger(self.opt_weights, self.ref_point)
 
         # Fitness and individual creators
         # Check if CustomFitness exists with matching weights; recreate if weights differ
@@ -209,7 +229,20 @@ class OptimisationAlgorithm:
         self.toolbox.register("attribute", self.attr_function)
         self.toolbox.register("individual", tools.initRepeat, creator.Individual, self.toolbox.attribute, n=self.sol_length)
         self.toolbox.register("population", tools.initRepeat, list, self.toolbox.individual)
-        self.toolbox.register("evaluate", lambda ind: self.fitness_function[0](ind, **self.fitness_function[1]))
+        self.toolbox.register("evaluate", self._evaluate_and_track)
+
+    def _evaluate_and_track(self, ind):
+        """
+        toolbox.evaluate: every genuine evaluation goes through here, and the algorithm receives only
+        the observed objective vector y. With logging on, the evaluation is logged exactly once and the
+        individual is tagged with its provenance before the caller assigns fitness.values = y.
+        """
+        fn, kwargs = self.fitness_function
+        if self.eval_log is None:
+            return fn(ind, **kwargs)
+        observed, eval_id = self.eval_log.evaluate(fn, ind, kwargs)
+        self.eval_log.tag(ind, eval_id)
+        return observed
 
     def initialise_population(self, pop_size):
         self.population = self.toolbox.population(n=pop_size)
@@ -239,19 +272,49 @@ class OptimisationAlgorithm:
             self.stop_trigger = 'gen_limit'
             return True
         if self.stop_without_improvement_in_gens is not None:
-            if self.n_gens_pareto_best:
-                no_improvement = int(self.n_gens_pareto_best[-1])
-                if no_improvement >= int(self.stop_without_improvement_in_gens):
+            if self._front_unchanged_gens is not None:
+                if self._front_unchanged_gens >= int(self.stop_without_improvement_in_gens):
                     self.stop_trigger = 'no_improvement'
                     return True
         return False
 
     def run(self):
-        """Run the algorithm using the common loop logic."""
+        """
+        Run the algorithm using the common loop logic. Generation 0 is the evaluated initial
+        population the constructor built: it is observed once, before the first stop check, with no
+        extra evaluation or RNG draw. Generation g >= 1 is the state after the g-th update.
+        """
+        self._observe_generation()
         while not self.stop_condition():
             self.gens += 1
             self.perform_generation()
-            self.record_state_pareto(self.population)
+            self._observe_generation()
+
+    def _observe_generation(self):
+        """
+        Observe the current population, for every algorithm alike: update the algorithm's own
+        front-stagnation state, then hand the population to the recorder. The current fronts and the
+        no_improvement stop describe the solutions the algorithm currently holds; algorithm-specific
+        state (such as MoUMDA_ParetoArchive's internal archive) is never the source. Stopping never
+        depends on what the recorder does; it reads only the state updated here. With evaluation
+        logging on, the evaluation log also records this generation's boundary and current fronts.
+        """
+        self._update_front_stagnation(self.population)
+        if self.eval_log is not None:
+            self.eval_log.observe_generation(self.gens, self.population)
+        self.record_state_pareto(self.population)
+
+    def _update_front_stagnation(self, population):
+        """
+        no_improvement bookkeeping: the first observation sets the counter to 1; an unchanged
+        genotype set of the population's noisy non-dominated front adds 1; a changed one resets it to 1.
+        """
+        signature = front_signature(population)
+        if self._front_unchanged_gens is not None and signature == self._front_signature:
+            self._front_unchanged_gens += 1
+        else:
+            self._front_unchanged_gens = 1
+        self._front_signature = signature
 
     def record_state_pareto(self, population):
         record_pareto_data(

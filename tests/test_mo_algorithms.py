@@ -27,14 +27,18 @@ Since Stage 5 duplicate-free runs check, before each generation, whether the pro
 generation would use can support pop_size distinct genotypes, and stop with
 `probability_vector_converged` or `insufficient_unique_support` if not.
 
-The characterisation is a strict *prefix* contract for later stages, not only an equality one: runs
-whose probability vector fully converges will stop there once the convergence stop exists (Stage 4),
-so every case records per-generation fingerprints and whether the vector that generated each
-generation had collapsed to 0/1. Until then the whole record must match exactly.
+Every case records per-generation fingerprints and whether the vector that generated each generation
+had collapsed to 0/1, so a run that stops on probability-vector convergence can be checked to end at
+exactly its first collapsed generation.
 
-The baseline was captured from the untouched pre-refactor tree (commit recorded in the file) by
-running `run_probe()` twice in fresh processes and requiring identical output. It must never be
-re-derived to make a test pass. Imports of the science packages happen only in the probe subprocess.
+The baseline is a *corrected reference* of MO recording plan v6, Work Group 1, deliberately
+regenerated at each behaviour-changing phase: zero-noise MO evaluators draw no RNG (Phase 1), the
+generic current front and no_improvement read the current population (Phase 2b), and generation 0
+is observed for every algorithm (Phase 2c). Until Phase 1 it was the pre-refactor capture, compared
+as a prefix of runs that now stop on convergence; each regenerated reference is captured with every
+stop in place, so the whole record must match exactly. It is captured by running `run_probe()` twice
+in fresh processes and requiring identical output, and must never be re-derived to make a test pass.
+Imports of the science packages happen only in the probe subprocess.
 """
 
 from __future__ import annotations
@@ -425,15 +429,22 @@ def run_summary(algo):
     }
 
 
-def drive(algo):
-    """OptimisationAlgorithm.run(), step by step, fingerprinting every generation."""
-    per_generation = []
+def drive(algo, observe=None):
+    """OptimisationAlgorithm.run(), step by step, fingerprinting every generation from generation 0
+    (the evaluated initial population, observed before the first stop check). `observe`, if given, is
+    called after each fingerprint and never changes it."""
+    algo._observe_generation()
+    per_generation = [generation_fingerprint(algo, None)]
+    if observe is not None:
+        observe(algo)
     while not algo.stop_condition():
         collapsed = generating_vector_collapsed(algo)
         algo.gens += 1
         algo.perform_generation()
-        algo.record_state_pareto(algo.population)
+        algo._observe_generation()
         per_generation.append(generation_fingerprint(algo, collapsed))
+        if observe is not None:
+            observe(algo)
     return per_generation
 
 
@@ -446,6 +457,40 @@ def characterisation():
             per_generation = drive(algo)
             cases[name][str(seed)] = {"summary": run_summary(algo), "per_generation": per_generation}
     return cases
+
+
+def characterisation_logged():
+    """characterisation() with MO evaluation logging on (Work Group 2). It must equal the same corrected
+    reference, and at every generation the log must hold exactly one event per counted evaluation, with
+    every population member resolving to its event."""
+    cases, exactly_one = {}, {}
+    for name, case in ARGS["cases"].items():
+        logged_case = dict(case, params=dict(case.get("params", {}), log_evaluations=True))
+        cases[name], exactly_one[name] = {}, {}
+        for seed in ARGS["seeds"]:
+            algo = build(logged_case, seed)
+            checks = []
+
+            def observe(algo):
+                log = algo.eval_log
+                checks.append(len(log) == algo.evals
+                              and all(log.event(log.resolve(ind)).x == tuple(ind) for ind in algo.population)
+                              # Work Group 3: one boundary per generation, an exclusive end offset
+                              and log.n_generations == algo.gens + 1
+                              and log.gen_last_eval[-1] == algo.evals
+                              # Work Group 4: the passive archives replay mid-run, observationally
+                              and len(log.noisy_archive_at(algo.gens)) > 0
+                              and len(log.clean_archive_at(algo.gens)) > 0)
+
+            per_generation = drive(algo, observe)
+            # Work Group 5: freeze the log into mo_record and open the read view, after the reference run
+            from noisyvis.results.mo_view import MORunView
+            view = MORunView(algo.eval_log.finalise())
+            cases[name][str(seed)] = {"summary": run_summary(algo), "per_generation": per_generation}
+            exactly_one[name][str(seed)] = {"generations": len(checks), "all_hold": all(checks),
+                                            "events": len(algo.eval_log), "evals": algo.evals,
+                                            "record": [view.n_evals, view.n_generations]}
+    return {"cases": cases, "exactly_one": exactly_one}
 
 
 def run_equivalence():
@@ -708,7 +753,7 @@ def commit_on_success():
         expected = expected_generating_vector(algo)
         algo.gens += 1
         algo.perform_generation()
-        algo.record_state_pareto(algo.population)
+        algo._observe_generation()
         record["stored_vector_is_generating_vector"] = bool(np.array_equal(algo.probability_vector, expected))
 
         # A generation whose evaluation raises commits nothing of its own.
@@ -766,7 +811,7 @@ def stop_check(algo):
 def step(algo):
     algo.gens += 1
     algo.perform_generation()
-    algo.record_state_pareto(algo.population)
+    algo._observe_generation()
 
 
 def ordinary_collapse():
@@ -833,8 +878,9 @@ def archive_collapse():
 def generic_precedence():
     """A converged probability_vector and a generic criterion on the same check: generic wins."""
     found = {}
+    # no_improvement counts generation 0, so a limit of 2 fires after generation 1, like the others.
     for name, params in (("gen_limit", {"gen_limit": 1}), ("eval_limit", {"eval_limit": 40}),
-                         ("no_improvement", {"stop_without_improvement_in_gens": 1})):
+                         ("no_improvement", {"stop_without_improvement_in_gens": 2})):
         algo = build(moumda_case(**params), 1)
         inject_identical_population(algo, COLLAPSED_GENOTYPE)
         algo.run()
@@ -1092,6 +1138,7 @@ report = {
     "public_names": section(public_names),
     "config_sweep": section(config_sweep),
     "characterisation": section(characterisation),
+    "characterisation_logged": section(characterisation_logged),
     "run_equivalence": section(run_equivalence),
     "archive_duplicate_semantics": section(archive_duplicate_semantics),
     "no_duplicates_generation": section(no_duplicates_generation),
@@ -1248,54 +1295,42 @@ def first_collapsed_generation(run: dict):
     return next((g["gen"] for g in run["per_generation"] if g.get("generating_vector_collapsed")), None)
 
 
-def truncated_at_convergence(want: dict, stop_gen: int) -> dict:
-    """What a pre-refactor baseline run becomes once the convergence stop (MO refactor Stage 4) ends
-    it right after generation `stop_gen`, the first one sampled from a converged vector.
-
-    Only defined for runs that record every generation (one record per generation), which is why
-    the margin-off characterisation cases do.
-    """
-    summary = want["summary"]
-    per_generation = want["per_generation"][:stop_gen]
-    records = stop_gen
-    runs, remaining = [], records  # n_gens_pareto_best: the baseline's run lengths cut at `records`
-    for length in summary["n_gens_pareto_best"]:
-        runs.append(min(length, remaining))
-        remaining -= runs[-1]
-        if remaining == 0:
-            break
-    truncated = dict(summary)
-    truncated.update({
-        "gens": stop_gen,
-        "evals": per_generation[-1]["evals"],
-        "stop_trigger": "probability_vector_converged",
-        "n_gens_pareto_best": runs,
-        "final_population_genotypes_sha": per_generation[-1]["population_genotypes_sha"],
-        "final_population_fitnesses_sha": per_generation[-1]["population_fitnesses_sha"],
-    })
-    for key in ("noisy_pf_noisy_hypervolumes", "noisy_pf_true_hypervolumes", "true_pf_hypervolumes",
-                "pareto_solutions_sha", "pareto_fitnesses_sha", "pareto_true_fitnesses_sha",
-                "true_pareto_solutions_sha", "true_pareto_fitnesses_sha"):
-        truncated[key] = summary[key][:records]
-    return {"summary": truncated, "per_generation": per_generation}
+@pytest.mark.parametrize("case", sorted(CHARACTERISATION_CASES))
+def test_characterisation_matches_baseline(probe, baseline, case):
+    """Exact: run summary and every per-generation fingerprint equal the corrected reference."""
+    _assert_matches_reference(_section(probe, "characterisation")[case], baseline["cases"][case], case)
 
 
 @pytest.mark.parametrize("case", sorted(CHARACTERISATION_CASES))
-def test_characterisation_matches_baseline(probe, baseline, case):
-    """Exact, except that a run whose probability vector fully converges now stops right after the
-    first generation sampled from it: its record must then be exactly that prefix of the baseline."""
-    observed = _section(probe, "characterisation")[case]
-    expected = baseline["cases"][case]
+def test_characterisation_with_evaluation_logging_matches_baseline(probe, baseline, case):
+    """MO evaluation logging (Work Group 2) is observational: with log_evaluations=True every run equals
+    the same corrected reference exactly, which is compared here and never re-recorded."""
+    logged = _section(probe, "characterisation_logged")
+    _assert_matches_reference(logged["cases"][case], baseline["cases"][case], case)
 
+
+def test_logged_characterisation_logs_every_evaluation_once(probe):
+    """In every logged reference run, at every generation from 0: one event per counted evaluation,
+    every population member's _eval_tag resolves to the event of its own genotype, the generation
+    boundary recorded with the current fronts equals the counted evaluations, the passive archives
+    replay (non-empty) mid-run without changing the reference, and the finalised mo_record opens as a
+    MORunView covering every evaluation and generation."""
+    found = _section(probe, "characterisation_logged")["exactly_one"]
+    assert set(found) == set(CHARACTERISATION_CASES)
+    for case, seeds in found.items():
+        assert set(seeds) == {str(seed) for seed in SEEDS}
+        for seed, check in seeds.items():
+            assert check["all_hold"] and check["generations"] > 1, (case, seed, check)
+            assert check["events"] == check["evals"], (case, seed, check)
+            assert check["record"] == [check["evals"], check["generations"]], (case, seed, check)
+
+
+def _assert_matches_reference(observed, expected, case):
     assert set(observed) == set(expected) == {str(seed) for seed in SEEDS}
     for seed in sorted(expected):
         got, want = observed[seed], expected[seed]
-        stop_gen = first_collapsed_generation(want)
-        if stop_gen is not None and stop_gen < want["summary"]["gens"]:
-            assert CHARACTERISATION_CASES[case]["record_every_gen"], f"{case}: prefix needs per-generation records"
-            want = truncated_at_convergence(want, stop_gen)
         assert got["summary"] == want["summary"], (
-            f"{case} seed {seed}: run summary differs from the frozen pre-refactor baseline"
+            f"{case} seed {seed}: run summary differs from the corrected reference"
         )
         assert len(got["per_generation"]) == len(want["per_generation"]), (
             f"{case} seed {seed}: {len(got['per_generation'])} generations, baseline has "
@@ -1303,16 +1338,21 @@ def test_characterisation_matches_baseline(probe, baseline, case):
         )
         for got_gen, want_gen in zip(got["per_generation"], want["per_generation"]):
             assert got_gen == want_gen, (
-                f"{case} seed {seed}: generation {want_gen['gen']} differs from the frozen baseline"
+                f"{case} seed {seed}: generation {want_gen['gen']} differs from the corrected reference"
             )
 
 
 def test_natural_convergence_points_are_inside_the_baseline_window(baseline):
-    """The margin-off MoUMDA baseline runs really do collapse inside their window, so the prefix
-    comparison above exercises the convergence stop; margin-on runs and the archive variant do not."""
+    """The margin-off MoUMDA reference runs really do collapse inside their window and end on exactly
+    that generation, so the characterisation exercises the convergence stop; margin-on runs and the
+    archive variant do not collapse. The collapse points moved with the Phase 1 corrected reference
+    (the noise stream no longer loses draws to the recorder): they were 30 and 42."""
     collapse = {case: {seed: first_collapsed_generation(run) for seed, run in runs.items()}
                 for case, runs in baseline["cases"].items()}
-    assert collapse["moumda_margin_off"] == {"1": 30, "2": 42}
+    assert collapse["moumda_margin_off"] == {"1": 93, "2": 30}
+    for seed, run in baseline["cases"]["moumda_margin_off"].items():
+        assert run["summary"]["gens"] == collapse["moumda_margin_off"][seed], seed
+        assert run["summary"]["stop_trigger"] == "probability_vector_converged", seed
     for case in ("moumda_margin_on", "pareto_archive_margin_on", "pareto_archive_margin_off", "nsga2"):
         assert set(collapse[case].values()) == {None}, (case, collapse[case])
 
@@ -1395,7 +1435,8 @@ def test_ordinary_moumda_keeps_the_converged_generation_then_stops(probe):
     assert found["next_check"] == NO_RNG_STOPPED
     assert found["trigger"] == "probability_vector_converged"
     assert (found["gens_after"], found["evals_after"], found["records_after"]) == (1, found["evals"], 1)
-    assert found["run"] == {"gens": 1, "evals": found["evals"], "records": 1,
+    # run() also records generation 0, the evaluated initial population.
+    assert found["run"] == {"gens": 1, "evals": found["evals"], "records": 2,
                             "trigger": "probability_vector_converged"}
 
 
@@ -1506,7 +1547,8 @@ def test_duplicate_free_preflight_stops_before_the_generation(probe):
         # The classified vector is cached: exactly the mean of the (select_size == pop_size) parents.
         assert result["prepared_is_population_mean"] is True
         assert result["prepared_free_bits"] == free_bits
-        assert result["run"] == {"gens": 0, "evals_added": 0, "records": 0, "trigger": trigger}, (name, result)
+        # run() ends before any generation, having recorded only generation 0.
+        assert result["run"] == {"gens": 0, "evals_added": 0, "records": 1, "trigger": trigger}, (name, result)
 
 
 def test_duplicate_free_generation_uses_the_prepared_vector_once(probe):
@@ -1570,7 +1612,7 @@ def test_duplicate_free_natural_runs(probe, note):
         assert result["initial_duplicate_genotypes"] == 0, (seed, result)
         assert result["max_duplicate_genotypes"] == 0, (seed, result)
         assert result["trigger"] in {"gen_limit", "probability_vector_converged", "insufficient_unique_support"}
-        assert result["records"] == result["gens"], (seed, result)
+        assert result["records"] == result["gens"] + 1, (seed, result)  # generations 0..gens
         # MoUMDA(prevent_duplicates=True) is the same algorithm as MoUMDA_noDuplicates.
         assert result["flag_spelling_identical"] is True, (seed, result)
     note(f"test_mo_algorithms: duplicate-free natural runs: "

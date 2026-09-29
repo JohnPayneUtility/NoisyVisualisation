@@ -103,6 +103,17 @@ EVALUATORS = tuple(
 )
 
 # sha256(ast.dump(FunctionDef)) of all 31 top-level definitions (both mean_weight copies share one hash).
+# Deliberate amendment (MO recording plan v6, Phase 1): eval_noisy_kp_v1_mo, eval_noisy_kp_v1_mo_violation
+# and countingOnesCountingZeros no longer call random.gauss at zero noise, so a clean evaluation
+# (noise_intensity=0) draws no RNG; a noisy objective still has 0.0 added, so its zero-noise value
+# keeps the float type random.gauss(0, 0) gave it. Their pins below (here and in EVALUATOR_AST) were
+# re-captured for that change only; outputs and RNG consumption with noise are unchanged (EVALUATOR_OUTPUTS).
+# Deliberate amendment (MO recording plan v6, Work Group 2): the same three evaluators report each
+# evaluation (x~, f(x), y) to an active MO evaluation logger through a duck-typed
+# getattr(get_active_logger(), "log_mo_eval", None) hook, with f(x) computed from the same sums only while
+# logging. Their AST pins here, in EVALUATOR_AST, and their EVALUATOR_GLOBALS (which gain get_active_logger
+# and getattr) were re-captured for that change only. EVALUATOR_OUTPUTS, including the +logger cases, is
+# unchanged: a logger without log_mo_eval is never called, and outputs and RNG consumption are identical.
 DEFINITION_AST = {'OneMax_fitness': 'efe119c88de1ff4eae044e5b000fe4f55b78d5a789f756846d4ec2a6b11463cd',
  'OneMax_prior_1q_bitwise_fitness': '945e13dd71f63ca4475d8b8a90b686487ac495afd8067c8053382cda4afa5429',
  'OneMax_prior_bitflip_fitness': '0b59f1f4d4777eb688d96dc6d0d13f5a675f2dcf51805412c2e118b77e749145',
@@ -111,15 +122,15 @@ DEFINITION_AST = {'OneMax_fitness': 'efe119c88de1ff4eae044e5b000fe4f55b78d5a789f
  'ackley': '9b5a0e88c3e600459d6293fcfccc93553523a67a8acf02079e3a1d0afb2ed090',
  'birastrigin_eval': '23465fdf15c7cc14dd2fd9ac7ed8d543acdde7c98d16a7fe8df0fcc319685032',
  'bitflip_prior_noise': '79472046f93ddc94f337649c9fba89d68db8c77414976d6733214266a75f1853',
- 'countingOnesCountingZeros': '4cd26cb55c4bc4152ae603bc733aa24ca92eda4928792d46b8077d5f38c6236e',
+ 'countingOnesCountingZeros': '2229d61420cb47583bbe5d44c4a5bb92df36dac01a545a76d35d12206298a079',
  'eval_ind_kp': '8f2531a6d23b80de72dc50e60ef4a7a94df4904b75610dd311c896592f5cb1f1',
  'eval_noisy_kp_1q_prior_bitwise': 'e7fab456eda1f6470baa37053d5d0c8483562673a0152b10c6c8a79e46d6dec6',
  'eval_noisy_kp_pq_prior_bitwise': '10fbabf30a804b709b3752bd0525b405c128e9ca1a1a918a2b0a86cfcac8ca29',
  'eval_noisy_kp_prior_bitflip': 'a8a587c99717bb2ad6e98d3ae4789033abaa0c60bab94016b70edac759baa07b',
  'eval_noisy_kp_prior_mult_bitflip': '4bbd661b666c4ddf69d79b2cc74abdaf93e89931e64423f76a7f265d8c10fa42',
  'eval_noisy_kp_v1': '0db44537754ad3d83418593188aea87bb59b734f9e56182d304ac12c78a7c650',
- 'eval_noisy_kp_v1_mo': 'f184939911d835abca8b285ab0af81b83eb910b98f77d47c317c87b3d3498795',
- 'eval_noisy_kp_v1_mo_violation': 'f147a08317ccc5f543ce2fb4f94f5208036b269da5f0e109cb4dbad894482e14',
+ 'eval_noisy_kp_v1_mo': '3a003a0eb88e015a7ef31cf19cb76687f18ccbe97f0ea2d4337a4f4d7220e82e',
+ 'eval_noisy_kp_v1_mo_violation': 'fa9535185b4c473646204cfe6bd8775edf2a8e5e8e9b84f1dc3ea8ea9a40902a',
  'eval_noisy_kp_v1_penalty': '81028aa2516d3504fdabdeae16c863d1ad24d1566b26a63fd0524230016e99eb',
  'eval_noisy_kp_v1_simple': '66c979ff6354a0d1dc03d3ac4b7acbbdf8d93220ff4b4e52408de29a6ec8f25d',
  'eval_noisy_kp_v2': 'ed7ee301c6c97f2094a073cb3ea2cb091d19405f86bf8abe31cbf838b3a13bc6',
@@ -156,9 +167,9 @@ EVALUATOR_AST = {'OneMax_fitness': 'efe119c88de1ff4eae044e5b000fe4f55b78d5a789f7
  'rastrigin_eval': 'f1af9fee394ce5093b2804925538cc56c45d35f6d47c4ec1fbef98a2cdad7c6c',
  'birastrigin_eval': '23465fdf15c7cc14dd2fd9ac7ed8d543acdde7c98d16a7fe8df0fcc319685032',
  'ackley': '9b5a0e88c3e600459d6293fcfccc93553523a67a8acf02079e3a1d0afb2ed090',
- 'eval_noisy_kp_v1_mo': 'f184939911d835abca8b285ab0af81b83eb910b98f77d47c317c87b3d3498795',
- 'eval_noisy_kp_v1_mo_violation': 'f147a08317ccc5f543ce2fb4f94f5208036b269da5f0e109cb4dbad894482e14',
- 'countingOnesCountingZeros': '4cd26cb55c4bc4152ae603bc733aa24ca92eda4928792d46b8077d5f38c6236e'}
+ 'eval_noisy_kp_v1_mo': '3a003a0eb88e015a7ef31cf19cb76687f18ccbe97f0ea2d4337a4f4d7220e82e',
+ 'eval_noisy_kp_v1_mo_violation': 'fa9535185b4c473646204cfe6bd8775edf2a8e5e8e9b84f1dc3ea8ea9a40902a',
+ 'countingOnesCountingZeros': '2229d61420cb47583bbe5d44c4a5bb92df36dac01a545a76d35d12206298a079'}
 
 # [repr(__defaults__), repr(__kwdefaults__)] per evaluator.
 EVALUATOR_DEFAULTS = {'OneMax_fitness': ['(0,)', 'None'],
@@ -390,7 +401,13 @@ EVALUATOR_GLOBALS = {'OneMax_fitness': {'get_active_logger': {'kind': 'function'
             'len': {'kind': 'builtin'},
             'np': {'kind': 'module', 'module': 'numpy'},
             'random': {'kind': 'module', 'module': 'random'}},
- 'eval_noisy_kp_v1_mo': {'len': {'kind': 'builtin'},
+ 'eval_noisy_kp_v1_mo': {'get_active_logger': {'kind': 'function',
+                                               'name': 'get_active_logger',
+                                               'ast': '0a4b6daad9583b09df7f3bca02177feaf4fdd21b8b00fa59d06cc734de3fc99f',
+                                               'is_noisyvis_algorithms_export': False,
+                                               'is_logger_holder_function': True},
+                         'getattr': {'kind': 'builtin'},
+                         'len': {'kind': 'builtin'},
                          'mean_weight': {'kind': 'function',
                                          'name': 'mean_weight',
                                          'ast': '817c46251ff23c87428d0b32c665feceab3722d6963f3e65b9167c98fffe40ca',
@@ -400,6 +417,12 @@ EVALUATOR_GLOBALS = {'OneMax_fitness': {'get_active_logger': {'kind': 'function'
                          'range': {'kind': 'builtin'},
                          'sum': {'kind': 'builtin'}},
  'eval_noisy_kp_v1_mo_violation': {'float': {'kind': 'builtin'},
+                                   'get_active_logger': {'kind': 'function',
+                                                         'name': 'get_active_logger',
+                                                         'ast': '0a4b6daad9583b09df7f3bca02177feaf4fdd21b8b00fa59d06cc734de3fc99f',
+                                                         'is_noisyvis_algorithms_export': False,
+                                                         'is_logger_holder_function': True},
+                                   'getattr': {'kind': 'builtin'},
                                    'int': {'kind': 'builtin'},
                                    'len': {'kind': 'builtin'},
                                    'max': {'kind': 'builtin'},
@@ -411,7 +434,13 @@ EVALUATOR_GLOBALS = {'OneMax_fitness': {'get_active_logger': {'kind': 'function'
                                    'random': {'kind': 'module', 'module': 'random'},
                                    'range': {'kind': 'builtin'},
                                    'sum': {'kind': 'builtin'}},
- 'countingOnesCountingZeros': {'len': {'kind': 'builtin'},
+ 'countingOnesCountingZeros': {'get_active_logger': {'kind': 'function',
+                                                     'name': 'get_active_logger',
+                                                     'ast': '0a4b6daad9583b09df7f3bca02177feaf4fdd21b8b00fa59d06cc734de3fc99f',
+                                                     'is_noisyvis_algorithms_export': False,
+                                                     'is_logger_holder_function': True},
+                               'getattr': {'kind': 'builtin'},
+                               'len': {'kind': 'builtin'},
                                'random': {'kind': 'module', 'module': 'random'},
                                'sum': {'kind': 'builtin'}}}
 

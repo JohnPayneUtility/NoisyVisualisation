@@ -1634,6 +1634,19 @@ TABLES = {'constants': {'DISPLAY1_COLUMNS': ['problem_type',
                                          'final_noisy_pf_hv',
                                          'max_noisy_pf_hv',
                                          'min_noisy_pf_hv',
+                                         # MO recording plan v6, Work Group 5 (deliberate amendment):
+                                         # the per-run final summaries stored beside mo_record stay out of
+                                         # the algorithm-selection table, as the legacy final_* do
+                                         'final_hv_current_noisy_front__noisy',
+                                         'final_hv_current_noisy_front__clean',
+                                         'final_hv_current_clean_front__clean',
+                                         'final_hv_noisy_archive__noisy',
+                                         'final_hv_noisy_archive__clean',
+                                         'final_hv_clean_archive__clean',
+                                         'n_generated_genotypes',
+                                         'final_noisy_archive_size',
+                                         'final_clean_archive_size',
+                                         'mo_record',
                                          'run_id',
                                          'parent_run_id',
                                          'payload_path',
@@ -1669,7 +1682,8 @@ TABLES = {'constants': {'DISPLAY1_COLUMNS': ['problem_type',
                                 'noisy_pf_noisy_hypervolumes',
                                 'noisy_pf_true_hypervolumes',
                                 'true_pf_hypervolumes',
-                                'n_gens_pareto_best'],
+                                'n_gens_pareto_best',
+                                'mo_record'],
                'LON_HIDDEN_COLUMNS': ['problem_name',
                                       'problem_type',
                                       'problem_goal',
@@ -3518,6 +3532,10 @@ NEW_MODULES = (
     # package, so its submodules now load alongside it. No import-time behaviour changes.
     "noisyvis.algorithms.multi_objective.base", "noisyvis.algorithms.multi_objective.umda",
     "noisyvis.algorithms.multi_objective.semo", "noisyvis.algorithms.multi_objective.nsga2",
+    # MO recording plan v6, Work Group 3 (deliberate amendment): the pure Pareto helpers
+    # (nondominated_mask, hypervolume) moved from multi_objective.base to noisyvis.common.pareto so the
+    # MO evaluation logger can share them; base imports them from there. No third-party package changes.
+    "noisyvis.common.pareto",
 )
 
 # Where an import's module moves. The imported *names* never change (A1).
@@ -3560,6 +3578,14 @@ WILDCARD_REPLACEMENTS = {
 ALLOWED_CHANGES = {
     ("dataio/__init__.py", "doc|"): "the package docstring becomes dashboard/data.py's",
     ("dataio/transformers.py", "doc|"): "the module docstring follows the split",
+    # MO recording plan v6, Work Group 5 (deliberate amendment): DashboardData.load drops the columns the
+    # dashboard does not read yet (DEFERRED_MO_COLUMNS: the persistent mo_record), so no table, store or
+    # callback carries it until the consumers migrate to MORunView (Work Group 6).
+    ("dataio/__init__.py", "def|DashboardData"): "load() drops DEFERRED_MO_COLUMNS",
+    # ...and the nine final-generation summaries stored beside mo_record join DISPLAY2_DROP_COLUMNS (its
+    # value is pinned in TABLES["constants"]).
+    ("dataio/column_config.py", "assign|DISPLAY2_DROP_COLUMNS"): "the Work Group 5 summary scalars and mo_record are dropped",
+    ("dataio/column_config.py", "assign|LIST_COLUMNS"): "mo_record is never a table column (defence in depth)",
 }
 
 # `dataio.__all__` is the one structural deletion: a package export list, with no consumer, for a
@@ -3778,6 +3804,10 @@ def algo_rows():
         true_pareto_fitnesses=[[[1.2, 2.2], [2.2, 1.2]], [[1.7, 2.7], [2.7, 1.7]]],
         noisy_pf_noisy_hypervolumes=[3.0, 4.0], noisy_pf_true_hypervolumes=[3.1, 4.1],
         true_pf_hypervolumes=[3.2, 4.2], n_gens_pareto_best=[1, 2],
+        # MO recording plan v6, Work Group 5: new MO rows carry the plain-data mo_record (a small stand-in
+        # here). DashboardData.load drops it, so every pinned table, store and callback is unchanged.
+        mo_record={"schema": "noisyvis.mo_record", "version": 1,
+                   "events": {"obs_obj": np.zeros((2, 2)), "orig_geno": np.arange(2, dtype=np.int32)}},
     )
     rows.append(mo)
     return rows

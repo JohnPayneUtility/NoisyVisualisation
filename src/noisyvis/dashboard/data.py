@@ -43,6 +43,7 @@ from .columns import (
     LIST_COLUMNS,
     DISPLAY2_DROP_COLUMNS,
     DISPLAY2_DEDUP_KEYS,
+    DEFERRED_MO_COLUMNS,
 )
 
 
@@ -99,8 +100,8 @@ class DashboardData:
         Raises:
             DataLoadError: If either file cannot be loaded
         """
-        # Load raw data
-        df = load_algo_results(algo_path)
+        # Load raw data (without the columns the dashboard does not read yet)
+        df = load_algo_results(algo_path).drop(columns=DEFERRED_MO_COLUMNS, errors='ignore')
         df_lon = load_lon_results(lon_path)
 
         # Transform for different uses

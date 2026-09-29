@@ -64,11 +64,9 @@ class NSGA2(OptimisationAlgorithm):
         if mut_fn is not None:
             self.toolbox.register("mutate", mut_fn, **mutate_kwargs)
 
-        # init + crowding distance
+        # init + crowding distance (generation 0 is observed by run(), as for every MO algorithm)
         self.initialise_population(pop_size=self.pop_size)
         self.population = self.toolbox.select(self.population, len(self.population))
-
-        self.record_state_pareto(self.population)
 
     def perform_generation(self):
         offspring = tools.selTournamentDCD(self.population, len(self.population))

@@ -12,7 +12,7 @@ from deap import tools
 from sklearn.cluster import KMeans
 from sklearn.exceptions import ConvergenceWarning
 
-from .base import OptimisationAlgorithm, record_pareto_data
+from .base import OptimisationAlgorithm
 
 # ==============================
 # Helpers
@@ -445,30 +445,6 @@ class MoUMDA_ParetoArchive(MoUMDABase):
         self.archive = _update_archive_nondominated(self.archive, parents)
         # if archive empty (can happen at very start), fallback to parents
         return self.archive if self.archive else parents
-
-    def record_state_pareto(self, population):
-        # Record PF/HV based on the archive
-        record_pareto_data(
-            self.archive,
-            self.pareto_solutions,
-            self.pareto_fitnesses,
-            self.pareto_true_fitnesses,
-            self.true_pareto_solutions,
-            self.true_pareto_fitnesses,
-            self.noisy_pf_noisy_hypervolumes,
-            self.noisy_pf_true_hypervolumes,
-            self.true_pf_hypervolumes,
-            self.n_gens_pareto_best,
-            self.toolbox,
-            self.opt_weights,
-            self.true_fitness_function,
-            self.ref_point,
-            self.record_every_gen,
-            self.gens,
-            self.evals,
-            self.seed_signature,
-            self.verbose_rate
-            )
 
 class MoUMDA_KMeans(MoUMDABase):
     """

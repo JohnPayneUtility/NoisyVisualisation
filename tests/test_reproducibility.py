@@ -31,7 +31,7 @@ from pathlib import Path
 import pytest
 
 from harness import canonical
-from harness.run_isolated import run_isolated
+from harness.run_isolated import HarnessError, run_isolated
 
 BASELINE_DIR = Path(__file__).resolve().parent / "baselines"
 RECORD_ENV = "NOISYVIS_RECORD_BASELINES"
@@ -210,6 +210,34 @@ def test_run_lon_matches_lon_baseline():
     assert difference is None, (
         f"run_lon.py: output differs from the LON baseline.\n  {difference}\n"
         f"Investigate; never re-record lon.json to make this pass."
+    )
+
+
+def test_mo_baseline_unchanged_with_evaluation_logging():
+    """MO evaluation logging (Work Group 2 of the MO recording plan) is observational: `run_mo.py` with
+    log_evaluations=True reproduces the MO baseline exactly. This compares against `mo.json` and never
+    records.
+
+    The override reaches the algorithm constructor through `algo.init_args`; the negative control proves
+    that path (an unknown keyword there fails instantiation), so the logged run is not vacuous.
+    """
+    spec = BASELINES["mo"]
+    with pytest.raises(HarnessError, match="unexpected keyword argument 'no_such_kwarg'"):
+        run_isolated(spec["script"], spec["configs"][0], spec["kind"],
+                     overrides=[*spec["overrides"], "+algo.init_args.no_such_kwarg=1"])
+
+    runs = {}
+    for config_name in spec["configs"]:
+        result = run_isolated(spec["script"], config_name, spec["kind"],
+                              overrides=[*spec["overrides"], "+algo.init_args.log_evaluations=true"])
+        _check_isolation_and_mode("mo", config_name, result.extracted)
+        runs[config_name] = result.extracted
+
+    stored = json.loads((BASELINE_DIR / "mo.json").read_text())
+    difference = canonical.first_difference(stored["cases"], _observed(runs))
+    assert difference is None, (
+        f"run_mo.py with evaluation logging: output differs from the MO baseline.\n  {difference}\n"
+        f"Evaluation logging must not change the optimisation; never re-record mo.json to make this pass."
     )
 
 

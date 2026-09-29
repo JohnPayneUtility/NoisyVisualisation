@@ -341,9 +341,11 @@ def test_generic_stop_criteria_still_apply():
     by_evals.run()
     assert (by_evals.gens, by_evals.evals, by_evals.stop_trigger) == (2, 36, "eval_limit")
 
+    # The front never changes from generation 0 (the evaluated initial population), which counts as
+    # the first observation, so the limit of 3 is reached after generation 2.
     stalled = converged_run(stop_without_improvement_in_gens=3)
     stalled.run()
-    assert stalled.stop_trigger == "no_improvement" and stalled.gens == 3
+    assert stalled.stop_trigger == "no_improvement" and stalled.gens == 2
 
     assert MoUMDA_KMeans.stop_condition is not umda.MoUMDABase.stop_condition
     algo = build()
