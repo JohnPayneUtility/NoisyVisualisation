@@ -83,6 +83,11 @@ class OptimisationAlgorithm:
 
     def __post_init__(self):
         self.stop_trigger = ''
+        # Hydra's instantiate hands the fitness parameters over as OmegaConf containers, which are slow to
+        # read on every evaluation; convert them once to plain Python, exactly as the MO base class does.
+        # Imported here so the module's namespace is unchanged (the package has already loaded it).
+        from .multi_objective.base import plain_fitness_function
+        self.fitness_function = plain_fitness_function(self.fitness_function)
         self.seed_signature = random.randint(0, 10**6)
         self._best_fitness_seen: Optional[float] = None
         self._evals_at_last_improvement: int = 0

@@ -108,7 +108,13 @@ DISPLAY2_DROP_COLUMNS = [
     'run_id',
     'parent_run_id',
     'payload_path',
+    # per-run resources (experiments.resources), SO and MO. Per-seed values: kept in df_no_lists, never
+    # table-2 columns, which become the 2D-plot filters. Rows without ram_baseline_mb (older SO rows) hold a
+    # legacy process-lifetime peak_ram_mb, not comparable with the per-run peak; rows without any of them load as NaN.
+    'run_wall_time_s',
+    'run_cpu_time_s',
     'peak_ram_mb',
+    'ram_baseline_mb',
     'penalty',
 ]
 

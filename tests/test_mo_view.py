@@ -284,6 +284,8 @@ ROW_COLUMNS = {
     "problem_name", "problem_type", "problem_goal", "dimensions", "opt_global", "mean_value", "mean_weight",
     "PID", "experiment_name", "experiment_description", "fit_func", "noise", "algo_type", "algo_name",
     "n_gens", "n_evals", "stop_trigger", "seed", "seed_signature", "mo_record", *SUMMARY_COLUMNS,
+    # per-run resources (experiments.resources), deliberate amendment
+    "run_wall_time_s", "run_cpu_time_s", "peak_ram_mb", "ram_baseline_mb",
 }
 
 
@@ -306,13 +308,17 @@ def assert_plain_row(value, where="row"):
 
 @pytest.mark.parametrize("target", ["SEMO", "MoUMDA"])
 def test_the_mo_runner_writes_a_plain_row_with_mo_record(target):
-    """The runner's row is identity, configuration, the nine summaries and mo_record, and nothing else:
-    no legacy Pareto lists or scalars, no DEAP Individual or Fitness anywhere, no provenance tag. It
+    """The runner's row is identity, configuration, the nine summaries, the four per-run resources and
+    mo_record, and nothing else: no legacy Pareto lists or scalars, no DEAP Individual or Fitness anywhere,
+    no provenance tag. It
     unpickles in an interpreter that imports neither deap nor noisyvis. The removed recorder's outputs
     remain derivable from the record (the frozen baselines are compared through that projection)."""
     row = runner_row(target)
     assert set(row) == ROW_COLUMNS
     assert_plain_row(row)
+    for key in ("run_wall_time_s", "run_cpu_time_s", "peak_ram_mb", "ram_baseline_mb"):
+        assert type(row[key]) is float and np.isfinite(row[key]) and row[key] >= 0, (key, row[key])
+    assert row["peak_ram_mb"] >= row["ram_baseline_mb"]
     view = MORunView(row["mo_record"])
     assert {k: row[k] for k in SUMMARY_COLUMNS} == view.summary_scalars()
     assert (row["n_evals"], row["n_gens"] + 1) == (view.n_evals, view.n_generations)

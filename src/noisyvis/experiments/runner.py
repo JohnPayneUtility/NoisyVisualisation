@@ -52,6 +52,7 @@ from noisyvis.experiments.payloads import (
     write_stn_payload,
 )
 from noisyvis.experiments.tracking import mlflow_log_child_from_row
+from noisyvis.experiments.resources import measure_run
 
 
 # -------------------------------
@@ -81,12 +82,12 @@ def so_algo_data_single(prob_info: Dict[str, Any],
     algo_params = dict(algo_params)
     algo_params['nvme_path'] = str(nvme_run_path) if nvme_run_path else None
 
-    # Run algorithm
-    import resource
+    # Run algorithm. The per-run resource window (experiments.resources) is construction, which
+    # evaluates the initial population, plus run(); it touches no RNG.
     algo_config = OmegaConf.create(algo_config)
-    algo_instance = instantiate(algo_config, **algo_params)
-    algo_instance.run()
-    peak_ram_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+    with measure_run() as usage:
+        algo_instance = instantiate(algo_config, **algo_params)
+        algo_instance.run()
 
     logger = algo_instance.logger
 
@@ -130,7 +131,9 @@ def so_algo_data_single(prob_info: Dict[str, Any],
         "seed": seed,
         "seed_signature": seed_signature,
 
-        "peak_ram_mb": round(peak_ram_mb, 1),
+        # Per-run resources, full precision: run_wall_time_s, run_cpu_time_s, peak_ram_mb, ram_baseline_mb.
+        # Rows without ram_baseline_mb predate this and hold a process-lifetime peak_ram_mb (see resources).
+        **usage,
 
         # Keep track of where payload is (for main process logging)
         "payload_path": persisted_payload_path(payload_path),
@@ -299,7 +302,7 @@ def run_so_experiment(cfg: DictConfig):
     print(f"Processing/saving time: {process_time:.2f}s")
 
     # Print summary
-    print(df[['seed', 'final_fit', 'n_evals', 'peak_ram_mb']])
+    print(df[['seed', 'final_fit', 'n_evals', 'run_wall_time_s', 'peak_ram_mb']])
 
 
 
@@ -319,8 +322,10 @@ def mo_algo_data_single(prob_info: Dict[str, Any],
     
     # Create and run the algorithm instance. Evaluation logging is recording infrastructure, enabled
     # here for every MO run rather than by the configs; it is observational and changes no result.
-    algo_instance = instantiate(algo_config, **{**algo_params, "log_evaluations": True})
-    algo_instance.run()  # This updates the instance's internal data.
+    # The per-run resource window (experiments.resources) is construction plus run(), as for SO.
+    with measure_run() as usage:
+        algo_instance = instantiate(algo_config, **{**algo_params, "log_evaluations": True})
+        algo_instance.run()  # This updates the instance's internal data.
 
     # Freeze the run's evaluation log into the persistent plain-data mo_record (no evaluation, no RNG),
     # the row's single detailed MO record, and validate it by opening the read view once.
@@ -361,6 +366,8 @@ def mo_algo_data_single(prob_info: Dict[str, Any],
         # "sol_transitions": sol_transitions,
         "seed": seed,
         "seed_signature": algo_instance.seed_signature,
+        # Per-run resources, full precision: run_wall_time_s, run_cpu_time_s, peak_ram_mb, ram_baseline_mb
+        **usage,
         # The multi-objective record (read with results.mo_view.MORunView) and its final-generation
         # summaries: current-front and passive-archive hypervolumes, genotype and archive counts
         "mo_record": mo_record,
@@ -489,7 +496,7 @@ def run_mo_experiment(cfg: DictConfig):
     mlflow.end_run(status="FINISHED")
 
     # Print summary - show final hypervolume instead of final_fit
-    summary_df = df[['seed', 'n_gens', 'n_evals']].copy()
+    summary_df = df[['seed', 'n_gens', 'n_evals', 'run_wall_time_s', 'peak_ram_mb']].copy()
     summary_df['final_hv'] = df['final_hv_current_clean_front__clean']
     print(summary_df)
 

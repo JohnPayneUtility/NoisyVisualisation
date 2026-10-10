@@ -1603,6 +1603,8 @@ CHAIN = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_d
 # warehouse carries its mo_record and summary scalars (a legacy row is skipped); the tables are built
 # from the frame as DashboardData.load prepares it; the legacy Pareto list and scalar columns are gone
 # from the column constants. Re-captured for that change only.
+# Per-run resources (deliberate amendment): DISPLAY2_DROP_COLUMNS also drops run_wall_time_s,
+# run_cpu_time_s and ram_baseline_mb beside peak_ram_mb, so per-seed values never become table-2 filters.
 TABLES = {'constants': {'DISPLAY1_COLUMNS': ['problem_type',
                                     'problem_goal',
                                     'problem_name',
@@ -1647,7 +1649,10 @@ TABLES = {'constants': {'DISPLAY1_COLUMNS': ['problem_type',
                                          'run_id',
                                          'parent_run_id',
                                          'payload_path',
+                                         'run_wall_time_s',
+                                         'run_cpu_time_s',
                                          'peak_ram_mb',
+                                         'ram_baseline_mb',
                                          'penalty'],
                'DISPLAY2_HIDDEN_COLUMNS': ['problem_type',
                                            'problem_goal',

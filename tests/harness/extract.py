@@ -13,7 +13,8 @@ cause a false failure. The small sorting helpers are local rather than imported 
 `canonical.py`, because this module is loaded by file path before sys.path is rewritten.
 
 Fields deliberately excluded as non-scientific or environment-dependent:
-`peak_ram_mb`, `run_id`, `parent_run_id`, `payload_path`.
+`run_wall_time_s`, `run_cpu_time_s`, `peak_ram_mb`, `ram_baseline_mb` (per-run resources), `run_id`,
+`parent_run_id`, `payload_path`.
 """
 
 from __future__ import annotations
