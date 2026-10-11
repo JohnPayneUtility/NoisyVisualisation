@@ -1,0 +1,22 @@
+# @package _global_
+# BASE SETTINGS
+defaults:
+  - /defaults/mlflow
+  - _self_   # ensures overrides below take precedence
+
+# EXPERIMENT SETTINGS
+experiment_name: "MO_test03"
+experiment_description: >
+  test of multiobjective algorithms
+
+hydra:
+  mode: MULTIRUN
+  sweeper:
+    params:
+      +defaults/multiobjective/run: run_mo_test_small
+      +defaults/multiobjective/problems: cocz20
+      # +defaults/multiobjective/problems: kp10_mo_v1,kp10_mo_violation
+      +defaults/multiobjective/algos: semo,nsga2,moumda,moumda_noduplicates,moumda_paretoarchive,moumda_kmeans
+      problem.fitness_params.noise_intensity: 0,1,2,3,4,5
+  sweep:
+    dir: data/outputs

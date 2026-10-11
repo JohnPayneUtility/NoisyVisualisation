@@ -1,0 +1,22 @@
+# @package _global_
+problem:
+  PID: cocz_100
+  prob_name: countingOnesCountingZeros
+  prob_type: discrete
+  opt_goal: maximise
+  dimensions: 20         # bit-string length
+  opt_global: 20         # max of either objective (every solution is Pareto optimal)
+  capacity: 0            # Not applicable for COCZ, set to 0
+  mean_value: 10.0       # Not applicable for COCZ, set to middle value
+  mean_weight: 0.5       # Not applicable for COCZ, set to middle value
+
+  loader: null  # Problem loading - COCZ doesn't need a loader
+
+  fitness_fn: countingOnesCountingZeros
+  fitness_params:
+    noise_intensity: 0
+    noisy_objective: 0   # 0 = both objectives noisy, 1 = ones only, 2 = zeros only
+
+  attr_function: binary_attribute
+  weights: [1.0, 1.0]
+  ref_point: [0, 0]
