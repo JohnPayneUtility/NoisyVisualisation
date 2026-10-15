@@ -12,10 +12,14 @@ from ..base import (
     get_series_info,
     get_run_entries,
     create_empty_figure,
+    FRONT_KEYS,
+    UNSUPPORTED_METRIC_TITLE,
+    front_line,
+    hv_front,
 )
 
 
-def plot_animation(frontdata, series_labels):
+def plot_animation(frontdata, series_labels, IndVsDist_IndType="NoisyHV", attainment=False):
     """
     Create an animated plot showing Pareto front evolution.
 
@@ -25,10 +29,18 @@ def plot_animation(frontdata, series_labels):
     Args:
         frontdata: Data for the Pareto fronts
         series_labels: Labels for each series
+        IndVsDist_IndType: 'NoisyHV' plots the noisy front under y, 'CleanHV' the clean front under f(x)
+        attainment: If True, join each front by its attainment staircase instead of straight segments
 
     Returns:
         go.Figure: Animated Plotly figure
     """
+    front = hv_front(IndVsDist_IndType)
+    if front is None:
+        return create_empty_figure(UNSUPPORTED_METRIC_TITLE)
+    _, fits_key, _, _ = FRONT_KEYS[front]
+    title_prefix = "True Fitness of Noisy PF" if front == 'noisy' else "Clean PF"
+
     if not frontdata:
         return create_empty_figure("No multi-objective data")
 
@@ -46,16 +58,15 @@ def plot_animation(frontdata, series_labels):
 
     # Collect data and axis ranges across all generations
     all_x, all_y = [], []
-    gens_data = []  # list of (gen_label, xs, ys)
+    gens_data = []  # list of (gen_label, xs, ys, line_shape)
 
     for i, entry in enumerate(gen_entries):
-        pts = entry.get('algo_front_noisy_fitnesses') or []
+        pts = entry.get(fits_key) or []
         g = entry.get('gen_idx', i)
 
-        xs = [float(p[0]) for p in pts]
-        ys = [float(p[1]) for p in pts]
+        xs, ys, line_shape = front_line(pts, entry.get('opt_weights'), attainment)
 
-        gens_data.append((g, xs, ys))
+        gens_data.append((g, xs, ys, line_shape))
         all_x.extend(xs)
         all_y.extend(ys)
 
@@ -66,8 +77,8 @@ def plot_animation(frontdata, series_labels):
     y_min, y_max = min(all_y), max(all_y)
 
     # Initial frame: first generation with points
-    init_idx = next((idx for idx, (_, xs, ys) in enumerate(gens_data) if xs and ys), 0)
-    init_gen, init_xs, init_ys = gens_data[init_idx]
+    init_idx = next((idx for idx, (_, xs, ys, _) in enumerate(gens_data) if xs and ys), 0)
+    init_gen, init_xs, init_ys, init_shape = gens_data[init_idx]
 
     fig = go.Figure(
         data=[
@@ -77,13 +88,14 @@ def plot_animation(frontdata, series_labels):
                 mode="lines+markers",
                 name=f"G{init_gen}",
                 showlegend=False,
+                line_shape=init_shape,
             )
         ]
     )
 
     # Build frames
     frames = []
-    for g, xs, ys in gens_data:
+    for g, xs, ys, line_shape in gens_data:
         frames.append(
             go.Frame(
                 data=[
@@ -92,11 +104,12 @@ def plot_animation(frontdata, series_labels):
                         y=ys,
                         mode="lines+markers",
                         showlegend=False,
+                        line_shape=line_shape,
                     )
                 ],
                 name=str(g),
                 layout=go.Layout(
-                    title_text=f"True Fitness of Noisy PF - {series_name}, Run {run_idx}, Gen {g}"
+                    title_text=f"{title_prefix} - {series_name}, Run {run_idx}, Gen {g}"
                 )
             )
         )
@@ -105,7 +118,7 @@ def plot_animation(frontdata, series_labels):
 
     # Animation controls (Play/Pause + slider)
     steps = []
-    for g, _, _ in gens_data:
+    for g, _, _, _ in gens_data:
         steps.append(
             dict(
                 method="animate",
@@ -131,7 +144,7 @@ def plot_animation(frontdata, series_labels):
     ]
 
     fig.update_layout(
-        title=f"True Fitness of Noisy PF - {series_name}, Run {run_idx}",
+        title=f"{title_prefix} - {series_name}, Run {run_idx}",
         xaxis_title="Objective 1",
         yaxis_title="Objective 2",
         template=DEFAULT_TEMPLATE,

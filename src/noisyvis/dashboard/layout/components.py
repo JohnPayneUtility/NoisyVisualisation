@@ -797,8 +797,7 @@ def create_pareto_front_section():
             id='IndVsDist_IndType',
             options=[
                 {'label': 'noisy HV', 'value': 'NoisyHV'},
-                {'label': 'Clean HV', 'value': 'CleanHV'},
-                {'label': 'IGD', 'value': 'IGD'}
+                {'label': 'Clean HV', 'value': 'CleanHV'}
             ],
             value='NoisyHV',
             clearable=False,
@@ -834,6 +833,18 @@ def create_pareto_front_section():
             max=1000,
             step=1,
             value=5
+        ),
+        dcc.Checklist(
+            id='paretoHistoricalArchive',
+            options=[{'label': ' Historical passive archive', 'value': 'on'}],
+            value=[],
+            style={'display': 'inline-block', 'marginLeft': '20px'},
+        ),
+        dcc.Checklist(
+            id='paretoAttainmentSurface',
+            options=[{'label': ' Show attainment surface', 'value': 'on'}],
+            value=['on'],
+            style={'display': 'inline-block', 'marginLeft': '20px'},
         ),
         dcc.Graph(id="plotParetoFront"),
         html.Hr(),

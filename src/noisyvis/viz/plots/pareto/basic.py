@@ -13,11 +13,15 @@ from ..base import (
     get_run_entries,
     compute_generation_range,
     create_empty_figure,
+    FRONT_KEYS,
+    UNSUPPORTED_METRIC_TITLE,
+    front_line,
+    hv_front,
 )
 
 
 def plot_basic(frontdata, series_labels, continuous_colorscale=True,
-               colorscale='Viridis'):
+               colorscale='Viridis', IndVsDist_IndType="NoisyHV", attainment=False):
     """
     Generate a basic Pareto front plot showing all generations.
 
@@ -30,11 +34,18 @@ def plot_basic(frontdata, series_labels, continuous_colorscale=True,
         continuous_colorscale: If True, use continuous color scale instead of discrete colors
         colorscale: The colorscale to use when continuous_colorscale is True
                    (e.g., 'Viridis', 'Plasma', 'Cividis')
+        IndVsDist_IndType: 'NoisyHV' plots the noisy front under y, 'CleanHV' the clean front under f(x)
+        attainment: If True, join each front by its attainment staircase instead of straight segments
 
     Returns:
         go.Figure: Plotly figure with the Pareto front visualization
     """
     fig = go.Figure()
+
+    front = hv_front(IndVsDist_IndType)
+    if front is None:
+        return create_empty_figure(UNSUPPORTED_METRIC_TITLE)
+    _, fits_key, _, front_label = FRONT_KEYS[front]
 
     if not frontdata:
         fig.update_layout(title="No multi-objective data")
@@ -57,18 +68,17 @@ def plot_basic(frontdata, series_labels, continuous_colorscale=True,
 
     if continuous_colorscale:
         min_gen, max_gen = compute_generation_range(
-            [e for e in gen_entries if e.get('algo_front_noisy_fitnesses')]
+            [e for e in gen_entries if e.get(fits_key)]
         )
 
     first_trace = True
     for entry in gen_entries:
-        pts = entry.get('algo_front_noisy_fitnesses') or []
+        pts = entry.get(fits_key) or []
         g = entry.get('gen_idx', None)
         if not pts:
             continue
 
-        xs = [float(p[0]) for p in pts]
-        ys = [float(p[1]) for p in pts]
+        xs, ys, line_shape = front_line(pts, entry.get('opt_weights'), attainment)
 
         if continuous_colorscale:
             # Use continuous color scale with colorbar (only show colorbar for first trace)
@@ -94,7 +104,8 @@ def plot_basic(frontdata, series_labels, continuous_colorscale=True,
                               f'{int(100 + 155 * (g - min_gen) / max(1, max_gen - min_gen))}, '
                               f'{int(255 - 155 * (g - min_gen) / max(1, max_gen - min_gen))}, 0.5)'
                     ),
-                    showlegend=False
+                    showlegend=False,
+                    line_shape=line_shape
                 )
             )
             first_trace = False
@@ -104,12 +115,13 @@ def plot_basic(frontdata, series_labels, continuous_colorscale=True,
                 go.Scatter(
                     x=xs, y=ys,
                     mode="lines+markers",
-                    name=f"G{g}"
+                    name=f"G{g}",
+                    line_shape=line_shape
                 )
             )
 
     fig.update_layout(
-        title=f"Noisy PF - {series_name}, Run {run_idx}",
+        title=f"{front_label} PF - {series_name}, Run {run_idx}",
         xaxis_title="Objective 1",
         yaxis_title="Objective 2",
         template=DEFAULT_TEMPLATE,

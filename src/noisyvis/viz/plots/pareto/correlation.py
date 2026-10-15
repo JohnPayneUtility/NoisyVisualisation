@@ -11,10 +11,13 @@ from plotly.subplots import make_subplots
 
 from ..base import (
     DEFAULT_TEMPLATE,
-    front_distance,
     symmetric_range,
     get_series_info,
     create_empty_figure,
+    FRONT_KEYS,
+    UNSUPPORTED_METRIC_TITLE,
+    genotype_front_distance,
+    hv_front,
 )
 
 
@@ -23,7 +26,7 @@ def plot_movement_correlation(
     series_labels,
     group_idx=0,
     run_idx=0,
-    solution_key="algo_front_solutions",
+    solution_key=None,
     IndVsDist_IndType="NoisyHV",
     window=25,
     corr_method="pearson",
@@ -40,8 +43,8 @@ def plot_movement_correlation(
         series_labels: Labels for each series
         group_idx: Index of the group to use
         run_idx: Index of the run to use
-        solution_key: Key for solution data
-        IndVsDist_IndType: 'NoisyHV' or 'CleanHV' for hypervolume source
+        solution_key: Key for solution data (None: the selected front's)
+        IndVsDist_IndType: 'NoisyHV' (noisy front, HV under y) or 'CleanHV' (clean front, HV under f(x))
         window: Sliding window size for correlation
         corr_method: 'pearson' or 'spearman'
         show_deltas: Whether to show delta traces
@@ -70,11 +73,11 @@ def plot_movement_correlation(
         fig.update_layout(title=f"Not enough generations for {series_name} (run {run_idx})")
         return fig
 
-    # Determine HV key based on type
-    if IndVsDist_IndType == 'NoisyHV':
-        hv_key = 'algo_front_noisy_hypervolume'
-    else:
-        hv_key = 'algo_front_clean_hypervolume'
+    front = hv_front(IndVsDist_IndType)
+    if front is None:
+        return create_empty_figure(UNSUPPORTED_METRIC_TITLE)
+    front_sols_key, _, hv_key, _ = FRONT_KEYS[front]
+    solution_key = solution_key or front_sols_key
 
     # Compute per-gen series
     gens = []
@@ -87,7 +90,7 @@ def plot_movement_correlation(
 
     for t in range(1, len(gen_entries)):
         prev_s, cur_s = sols[t-1], sols[t]
-        dD = float(front_distance(prev_s, cur_s))
+        dD = float(genotype_front_distance(prev_s, cur_s))
 
         prev_hv = hvs[t-1]
         cur_hv = hvs[t]
@@ -191,7 +194,7 @@ def plot_move_delta_histograms(
     frontdata,
     series_labels,
     group_idx=0,
-    solution_key="algo_front_solutions",
+    solution_key=None,
     IndVsDist_IndType="NoisyHV",
     bins_decision=50,
     bins_objective=50,
@@ -207,8 +210,8 @@ def plot_move_delta_histograms(
         frontdata: Data for the Pareto fronts
         series_labels: Labels for each series
         group_idx: Index of the group to use
-        solution_key: Key for solution data
-        IndVsDist_IndType: 'NoisyHV' or 'CleanHV' for hypervolume source
+        solution_key: Key for solution data (None: the selected front's)
+        IndVsDist_IndType: 'NoisyHV' (noisy front, HV under y) or 'CleanHV' (clean front, HV under f(x))
         bins_decision: Number of bins for decision space histogram
         bins_objective: Number of bins for objective space histogram
         include_zero_moves: Whether to include generations with no change
@@ -221,10 +224,11 @@ def plot_move_delta_histograms(
         subplot_titles=("dD (decision-space front distance)", "dO (objective change)")
     )
 
-    if IndVsDist_IndType == 'NoisyHV':
-        hv_key = 'algo_front_noisy_hypervolume'
-    else:
-        hv_key = 'algo_front_clean_hypervolume'
+    front = hv_front(IndVsDist_IndType)
+    if front is None:
+        return create_empty_figure(UNSUPPORTED_METRIC_TITLE)
+    front_sols_key, _, hv_key, _ = FRONT_KEYS[front]
+    solution_key = solution_key or front_sols_key
 
     if not frontdata:
         fig.update_layout(title="No data provided")
@@ -249,7 +253,7 @@ def plot_move_delta_histograms(
 
         for t in range(1, len(gen_entries)):
             prev_s, cur_s = sols[t-1], sols[t]
-            dD = float(front_distance(prev_s, cur_s))
+            dD = float(genotype_front_distance(prev_s, cur_s))
 
             prev_hv = hvs[t-1]
             cur_hv = hvs[t]
@@ -293,7 +297,7 @@ def plot_objective_vs_decision(
     series_labels,
     group_idx=0,
     run_idx=None,
-    solution_key="algo_front_solutions",
+    solution_key=None,
     IndVsDist_IndType="NoisyHV",
     include_zero_moves=True,
     color_by="gen",
@@ -310,8 +314,8 @@ def plot_objective_vs_decision(
         series_labels: Labels for each series
         group_idx: Index of the group to use
         run_idx: Index of the run to use (None = pool all runs)
-        solution_key: Key for solution data
-        IndVsDist_IndType: 'NoisyHV' or 'CleanHV' for hypervolume source
+        solution_key: Key for solution data (None: the selected front's)
+        IndVsDist_IndType: 'NoisyHV' (noisy front, HV under y) or 'CleanHV' (clean front, HV under f(x))
         include_zero_moves: Whether to include generations with no change
         color_by: 'gen' (generation) or 'run' (run index) or None
         marker_size: Size of scatter markers
@@ -321,10 +325,11 @@ def plot_objective_vs_decision(
     """
     fig = go.Figure()
 
-    if IndVsDist_IndType == 'NoisyHV':
-        hv_key = 'algo_front_noisy_hypervolume'
-    else:
-        hv_key = 'algo_front_clean_hypervolume'
+    front = hv_front(IndVsDist_IndType)
+    if front is None:
+        return create_empty_figure(UNSUPPORTED_METRIC_TITLE)
+    front_sols_key, _, hv_key, _ = FRONT_KEYS[front]
+    solution_key = solution_key or front_sols_key
 
     if not frontdata:
         fig.update_layout(title="No data provided")
@@ -358,7 +363,7 @@ def plot_objective_vs_decision(
 
         for t in range(1, len(gen_entries)):
             prev_s, cur_s = sols[t-1], sols[t]
-            dD = float(front_distance(prev_s, cur_s))
+            dD = float(genotype_front_distance(prev_s, cur_s))
 
             prev_hv = hvs[t-1]
             cur_hv = hvs[t]

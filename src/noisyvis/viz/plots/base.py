@@ -187,3 +187,54 @@ def compute_generation_range(gen_entries):
     if not gens:
         return 0, 0
     return min(gens), max(gens)
+
+
+# ==============================================================================
+# Front Selection, Distance and Line Geometry
+# ==============================================================================
+
+# Per front: (solution key, fitness key, hypervolume key, label). The noisy front (or noisy archive) is
+# measured under the observed y; the clean front (or clean archive) is non-dominated and measured under f(x).
+FRONT_KEYS = {
+    'noisy': ('algo_front_solutions', 'algo_front_noisy_fitnesses', 'algo_front_noisy_hypervolume', 'Noisy'),
+    'clean': ('clean_front_solutions', 'clean_front_fitnesses', 'clean_front_hypervolume', 'Clean'),
+}
+
+UNSUPPORTED_METRIC_TITLE = "Select Noisy HV or Clean HV"
+
+
+def hv_front(ind_type):
+    """The front a metric selection refers to: 'noisy' for NoisyHV, 'clean' for CleanHV, else None."""
+    return {'NoisyHV': 'noisy', 'CleanHV': 'clean'}.get(ind_type)
+
+
+def unique_solutions(front):
+    """The distinct genotypes of a front, in first-seen order (repeated observations of one genotype once)."""
+    seen = {}
+    for sol in front or []:
+        seen.setdefault(sol_tuple_ints(sol), sol)
+    return list(seen.values())
+
+
+def genotype_front_distance(front_a, front_b):
+    """front_distance between the sets of distinct genotypes of two fronts, so a genotype observed several
+    times on a noisy front is not weighted by its multiplicity."""
+    return front_distance(unique_solutions(front_a), unique_solutions(front_b))
+
+
+def front_line(points, weights=None, attainment=False):
+    """
+    The x, y and Plotly line shape that connect a two-objective front's points.
+
+    With attainment and two objective weights, the points are ordered best to worst on objective 1 (ties:
+    worst to best on objective 2) and joined by 'hv' steps, so each corner sits at (x of the next point,
+    y of this one): the boundary of the region the front weakly dominates, for any mix of maximised and
+    minimised objectives. Otherwise the points keep their order and the shape is None (straight segments).
+    """
+    xs = [float(p[0]) for p in points]
+    ys = [float(p[1]) for p in points]
+    if not attainment or weights is None or len(weights) != 2:
+        return xs, ys, None
+    s1, s2 = (1.0 if float(w) > 0 else -1.0 for w in weights)
+    order = sorted(range(len(xs)), key=lambda i: (-s1 * xs[i], s2 * ys[i]))
+    return [xs[i] for i in order], [ys[i] for i in order], 'hv'

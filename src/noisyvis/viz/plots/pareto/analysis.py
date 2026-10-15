@@ -12,9 +12,12 @@ from sklearn.manifold import MDS as MDS_sklearn, TSNE, Isomap
 from ..base import (
     DEFAULT_TEMPLATE,
     PARETO_COLORSCALE,
-    front_distance,
     get_series_info,
     create_empty_figure,
+    FRONT_KEYS,
+    UNSUPPORTED_METRIC_TITLE,
+    genotype_front_distance,
+    hv_front,
 )
 
 
@@ -22,7 +25,9 @@ def plot_ind_vs_dist(frontdata, series_labels, distance_method='cumulative', nru
     """
     Plot hypervolume vs front distance using various distance methods.
 
-    Shows how hypervolume changes as the Pareto front moves in decision space.
+    Shows how hypervolume changes as the Pareto front moves in decision space. Hypervolume and front
+    distances are both taken from the selected front's sequence; distances are between the fronts'
+    distinct genotypes.
 
     Args:
         frontdata: Data for the Pareto fronts
@@ -33,20 +38,19 @@ def plot_ind_vs_dist(frontdata, series_labels, distance_method='cumulative', nru
             - 'tsne': t-SNE 1D embedding
             - 'isomap': Isomap 1D embedding
         nruns: Number of runs to include
-        IndVsDist_IndType: 'CleanHV' for clean hypervolume; anything else uses noisy hypervolume
+        IndVsDist_IndType: 'NoisyHV' for the noisy front's hypervolume under y, 'CleanHV' for the clean
+            front's hypervolume under f(x)
 
     Returns:
         go.Figure: Plotly figure with hypervolume vs distance
     """
     fig = go.Figure()
 
-    solution_set = "algo_front_solutions"
-    if IndVsDist_IndType == 'CleanHV':
-        metric = "algo_front_clean_hypervolume"
-        metric_label = "Clean Hypervolume"
-    else:
-        metric = "algo_front_noisy_hypervolume"
-        metric_label = "Noisy Hypervolume"
+    front = hv_front(IndVsDist_IndType)
+    if front is None:
+        return create_empty_figure(UNSUPPORTED_METRIC_TITLE)
+    solution_set, _, metric, front_label = FRONT_KEYS[front]
+    metric_label = f"{front_label} Hypervolume"
     num_runs = nruns
 
     if not frontdata:
@@ -108,7 +112,7 @@ def plot_ind_vs_dist(frontdata, series_labels, distance_method='cumulative', nru
             prev_front = fronts[0]
 
             for cur_front in fronts[1:]:
-                d = front_distance(prev_front, cur_front)
+                d = genotype_front_distance(prev_front, cur_front)
                 cum_dist += d
                 xs.append(cum_dist)
                 prev_front = cur_front
@@ -125,7 +129,7 @@ def plot_ind_vs_dist(frontdata, series_labels, distance_method='cumulative', nru
         D = np.zeros((N, N), dtype=float)
         for i in range(N):
             for j in range(i + 1, N):
-                d = front_distance(flat_fronts[i], flat_fronts[j])
+                d = genotype_front_distance(flat_fronts[i], flat_fronts[j])
                 D[i, j] = D[j, i] = float(d)
 
         mds = MDS_sklearn(
@@ -155,7 +159,7 @@ def plot_ind_vs_dist(frontdata, series_labels, distance_method='cumulative', nru
         D = np.zeros((N, N), dtype=float)
         for i in range(N):
             for j in range(i + 1, N):
-                d = front_distance(flat_fronts[i], flat_fronts[j])
+                d = genotype_front_distance(flat_fronts[i], flat_fronts[j])
                 D[i, j] = D[j, i] = float(d)
 
         if N == 1:
@@ -195,7 +199,7 @@ def plot_ind_vs_dist(frontdata, series_labels, distance_method='cumulative', nru
         D = np.zeros((N, N), dtype=float)
         for i in range(N):
             for j in range(i + 1, N):
-                d = front_distance(flat_fronts[i], flat_fronts[j])
+                d = genotype_front_distance(flat_fronts[i], flat_fronts[j])
                 D[i, j] = D[j, i] = float(d)
 
         if N == 1:
@@ -271,7 +275,9 @@ def plot_igd_vs_dist(frontdata, series_labels, distance_method='cumulative', nru
     Plot IGD (Inverted Generational Distance) vs front distance.
 
     Shows how IGD changes as the Pareto front moves in decision space.
-    IGD is computed relative to the final generation's clean front.
+    IGD is computed relative to the clean front (or clean archive) of the run's final generation, carried
+    by the last entry as final_clean_front_fitnesses (else that entry's clean front). Front distances are
+    between the fronts' distinct genotypes.
 
     Args:
         frontdata: Data for the Pareto fronts
@@ -333,7 +339,7 @@ def plot_igd_vs_dist(frontdata, series_labels, distance_method='cumulative', nru
         gen_entries = sorted(gen_entries, key=lambda e: e.get("gen_idx", 0))
         last_entry = gen_entries[-1] if gen_entries else {}
 
-        ref_front = last_entry.get(ref_fits_key) or []
+        ref_front = last_entry.get("final_clean_front_fitnesses", last_entry.get(ref_fits_key)) or []
 
         fronts = []
         igds = []
@@ -371,7 +377,7 @@ def plot_igd_vs_dist(frontdata, series_labels, distance_method='cumulative', nru
             prev_front = fronts[0]
 
             for cur_front in fronts[1:]:
-                d = front_distance(prev_front, cur_front)
+                d = genotype_front_distance(prev_front, cur_front)
                 cum_dist += float(d)
                 xs.append(cum_dist)
                 prev_front = cur_front
@@ -392,7 +398,7 @@ def plot_igd_vs_dist(frontdata, series_labels, distance_method='cumulative', nru
             xs.append(0.0)
             prev_front = fronts[0]
             for cur_front in fronts[1:]:
-                d = front_distance(prev_front, cur_front)
+                d = genotype_front_distance(prev_front, cur_front)
                 xs.append(float(d))
                 prev_front = cur_front
 
@@ -408,7 +414,7 @@ def plot_igd_vs_dist(frontdata, series_labels, distance_method='cumulative', nru
         D = np.zeros((N, N), dtype=float)
         for i in range(N):
             for j in range(i + 1, N):
-                d = front_distance(flat_fronts[i], flat_fronts[j])
+                d = genotype_front_distance(flat_fronts[i], flat_fronts[j])
                 D[i, j] = D[j, i] = float(d)
 
         mds = MDS_sklearn(
@@ -438,7 +444,7 @@ def plot_igd_vs_dist(frontdata, series_labels, distance_method='cumulative', nru
         D = np.zeros((N, N), dtype=float)
         for i in range(N):
             for j in range(i + 1, N):
-                d = front_distance(flat_fronts[i], flat_fronts[j])
+                d = genotype_front_distance(flat_fronts[i], flat_fronts[j])
                 D[i, j] = D[j, i] = float(d)
 
         if N == 1:
@@ -478,7 +484,7 @@ def plot_igd_vs_dist(frontdata, series_labels, distance_method='cumulative', nru
         D = np.zeros((N, N), dtype=float)
         for i in range(N):
             for j in range(i + 1, N):
-                d = front_distance(flat_fronts[i], flat_fronts[j])
+                d = genotype_front_distance(flat_fronts[i], flat_fronts[j])
                 D[i, j] = D[j, i] = float(d)
 
         if N == 1:
@@ -554,8 +560,8 @@ def plot_progress_per_movement(
     series_labels,
     group_idx=0,
     run_idx=0,
-    solution_key="algo_front_solutions",
-    hv_key="algo_front_clean_hypervolume",
+    solution_key="clean_front_solutions",
+    hv_key="clean_front_hypervolume",
     eps=1e-12,
     k_patience=10,
     use_ratio=True,
@@ -616,7 +622,7 @@ def plot_progress_per_movement(
 
     for t in range(1, len(gen_entries)):
         prev_s, cur_s = sols[t-1], sols[t]
-        dD = float(front_distance(prev_s, cur_s))
+        dD = float(genotype_front_distance(prev_s, cur_s))
 
         prev_hv = hvs[t-1]
         cur_hv = hvs[t]

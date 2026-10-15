@@ -114,10 +114,16 @@ CALLBACK_ORDER = ['..schematic-graph.figure...schematic-legend.children..',
  '..trajectory-plot.figure...run-print-info.children...stn-stats-table.children...lon-stats-table.children...lon-feas-error-scatter.figure...lon-selected-correlation.children...lon-feas-error-correlations.children..',
  'plotParetoFront.figure']
 
-CALLBACK_LIST_DIGEST = 'b7a4a16319eb00fd832e7bb6a7a7ab64b605e8ad80954c4142453a2f83d1dd39'
+CALLBACK_LIST_DIGEST = '239d2f17f11e5b4022ab98fcf4f1b6997dbc4d70c83af11ad2600d1f0b6030b6'
 
-DEPENDENCIES_DIGEST = 'd50097e2d22e719cb510eb8bd7e9c84c7db3e12a5116fa16059e4862d3e7c953'
+DEPENDENCIES_DIGEST = '147e88c01c936cc6f3e2714819cea41457e9533d6ccdf6ecf2e46e9ed6b9cf84'
 
+# Pareto tab options (deliberate amendment): updateParetoPlot gains the paretoHistoricalArchive and
+# paretoAttainmentSurface checklists (two new layout ids) and State STN_data, from which it builds any
+# front sequence other than the current noisy one (mo_frames.front_runs); IGD left the metric dropdown.
+# Re-captured for that callback only: its contract entry, statement, free names and HTTP response, the
+# dependency/callback-list/layout digests, and process_STN_data's HTTP response and free names (its
+# entries now carry opt_weights and final_clean_front_fitnesses).
 CALLBACKS = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_data.data...STN_MO_data.data...STN_MO_series_labels.data...MO_data_PPP.data..': {'ast': '48b1f2274964f30c5d80bfb3ae6b52ef9d813cbbbedc916a463321bc8100ea8c',
                                                                                                                                                         'inputs': ['STN_data.data',
                                                                                                                                                                    'mo_plot_type.value'],
@@ -637,15 +643,17 @@ CALLBACKS = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitness
                                                    'sci_value'],
                                         'prevent_initial_call': False,
                                         'state': []},
- 'plotParetoFront.figure': {'ast': '80b599699a3097c9326eaa58108e314694b7aadc5108c28146c42f3d9313f1b0',
+ 'plotParetoFront.figure': {'ast': 'dc6bb06d84ea0919672708cb884d1b0a2cf723204bfd5260e69a8fb7406390dd',
                             'inputs': ['MO_data_PPP.data',
                                        'STN_MO_series_labels.data',
                                        'paretoFrontPlotType.value',
                                        'IndVsDist_IndType.value',
                                        'IndVsDist_DistType.value',
                                        'paretoPlotNumRuns.value',
-                                       'paretoPlotWindowSize.value'],
-                            'literals': '3de33cb4cedf04ac528635238127681a8f5ef39ed76a880f88949a73462a3429',
+                                       'paretoPlotWindowSize.value',
+                                       'paretoHistoricalArchive.value',
+                                       'paretoAttainmentSurface.value'],
+                            'literals': '555e6961a397e618fea78765cad3c058e0d64a0ba8696b326b36c0ac1c226f7b',
                             'module': 'dashboard/Dashboard.py',
                             'name': 'updateParetoPlot',
                             'order': 40,
@@ -655,9 +663,12 @@ CALLBACKS = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitness
                                        'IndVsDist_IndType',
                                        'IndVsDist_DistType',
                                        'nruns',
-                                       'windowSize'],
+                                       'windowSize',
+                                       'historical',
+                                       'attainment',
+                                       'stn_rows'],
                             'prevent_initial_call': False,
-                            'state': []},
+                            'state': ['STN_data.data']},
  'plot_2d_data.data': {'ast': 'ad7f46051502e6864be95a64817a6a4646cdcb1514afcfeb25e7ae1897fc1516',
                        'inputs': ['table2.derived_virtual_data', 'penalty-filter-dropdown.value'],
                        'literals': 'f5a8360cf0142d8e2f58bebc2957497cbc67159c1e9eedf9770dd8d95ade57a5',
@@ -758,7 +769,7 @@ CONFIG = {'assets_folder': 'src/noisyvis/dashboard/assets',
  'url_base_pathname': None,
  'use_pages': False}
 
-LAYOUT_DIGEST = '1adc784f96e8ae5cfb116eda16262145897fdb016a401a25d845d7b734db78a6'
+LAYOUT_DIGEST = '1e73563ac882856bd8bb79eb4b8b4c4df329f5ef9daf8dfaf7c1675a59fbcfc8'
 
 LAYOUT_IDS = ['2DPlotTabContent',
  '2DPlotTabSelection',
@@ -838,7 +849,9 @@ LAYOUT_IDS = ['2DPlotTabContent',
  'opt_goal',
  'optimum',
  'options',
+ 'paretoAttainmentSurface',
  'paretoFrontPlotType',
+ 'paretoHistoricalArchive',
  'paretoPlotNumRuns',
  'paretoPlotWindowSize',
  'penalty-filter-dropdown',
@@ -886,7 +899,7 @@ SCRIPTS = {'noisyvis-dashboard': 'ModuleNotFoundError', 'noisyvis-mlflow': 'Modu
 
 FREE_NAMES = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_data.data...STN_MO_data.data...STN_MO_series_labels.data...MO_data_PPP.data..': {'df': {'attr': 'df',
                                                                                                                                                                'kind': 'data'},
-                                                                                                                                                        'front_entries': {'ast': '8125723095d1354870e005d5ba00cda724917e4135d992a6f912a7a748d2a71e',
+                                                                                                                                                        'front_entries': {'ast': 'ad3fb7d2687afa26512eefa31721da5002af9e64f9c1a9d00d2d660b78c21606',
                                                                                                                                                                           'kind': 'callable',
                                                                                                                                                                           'name': 'front_entries'},
                                                                                                                                                         'pd': {'kind': 'module',
@@ -1294,10 +1307,31 @@ FREE_NAMES = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnes
                                         'dash_table': {'kind': 'module', 'name': 'dash.dash_table'},
                                         'html': {'kind': 'module', 'name': 'dash.html'},
                                         'pd': {'kind': 'module', 'name': 'pandas'}},
- 'plotParetoFront.figure': {'get_pareto_plot': {'ast': '8a660705f72a757524625733cf214685af2dbe09d7c2bf1d58825c804ef4b1fc',
+ 'plotParetoFront.figure': {'FRONT_PLOTS': {'canon': {'tuple': ['Basic',
+                                                                'Subplots',
+                                                                'SubplotsMulti',
+                                                                'SubplotsHighlight',
+                                                                'paretoAnimation']},
+                                            'kind': 'value'},
+                            'UNSUPPORTED_METRIC_TITLE': {'canon': 'Select '
+                                                                  'Noisy HV or '
+                                                                  'Clean HV',
+                                                         'kind': 'value'},
+                            '_front_of': {'ast': 'b273a675b29419999694495df25e3b85b841a79086f4f3385a2d4dca23f362f9',
+                                          'kind': 'callable',
+                                          'name': '_front_of'},
+                            'create_empty_figure': {'ast': '54f395099e0a2bc30d96a7495fa3606f5645e97415071c788e0eab006f798a1c',
+                                                    'kind': 'callable',
+                                                    'name': 'create_empty_figure'},
+                            'df': {'attr': 'df', 'kind': 'data'},
+                            'front_runs': {'ast': '17a5565b0405a4e28aa8102c73b3c8a0cddfee0aae0b3a0196a05abbfc8f7274',
+                                           'kind': 'callable',
+                                           'name': 'front_runs'},
+                            'get_pareto_plot': {'ast': '8a660705f72a757524625733cf214685af2dbe09d7c2bf1d58825c804ef4b1fc',
                                                 'kind': 'callable',
                                                 'name': 'get_pareto_plot'},
-                            'go': {'kind': 'module', 'name': 'plotly.graph_objects'}},
+                            'go': {'kind': 'module',
+                                   'name': 'plotly.graph_objects'}},
  'plot_2d_data.data': {'_filter_by_table2_selection': {'ast': '23b8ec5ec7423f27a5e7e2e9b6515e934feed0eea26b8f7e88407d9b42816d78',
                                                        'kind': 'callable',
                                                        'name': '_filter_by_table2_selection'},
@@ -1325,8 +1359,8 @@ FREE_NAMES = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnes
  'table2-selected-store.data': {},
  'table2.data': {'pd': {'kind': 'module', 'name': 'pandas'}}}
 
-HTTP = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_data.data...STN_MO_data.data...STN_MO_series_labels.data...MO_data_PPP.data..': {'digest': '25a2235c2e66e19aedfd155906b07b1aa89190fd421f90b6ca5632ae8db0d545',
-                                                                                                                                                        'length': 2891,
+HTTP = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_data.data...STN_MO_data.data...STN_MO_series_labels.data...MO_data_PPP.data..': {'digest': 'b40570d425866c8ebe7524d1abd46bdfa1bee5037907a0ef0e0272ec278e0f96',
+                                                                                                                                                        'length': 2968,
                                                                                                                                                         'props': ['MO_data_PPP.data',
                                                                                                                                                                   'STN_MO_data.data',
                                                                                                                                                                   'STN_MO_series_labels.data',
@@ -1497,8 +1531,8 @@ HTTP = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_da
                                         'props': ['performance-summary-table.children'],
                                         'status': 200,
                                         'traces': {}},
- 'plotParetoFront.figure': {'digest': 'c12308331ff2ccfe84b9a2da8b3b4078b9cd0e470821c7ebe748f0db23156e75',
-                            'length': 7037,
+ 'plotParetoFront.figure': {'digest': '3030a4e89fe1afbe7bb3a822a0697841acf1564d02c004742749f590a6a51657',
+                            'length': 7087,
                             'props': ['plotParetoFront.figure'],
                             'status': 200,
                             'traces': {'plotParetoFront.figure': 0}},
@@ -3162,9 +3196,9 @@ STATEMENTS = {'app/app.py': [{'ast': '83bbd18258b8f5aa841b8d4d088a2dca8eed99d624
                              'literals': 'f51280651ead6cd2aabe12d5dfd46f47adc2e919410cbc538c757a78bf83328c',
                              'module': 'dashboard/Dashboard.py',
                              'name': 'update_plot'},
-                            {'ast': 'ff346d997815f5e3c5ee8839b6d883a246505e3b1bf108bc173b66d394c90a24',
+                            {'ast': '87711059f443def40643d61b83d690a69846e2b1d53c11e4ec8447ffe191c941',
                              'key': ['cb', 'plotParetoFront.figure'],
-                             'literals': '3de33cb4cedf04ac528635238127681a8f5ef39ed76a880f88949a73462a3429',
+                             'literals': '555e6961a397e618fea78765cad3c058e0d64a0ba8696b326b36c0ac1c226f7b',
                              'module': 'dashboard/Dashboard.py',
                              'name': 'updateParetoPlot'},
                             {'ast': '8fc2ecd3bdedcb87d2fdda4979382034bcd3513ec008491ee94ddb6905bec02a',

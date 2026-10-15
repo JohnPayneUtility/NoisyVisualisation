@@ -242,6 +242,7 @@ class MORunView:
 
         self._current = {"noisy": record["current_noisy_front"], "clean": record["current_clean_front"]}
         self._archive = {"noisy": record["noisy_archive"], "clean": record["clean_archive"]}
+        self._hv_series = {}  # metric -> HVSeries (immutable), built on first use
 
     # ------------------------------------------------------------------ generations and events
 
@@ -415,6 +416,12 @@ class MORunView:
     # ------------------------------------------------------------------ hypervolume
 
     def hv(self, metric: str) -> HVSeries:
+        series = self._hv_series.get(metric)
+        if series is None:
+            series = self._hv_series[metric] = self._build_hv(metric)
+        return series
+
+    def _build_hv(self, metric: str) -> HVSeries:
         if metric in CURRENT_FRONT_METRICS:
             which = "noisy" if metric.startswith("current_noisy") else "clean"
             block = self._current[which]

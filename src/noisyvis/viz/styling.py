@@ -91,8 +91,9 @@ def apply_node_sizes(
     else:
         min_STN_iter = max_STN_iter = 1
 
-    # Determine front sizes for multiobjective
-    front_sizes = [d.get("front_size", 1) for _, d in G.nodes(data=True) if d.get("type") == "STN_MO"]
+    # Determine front sizes for multiobjective: every node the STN_MO branch below sizes (STN_MO and
+    # STN_MO_Noise) shares one range, so no node falls outside [stn_min, stn_max]
+    front_sizes = [d.get("front_size", 1) for _, d in G.nodes(data=True) if "STN_MO" in d.get("type", "")]
     if front_sizes:
         min_front_size, max_front_size = min(front_sizes), max(front_sizes)
     else:
