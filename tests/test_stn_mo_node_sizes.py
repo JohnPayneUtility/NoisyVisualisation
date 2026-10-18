@@ -1,7 +1,7 @@
 """Node sizes of the multiobjective STN plot.
 
-Each multiobjective STN step adds a first-front node (type STN_MO) and, when the mode shows a second front, a
-second-front node (type STN_MO_Noise). Both are sized by front size on one shared scale within
+Each multiobjective STN state adds a first-front node (type STN_MO) and, when the view shows a second front,
+a second-front node (type STN_MO_Noise). Both are sized by front size on one shared scale within
 [stn_min, stn_max]. Previously the range came from the first-front nodes alone, so a second front smaller
 than every first front got a negative size, and Plotly refused to build the trace ('both pareto (algo pov)':
 the second front is the clean front). Other node types are sized as before.
@@ -14,6 +14,7 @@ from __future__ import annotations
 import networkx as nx
 import pytest
 
+from noisyvis.dashboard.mo_frames import STNFrontState, stn_state_items
 from noisyvis.viz.config import PlotConfig
 from noisyvis.viz.graph.stn import add_mo_fronts
 from noisyvis.viz.styling import apply_node_sizes
@@ -33,15 +34,19 @@ def front(n):
     return [[i % 2, (i // 2) % 2, i] for i in range(n)]
 
 
+def state(n, hv):
+    return STNFrontState(tuple(range(n)), front(n), hv, n)
+
+
 def mo_graph(first_sizes, second_sizes=None):
-    """One run of STN entries: first fronts of the given sizes, optionally a second front at every step."""
+    """One run of front states: first fronts of the given sizes, optionally a second front at every step (each
+    step a new state of both)."""
     steps = []
     for g, n1 in enumerate(first_sizes):
         n2 = None if second_sizes is None else second_sizes[g]
-        steps.append({'front1': front(n1), 'front2': None if n2 is None else front(n2),
-                      'metric1': float(g), 'metric2': None if n2 is None else float(g) + 0.5, 'gen_idx': g})
+        steps.append((g, state(n1, float(g)), None if n2 is None else state(n2, float(g) + 0.5)))
     G = nx.MultiDiGraph()
-    add_mo_fronts(G, [steps], 'blue', 0)
+    add_mo_fronts(G, [stn_state_items(steps)], 'blue', 0)
     return G
 
 
@@ -55,7 +60,7 @@ def positions(G):
 
 @pytest.mark.parametrize("first,second", [
     ([15, 20, 27], [8, 12, 24]),     # algo POV: a second front smaller than every first front
-    ([3, 4, 5], [9, 12, 14]),        # both pareto: second fronts larger than every first front
+    ([3, 4, 5], [9, 12, 14]),        # second fronts larger than every first front (e.g. True POV)
 ])
 def test_every_mo_node_stays_within_the_configured_range(first, second):
     G = mo_graph(first, second)
@@ -110,3 +115,64 @@ def test_other_node_types_are_sized_as_before():
     lon_min, lon_max = cfg.node_size.lon_min, cfg.node_size.lon_max
     assert (size['Local Optimum 1'], size['Local Optimum 2']) == (lon_min, lon_min + 0.25 * (lon_max - lon_min))
     assert size['guide'] == 1
+
+
+# ------------------------------------------------------------------------------ node size basis
+
+def counted_graph():
+    """g0: a noisy primary of 2 unique solutions listed 6 times (N > U) with a clean satellite of 3 (N = U);
+    g1: a primary of 4 unique solutions (N = U) with the same satellite."""
+    satellite = STNFrontState((0, 1, 2), front(3), 2.0, 3)
+    steps = [(0, STNFrontState((0, 1), front(2), 1.0, 6), satellite),
+             (1, STNFrontState((0, 1, 2, 3), front(4), 1.5, 4), satellite)]
+    G = nx.MultiDiGraph()
+    add_mo_fronts(G, [stn_state_items(steps)], 'blue', 0)
+    return G
+
+
+def sized(G, mode):
+    cfg = config()
+    cfg.mo_node_size = mode
+    apply_node_sizes(G, cfg)
+    return {n: d['size'] for n, d in G.nodes(data=True)}
+
+
+def test_all_solutions_is_the_default_basis():
+    assert PlotConfig().mo_node_size == 'all'
+    G = counted_graph()
+    apply_node_sizes(G, config())                        # the mode left at its default
+    default = {n: d['size'] for n, d in G.nodes(data=True)}
+    assert default == sized(counted_graph(), 'all') != sized(counted_graph(), 'unique')
+
+
+@pytest.mark.parametrize("mode,expected", [
+    # all: counts with repeats 6, 4, 3 -> range 3..6, over primaries and the satellite together
+    ('all', {'MO_S0_R0_P0': STN_MAX, 'MO_S0_R0_P1': STN_MIN + (4 - 3) / (6 - 3) * (STN_MAX - STN_MIN),
+             'MO_S0_R0_Q0': STN_MIN}),
+    # unique: 2, 4, 3 -> range 2..4
+    ('unique', {'MO_S0_R0_P0': STN_MIN, 'MO_S0_R0_P1': STN_MAX,
+                'MO_S0_R0_Q0': STN_MIN + (3 - 2) / (4 - 2) * (STN_MAX - STN_MIN)}),
+])
+def test_node_size_follows_the_selected_count_on_one_shared_range(mode, expected):
+    G = counted_graph()
+    assert sized(G, mode) == pytest.approx(expected)
+    lon, stn, noisy = create_node_traces(G, positions(G), config())     # Plotly validates sizes here
+    assert sorted(list(stn.marker.size) + list(noisy.marker.size)) == pytest.approx(sorted(expected.values()))
+
+
+def test_an_unchanged_satellite_rescales_with_the_range():
+    """The satellite's counts (N = U = 3) are the same in both modes, but the shared range is not, so its
+    displayed size differs: the expected behaviour."""
+    G = counted_graph()
+    assert (G.nodes['MO_S0_R0_Q0']['n_observations'], G.nodes['MO_S0_R0_Q0']['front_size']) == (3, 3)
+    assert sized(counted_graph(), 'all')['MO_S0_R0_Q0'] != sized(counted_graph(), 'unique')['MO_S0_R0_Q0']
+
+
+@pytest.mark.parametrize("mode", ['all', 'unique'])
+def test_other_node_types_ignore_the_basis(mode):
+    G = counted_graph()
+    G.add_node('STN_S0_R0_a', type='STN', iterations=2)
+    G.add_node('STN_S0_R0_b', type='STN', iterations=6)
+    G.add_node('Local Optimum 1')
+    size = sized(G, mode)
+    assert (size['STN_S0_R0_a'], size['STN_S0_R0_b'], size['Local Optimum 1']) == (STN_MIN, STN_MAX, config().node_size.lon_min)

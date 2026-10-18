@@ -64,7 +64,8 @@ def apply_node_sizes(
 
     Node sizes are determined based on node type:
     - LON nodes: sized by visit proportion (if config.lon.visit_proportion_size) or sum of incoming edge weights
-    - STN_MO nodes: sized by front size
+    - STN_MO nodes: sized by front size: all its solutions counted with repeats (n_observations) when
+      config.mo_node_size is 'all', its unique solutions (front_size) when 'unique'
     - STN nodes: sized by iteration count
     - Other nodes: default size of 1
 
@@ -91,9 +92,14 @@ def apply_node_sizes(
     else:
         min_STN_iter = max_STN_iter = 1
 
-    # Determine front sizes for multiobjective: every node the STN_MO branch below sizes (STN_MO and
-    # STN_MO_Noise) shares one range, so no node falls outside [stn_min, stn_max]
-    front_sizes = [d.get("front_size", 1) for _, d in G.nodes(data=True) if "STN_MO" in d.get("type", "")]
+    # Determine front sizes for multiobjective, by the selected count: every node the STN_MO branch below sizes
+    # (STN_MO and STN_MO_Noise) shares one range, so no node falls outside [stn_min, stn_max]
+    def mo_front_size(d):
+        if config.mo_node_size == 'all' and d.get("n_observations") is not None:
+            return d["n_observations"]
+        return d.get("front_size", 1)
+
+    front_sizes = [mo_front_size(d) for _, d in G.nodes(data=True) if "STN_MO" in d.get("type", "")]
     if front_sizes:
         min_front_size, max_front_size = min(front_sizes), max(front_sizes)
     else:
@@ -115,7 +121,7 @@ def apply_node_sizes(
 
         elif "STN_MO" in data.get("type", ""):
             # Multiobjective STN nodes: use front size to scale node size
-            front_size = data.get("front_size", 1)
+            front_size = mo_front_size(data)
             # Normalise within observed range across all STN_MO nodes
             node_size = STN_node_min + (
                 (front_size - min_front_size) / (max_front_size - min_front_size)

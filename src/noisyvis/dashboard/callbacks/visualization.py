@@ -318,7 +318,8 @@ def handle_print_mode(annotation_options):
      Input('lon-scatter-x-axis', 'value'),
      Input('lon-scatter-y-axis', 'value'),
      Input('lon-scatter-plot-style', 'value'),
-     Input('lon-scatter-multi-noise', 'value')]
+     Input('lon-scatter-multi-noise', 'value'),
+     Input('mo-stn-node-size', 'value')]
 )
 def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limit,
                 LO_fit_percent, LON_options, LON_node_colour_mode, LON_surface_colour, LON_edge_colour_feas,
@@ -331,7 +332,8 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
                 stn_plot_type, STN_MO_data, STN_MO_series_labels, stn_node_size_metric,
                 annotation_options, fit_func, info_panel_x, info_panel_y,
                 axes_text_scale, annotation_text_scale, plot_theme, plot_2d_data,
-                lon_scatter_x, lon_scatter_y, lon_scatter_plot_style, lon_scatter_multi_noise):
+                lon_scatter_x, lon_scatter_y, lon_scatter_plot_style, lon_scatter_multi_noise,
+                mo_stn_node_size):
     """
     Main visualization callback - orchestrates the visualization pipeline.
 
@@ -382,6 +384,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
         stn_plot_type=stn_plot_type,
         node_size_metric=stn_node_size_metric or 'generations',
         colorscale=plot_theme or 'Viridis',
+        mo_node_size=mo_stn_node_size,
     )
 
     # Apply viridis color palette for series if enabled

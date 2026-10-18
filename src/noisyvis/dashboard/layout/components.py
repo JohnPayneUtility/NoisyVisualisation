@@ -25,6 +25,7 @@ from .styles import (
     FULL_WIDTH_INLINE_STYLE,
     MONOSPACE_STYLE,
 )
+from ..mo_frames import DEFAULT_STN_POV, DEFAULT_STN_VIEW, STN_POV_LABELS, STN_VIEW_LABELS
 from ...viz import (
     LON_SCATTER_AXIS_OPTIONS,
     LON_SCATTER_DEFAULT_X_AXIS,
@@ -885,16 +886,21 @@ def create_multiobjective_options_section():
         html.Div(
             dcc.Dropdown(
                 id='mo_plot_type',
-                options=[
-                    {'label': 'noisy pareto noisy hv', 'value': 'npnhv'},
-                    {'label': 'noisy pareto true hv', 'value': 'npthv'},
-                    {'label': 'true pareto true hv', 'value': 'tpthv'},
-                    {'label': 'noisy pareto both hv', 'value': 'npbhv'},
-                    {'label': 'both pareto', 'value': 'bpbhv'},
-                    {'label': 'both pareto (algo pov)', 'value': 'bpbhv_algo_pov'},
-                ],
-                value='npnhv',
+                options=[{'label': label, 'value': view} for view, label in STN_VIEW_LABELS.items()],
+                value=DEFAULT_STN_VIEW,
+                clearable=False,
                 placeholder='multiobjective plot type',
+                style=DROPDOWN_STYLE
+            ),
+            style=INLINE_DROPDOWN_WRAPPER_STYLE
+        ),
+        html.Div(
+            # the primary (trajectory) front of a paired view; disabled for single-front views
+            dcc.Dropdown(
+                id='mo_stn_pov',
+                options=[{'label': label, 'value': pov} for pov, label in STN_POV_LABELS.items()],
+                value=DEFAULT_STN_POV,
+                clearable=False,
                 style=DROPDOWN_STYLE
             ),
             style=INLINE_DROPDOWN_WRAPPER_STYLE
@@ -976,6 +982,34 @@ def create_stn_options_section():
             placeholder='Node size',
             style=DROPDOWN_STYLE_WITH_MARGIN
         ),
+        html.Hr(),
+    ]
+
+
+def create_mo_stn_options_section():
+    """
+    Create the multiobjective STN options section.
+
+    Returns:
+        list: List of multiobjective STN options components.
+    """
+    return [
+        html.Label("Multiobjective STN options:", style={'fontWeight': 'bold'}),
+        html.Br(),
+        html.Div([
+            html.Label("Node size: "),
+            # all: a front's solutions counted with repeats (its members); unique: its distinct solutions
+            dcc.Dropdown(
+                id='mo-stn-node-size',
+                options=[
+                    {'label': 'unique solutions', 'value': 'unique'},
+                    {'label': 'all solutions', 'value': 'all'},
+                ],
+                value='all',
+                clearable=False,
+                style=DROPDOWN_STYLE
+            ),
+        ], style=INLINE_DROPDOWN_WRAPPER_STYLE),
         html.Hr(),
     ]
 

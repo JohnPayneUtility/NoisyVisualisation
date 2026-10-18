@@ -20,25 +20,6 @@ from ..common import (
 from ..common.embedding import landmark_mds, compute_distance_matrix
 
 
-def _is_dual_front(G: nx.MultiDiGraph, noisy_nodes: List[Tuple[str, Dict]]) -> bool:
-    """
-    Check if we have dual-front mode (noisy front differs from base front).
-
-    Args:
-        G: NetworkX graph containing the nodes
-        noisy_nodes: List of (node_name, node_data) tuples for noisy nodes
-
-    Returns:
-        True if any noisy front differs from its corresponding base front
-    """
-    for n_noisy, d_noisy in noisy_nodes:
-        base = n_noisy.replace('_Noisy', '_True')
-        if base in G.nodes:
-            if G.nodes[base].get('front_solutions', []) != d_noisy.get('front_solutions', []):
-                return True
-    return False
-
-
 def calculate_positions_mo(
     G: nx.MultiDiGraph,
     layout_type: str
@@ -46,7 +27,11 @@ def calculate_positions_mo(
     """
     Calculate 2D positions for multi-objective STN nodes.
 
-    Uses front distance as the dissimilarity metric between nodes.
+    A node's position is that of its distinct genotype set: every distinct set among all STN_MO and
+    STN_MO_Noise nodes is embedded once, with front distance as the dissimilarity, and each node takes its
+    set's coordinates. Nodes with the same set (whatever their role, hypervolume, run or series) therefore
+    share exactly one position; edges play no part. Sets are embedded in first-appearance order, primaries
+    before satellites.
 
     Args:
         G: NetworkX graph containing MO nodes
@@ -57,17 +42,21 @@ def calculate_positions_mo(
     """
     print('CALCULATING DISTANCES IN MULTIOBJECTIVE MODE')
 
-    # Collect nodes
-    base_nodes = [(n, d) for n, d in G.nodes(data=True) if d.get('type') == 'STN_MO']
-    noisy_nodes = [(n, d) for n, d in G.nodes(data=True) if d.get('type') == 'STN_MO_Noise']
+    # Collect nodes: primaries, then satellites, each in insertion order
+    mo_nodes = ([n for n, d in G.nodes(data=True) if d.get('type') == 'STN_MO']
+                + [n for n, d in G.nodes(data=True) if d.get('type') == 'STN_MO_Noise'])
 
-    # Decide mode: dual-front if any noisy front != its base front
-    dual_front = _is_dual_front(G, noisy_nodes)
-
-    # Nodes to embed
-    embed_nodes = base_nodes + noisy_nodes if dual_front else base_nodes
-    labels = [n for n, _ in embed_nodes]
-    fronts = [d.get('front_solutions', []) for _, d in embed_nodes]
+    # One embedding item per distinct genotype set: its genotypes once each, in first-seen order
+    set_index, fronts, node_set = {}, [], {}
+    for n in mo_nodes:
+        distinct = {}
+        for sol in G.nodes[n].get('front_solutions', []):
+            distinct.setdefault(sol_tuple_ints(sol), sol)
+        key = frozenset(distinct)
+        if key not in set_index:
+            set_index[key] = len(fronts)
+            fronts.append(list(distinct.values()))
+        node_set[n] = set_index[key]
     K = len(fronts)
 
     pos = {}
@@ -89,9 +78,14 @@ def calculate_positions_mo(
             XY = mds.fit_transform(D)
         elif layout_type == 'tsne':
             print(f'\033[33mUsing t-SNE with {K} fronts\033[0m')
-            D = compute_distance_matrix(front_distance, fronts)
-            tsne = TSNE(n_components=2, metric='precomputed', random_state=42, init='random')
-            XY = tsne.fit_transform(D)
+            if K == 1:
+                XY = np.zeros((1, 2))
+            else:
+                D = compute_distance_matrix(front_distance, fronts)
+                # sklearn requires perplexity < n_samples: below 31 fronts it is lowered to K - 1
+                tsne = TSNE(n_components=2, metric='precomputed', random_state=42, init='random',
+                            perplexity=float(min(30, K - 1)))
+                XY = tsne.fit_transform(D)
         elif layout_type in ('kamada_kawai', 'kamada_kawai_weighted', 'spring'):
             print(f'\033[33mUsing Kamada-Kawai with {K} fronts\033[0m')
             D = compute_distance_matrix(front_distance, fronts)
@@ -108,14 +102,7 @@ def calculate_positions_mo(
             mds = MDS_sklearn(n_components=2, dissimilarity='precomputed', random_state=42)
             XY = mds.fit_transform(D)
 
-        pos.update({labels[i]: (float(XY[i, 0]), float(XY[i, 1])) for i in range(K)})
-
-    # If single-front mode, copy base XY to noisy nodes
-    if not dual_front:
-        for n_noisy, _ in noisy_nodes:
-            base = n_noisy.replace('_Noisy', '_True')
-            if base in pos:
-                pos[n_noisy] = pos[base]
+        pos.update({n: (float(XY[i, 0]), float(XY[i, 1])) for n, i in node_set.items()})
 
     return pos
 

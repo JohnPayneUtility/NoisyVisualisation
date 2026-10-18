@@ -21,6 +21,7 @@ from .components import (
     create_pareto_front_section,
     create_multiobjective_options_section,
     create_stn_options_section,
+    create_mo_stn_options_section,
     create_lon_options_section,
     create_plot_options_section,
     create_opacity_options_section,
@@ -110,6 +111,9 @@ def create_layout(display2_df, display2_hidden_cols, display1_df, df_lon, lon_di
 
     # STN run options
     children.extend(create_stn_options_section())
+
+    # Multiobjective STN options
+    children.extend(create_mo_stn_options_section())
 
     # LON options
     children.extend(create_lon_options_section())

@@ -11,6 +11,10 @@ passive archive (the Pareto tab's historical option); each entry carries its rea
 and, separately, its position in that sequence of changes (`change_idx`). Front members are listed in
 descending weighted-objective order.
 
+The multi-objective STN views (`stn_view_entries`) instead follow front *states*: a front's distinct genotypes
+and the stored HV of the front it represents. A run yields an item at each generation where its primary or
+satellite front state changes, with per-role state ids that recur when a state does.
+
 Semantics (population-based current fronts, event-based passive archives) are those of MORunView.
 """
 
@@ -18,10 +22,12 @@ from __future__ import annotations
 
 import math
 from collections import OrderedDict
+from typing import NamedTuple
 
 import numpy as np
 import pandas as pd
 
+from ..common.pareto import nondominated_mask
 from ..results.mo_view import MORunView
 
 # The legacy recorder's per-row payload (removed in Work Group 6). Rows written before then carry it
@@ -223,30 +229,166 @@ def front_runs(df: pd.DataFrame, stn_rows, source: str, front: str, group_cols=(
     return groups
 
 
-def stn_entries(entries: list, mode: str) -> list:
-    """The STN multi-objective nodes of one run, per plot mode (the dropdown's `mo_plot_type`)."""
-    stn = []
-    for e in entries:
-        noisy, clean = e['algo_front_solutions'], e['clean_front_solutions']
-        hv_noisy, hv_cross, hv_clean = (e['algo_front_noisy_hypervolume'], e['algo_front_clean_hypervolume'],
-                                        e['clean_front_hypervolume'])
-        if mode == 'bpbhv':            # both fronts, both metrics
-            front1, front2, metric1, metric2 = clean, noisy, hv_clean, hv_noisy
-        elif mode == 'bpbhv_algo_pov':  # both fronts, both metrics, from the algorithm's point of view
-            front1, front2, metric1, metric2 = noisy, clean, hv_noisy, hv_clean
-        elif mode == 'tpthv':           # clean front, clean HV
-            front1, front2, metric1, metric2 = clean, None, hv_clean, None
-        elif mode == 'npthv':           # noisy front, its members' clean HV
-            front1, front2, metric1, metric2 = noisy, None, hv_cross, None
-        elif mode == 'npbhv':           # noisy front, clean and noisy HV
-            front1, front2, metric1, metric2 = noisy, None, hv_cross, hv_noisy
-        elif mode == 'tpbhv':           # noisy front with the clean front's HV (not offered in the dropdown)
-            front1, front2, metric1, metric2 = noisy, None, hv_clean, None
-        else:                           # npnhv: noisy front, noisy HV
-            front1, front2, metric1, metric2 = noisy, None, hv_noisy, None
-        stn.append({'front1': front1, 'front2': front2, 'metric1': metric1, 'metric2': metric2,
-                    'gen_idx': e['gen_idx'], 'change_idx': e['change_idx']})
-    return stn
+# ------------------------------------------------------------------ STN views (front states)
+
+# Front kind -> (its snapshot at a generation, its change-point history, the stored HV of the front it
+# represents). The corrected noisy front is derived from the current noisy front, so it shares that front's
+# snapshot and change points; its HV is the noisy front's members re-scored with f(x), which dominated and
+# repeated points do not change.
+STN_FRONT_KINDS = {
+    'noisy_population': (MORunView.current_noisy_front, MORunView.current_noisy_front_history,
+                         'current_noisy_front__noisy'),
+    'clean_population': (MORunView.current_clean_front, MORunView.current_clean_front_history,
+                         'current_clean_front__clean'),
+    'corrected_noisy': (MORunView.current_noisy_front, MORunView.current_noisy_front_history,
+                        'current_noisy_front__clean'),
+    'noisy_archive': (MORunView.noisy_archive, lambda view: view.noisy_archive_history('generation'),
+                      'noisy_archive__noisy'),
+    'clean_archive': (MORunView.clean_archive, lambda view: view.clean_archive_history('generation'),
+                      'clean_archive__clean'),
+}
+
+# View -> (noisy-side front, true-side front or None for a single-front view), in Algorithm POV order
+STN_VIEWS = {
+    'population_noisy': ('noisy_population', None),
+    'population_noisy_vs_clean': ('noisy_population', 'clean_population'),
+    'population_noisy_vs_corrected': ('noisy_population', 'corrected_noisy'),
+    'archive_noisy': ('noisy_archive', None),
+    'archive_noisy_vs_clean': ('noisy_archive', 'clean_archive'),
+}
+STN_VIEW_LABELS = {
+    'population_noisy': 'Population front: noisy only',
+    'population_noisy_vs_clean': 'Population front: noisy vs clean',
+    'population_noisy_vs_corrected': 'Population front: noisy vs corrected noisy',
+    'archive_noisy': 'Historical archive: noisy only',
+    'archive_noisy_vs_clean': 'Historical archive: noisy vs clean',
+}
+DEFAULT_STN_VIEW = 'population_noisy'
+STN_POVS = ('algo', 'true')
+STN_POV_LABELS = {'algo': 'Algorithm POV', 'true': 'True POV'}
+DEFAULT_STN_POV = 'algo'
+
+
+def stn_view_fronts(view_id: str, pov: str = DEFAULT_STN_POV) -> tuple:
+    """
+    (primary front kind, satellite front kind or None) of a view: Algorithm POV ('algo') makes the noisy
+    front the primary trajectory; True POV ('true') swaps the roles of a paired view. A single-front view
+    ignores the POV.
+    """
+    if view_id not in STN_VIEWS:
+        raise ValueError(f"unknown STN view {view_id!r}; expected one of {tuple(STN_VIEWS)}")
+    if pov not in STN_POVS:
+        raise ValueError(f"unknown STN point of view {pov!r}; expected one of {STN_POVS}")
+    noisy, true = STN_VIEWS[view_id]
+    return (true, noisy) if pov == 'true' and true is not None else (noisy, true)
+
+
+class STNFrontState(NamedTuple):
+    """
+    One front's state at a generation, as the STN uses it:
+        geno_ids        its distinct genotype ids, sorted
+        solutions       those genotypes, in lexicographic order
+        hv              the stored HV of the front it represents (NaN without a reference point)
+        n_observations  its members: observations for the noisy kinds (so a genotype observed several times
+                        counts each time), genotypes for the clean kinds and the corrected front (whose members
+                        are the genotypes it keeps)
+    """
+    geno_ids: tuple
+    solutions: list
+    hv: float
+    n_observations: int
+
+    @property
+    def key(self) -> tuple:
+        """The state's identity: its distinct genotypes and its HV (every NaN HV is the same value)."""
+        return self.geno_ids, None if math.isnan(self.hv) else self.hv
+
+
+def stn_front_state(view: MORunView, kind: str, gen: int) -> STNFrontState:
+    """
+    The state of a front kind at the end of generation gen. Its HV is the stored metric, never recomputed
+    from the distinct genotypes. The corrected noisy front is the current noisy front's distinct genotypes
+    that no other of them dominates under f(x) (common.pareto.nondominated_mask on weighted values, as the
+    logger decides dominance), so it is always a subset of the noisy front.
+    """
+    if kind not in STN_FRONT_KINDS:
+        raise ValueError(f"unknown STN front kind {kind!r}; expected one of {tuple(STN_FRONT_KINDS)}")
+    snapshot_at, _, metric = STN_FRONT_KINDS[kind]
+    snapshot = snapshot_at(view, gen)
+    geno_ids, first = np.unique(snapshot.geno_ids, return_index=True)
+    n_members = len(snapshot.geno_ids)
+    if kind == 'corrected_noisy':
+        keep = nondominated_mask(snapshot.true_obj[first] * np.asarray(view.weights, dtype=float))
+        geno_ids, first = geno_ids[keep], first[keep]
+        n_members = len(geno_ids)
+    return STNFrontState(
+        tuple(int(g) for g in geno_ids),
+        sorted([int(v) for v in x] for x in snapshot.x[first]),
+        _hv(snapshot.hv[metric]),
+        n_members,
+    )
+
+
+def stn_state_items(states) -> list:
+    """
+    The STN items of one run from its front states at increasing generations, `states` an iterable of
+    (gen, primary state, satellite state or None). A generation yields an item only when its primary or
+    satellite state differs from the previous generation's (the first always does). State ids number each
+    role's distinct states in first-appearance order, so a state that recurs keeps its id:
+        front1, metric1, state1, n_obs1     the primary state: distinct genotypes, HV, id, observation count
+        primary_changed                     whether the primary state differs from the previous item's
+        front2, metric2, state2, n_obs2     the satellite state (all None for a single-front view)
+        gen_idx, change_idx                 the generation, and the item's position among the run's items
+    """
+    items, ids, previous = [], ({}, {}), None
+    for gen, primary, satellite in states:
+        keys = (primary.key, None if satellite is None else satellite.key)
+        if keys == previous:
+            continue
+        state1 = ids[0].setdefault(keys[0], len(ids[0]))
+        state2 = None if satellite is None else ids[1].setdefault(keys[1], len(ids[1]))
+        items.append({
+            'front1': primary.solutions, 'metric1': primary.hv, 'state1': state1,
+            'n_obs1': primary.n_observations,
+            'primary_changed': previous is None or keys[0] != previous[0],
+            'front2': None if satellite is None else satellite.solutions,
+            'metric2': None if satellite is None else satellite.hv,
+            'state2': state2,
+            'n_obs2': None if satellite is None else satellite.n_observations,
+            'gen_idx': int(gen), 'change_idx': len(items),
+        })
+        previous = keys
+    return items
+
+
+def stn_candidate_generations(view: MORunView, primary: str, satellite: str = None) -> list:
+    """
+    The generations where either front's state can change: its recorded change points (current fronts:
+    membership by observation or genotype; archives: membership at generation ends), and generation 0. A
+    state's genotypes and stored HV are constant between its front's change points.
+    """
+    generations = {0}
+    for kind in (primary, satellite):
+        if kind is not None:
+            generations.update(int(g) for g in STN_FRONT_KINDS[kind][1](view).starts)
+    return sorted(generations)
+
+
+def stn_view_entries(view: MORunView, view_id: str = DEFAULT_STN_VIEW, pov: str = DEFAULT_STN_POV) -> list:
+    """
+    The STN items of one run for a view and point of view (stn_state_items): one per generation where the
+    primary or satellite front state changes, each also carrying `evals`, the evaluations completed by the
+    end of its generation. Built once per view and front pair; callers must not modify the returned items.
+    """
+    primary, satellite = stn_view_fronts(view_id, pov)
+
+    def build():
+        items = stn_state_items(
+            (gen, stn_front_state(view, primary, gen), None if satellite is None else stn_front_state(view, satellite, gen))
+            for gen in stn_candidate_generations(view, primary, satellite))
+        return [{**item, 'evals': view.evals_through(item['gen_idx'])} for item in items]
+
+    return _SEQUENCES.get(view, ('stn', primary, satellite), build)
 
 
 def archive_snapshot(view: MORunView, gen: int) -> dict:

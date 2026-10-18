@@ -8,7 +8,7 @@ from ..instance import app
 from ..data import df, df_LONs, LON_display_columns
 from ..helpers import _filter_penalty, convert_to_split_edges_format
 from ..layout.stores import LON_TABLE_SELECTED_PID_STORE
-from ..mo_frames import front_entries, row_view, stn_entries
+from ..mo_frames import DEFAULT_STN_POV, DEFAULT_STN_VIEW, front_entries, row_view, stn_view_entries, stn_view_fronts
 
 
 # Store PID from selected LON row so it is accessible from the initial layout
@@ -164,9 +164,10 @@ def update_stn_data(selected_rows, penalty_value, table2_data):
      Output('STN_MO_series_labels', 'data'),
      Output('MO_data_PPP', 'data')],
     [Input('STN_data', 'data'),
-     Input('mo_plot_type', 'value')],
+     Input('mo_plot_type', 'value'),
+     Input('mo_stn_pov', 'value')],
 )
-def process_STN_data(stn_rows, mo_plot_type, group_cols=['algo_name', 'noise']):
+def process_STN_data(stn_rows, mo_plot_type, mo_stn_pov, group_cols=['algo_name', 'noise']):
     print('Processing data...', flush=True)
     frame = pd.DataFrame(stn_rows)
     STN_data, STN_series, Noise_data = [], [], []
@@ -176,8 +177,8 @@ def process_STN_data(stn_rows, mo_plot_type, group_cols=['algo_name', 'noise']):
     if frame.empty:
         return STN_data, STN_series, Noise_data, MO_data, MO_series, MO_data_PPP
 
-    # default/fallback if somehow empty
-    mode = mo_plot_type or 'npnhv'
+    # the multiobjective STN view and point of view (dashboard.mo_frames.STN_VIEWS)
+    view_id, pov = mo_plot_type or DEFAULT_STN_VIEW, mo_stn_pov or DEFAULT_STN_POV
 
     grouped = frame.groupby(group_cols)
     
@@ -214,7 +215,7 @@ def process_STN_data(stn_rows, mo_plot_type, group_cols=['algo_name', 'noise']):
         STN_data.append(runs)
         STN_series.append(group_key)
 
-        # --- MO runs (mode-dependent), built server-side from each row's mo_record ---
+        # --- MO runs (view- and POV-dependent), built server-side from each row's mo_record ---
         mo_runs = []
         mo_runs_full = []
         for _, row in group_df.iterrows():
@@ -223,7 +224,7 @@ def process_STN_data(stn_rows, mo_plot_type, group_cols=['algo_name', 'noise']):
                 continue
             fronts_full = front_entries(view)
             if fronts_full:
-                mo_runs.append(stn_entries(fronts_full, mode))
+                mo_runs.append(stn_view_entries(view, view_id, pov))
                 mo_runs_full.append(fronts_full)
 
         print(f'MO runs in series: {len(mo_runs)}', flush=True)
@@ -232,3 +233,12 @@ def process_STN_data(stn_rows, mo_plot_type, group_cols=['algo_name', 'noise']):
         MO_data_PPP.append(mo_runs_full)
     print('Data processing complete', flush=True)
     return STN_data, STN_series, Noise_data, MO_data, MO_series, MO_data_PPP
+
+
+@app.callback(
+    Output('mo_stn_pov', 'disabled'),
+    Input('mo_plot_type', 'value'),
+)
+def toggle_mo_stn_pov(mo_plot_type):
+    """The point of view only applies to a view that pairs two fronts."""
+    return stn_view_fronts(mo_plot_type or DEFAULT_STN_VIEW)[1] is None

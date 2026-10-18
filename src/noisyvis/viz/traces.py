@@ -360,6 +360,15 @@ def create_node_traces(
         iterations = attr.get('iterations', '')
         evals = attr.get('evals', '')
         hover = f"Fitness: {fitness}<br>Gens: {iterations}<br>Evals: {evals}"
+        node_type = str(attr.get('type', ''))
+        if node_type.startswith('STN_MO'):
+            # multiobjective front states: first seen at generation gen_idx, after first_evals evaluations; members
+            # counted with repeated genotypes (observations) and distinct; links between trajectory and satellites
+            links = G.in_edges(node, data=True) if node_type == 'STN_MO_Noise' else G.out_edges(node, data=True)
+            hover = (f"Fitness: {fitness}<br>Gens: {attr.get('gen_idx', '')}<br>Evals: {attr.get('first_evals', '')}"
+                     f"<br>Solutions (incl. repeats): {attr.get('n_observations', '')}"
+                     f"<br>Unique solutions: {attr.get('front_size', '')}"
+                     f"<br>Satellite connections: {sum(1 for *_, d in links if d.get('edge_type') == 'Noise_MO')}")
 
         if "Local Optimum" in node:
             LON_node_x.append(x)

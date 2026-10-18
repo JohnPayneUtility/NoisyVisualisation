@@ -116,6 +116,7 @@ class PlotConfig:
     hide_lon_nodes: bool = False
     plot_3d: bool = True
     node_size_metric: str = 'generations'  # 'generations' or 'evaluations'
+    mo_node_size: str = 'all'  # multiobjective nodes sized by 'all' front solutions (with repeats) or 'unique' ones
     lon_node_strength: bool = False
     local_optima_color: bool = False
     curve_edges: bool = True
@@ -202,6 +203,7 @@ def parse_callback_inputs(
     stn_plot_type: str,
     node_size_metric: str = 'generations',
     colorscale: str = 'Viridis',
+    mo_node_size: str = 'all',
 ) -> PlotConfig:
     """
     Parse raw callback inputs into a structured PlotConfig object.
@@ -228,6 +230,7 @@ def parse_callback_inputs(
         hide_lon_nodes='hide_LON_nodes' in options,
         plot_3d='plot_3D' in options,
         node_size_metric=node_size_metric or 'generations',
+        mo_node_size=mo_node_size or 'all',
         lon_node_strength='LON_node_strength' in options,
         local_optima_color='local_optima_color' in options,
         curve_edges='curved-edges' in run_options,

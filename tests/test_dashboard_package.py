@@ -107,6 +107,7 @@ CALLBACK_ORDER = ['..schematic-graph.figure...schematic-legend.children..',
  'LON_data.data',
  'STN_data.data',
  '..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_data.data...STN_MO_data.data...STN_MO_series_labels.data...MO_data_PPP.data..',
+ 'mo_stn_pov.disabled',
  'run-print-info.style',
  'print_STN_series_labels.children',
  'axis-values.data',
@@ -114,9 +115,9 @@ CALLBACK_ORDER = ['..schematic-graph.figure...schematic-legend.children..',
  '..trajectory-plot.figure...run-print-info.children...stn-stats-table.children...lon-stats-table.children...lon-feas-error-scatter.figure...lon-selected-correlation.children...lon-feas-error-correlations.children..',
  'plotParetoFront.figure']
 
-CALLBACK_LIST_DIGEST = '239d2f17f11e5b4022ab98fcf4f1b6997dbc4d70c83af11ad2600d1f0b6030b6'
+CALLBACK_LIST_DIGEST = '303be5a20962088d0c53236349310a91ac8cdf0b1ccf283378b4075680b9ff48'
 
-DEPENDENCIES_DIGEST = '147e88c01c936cc6f3e2714819cea41457e9533d6ccdf6ecf2e46e9ed6b9cf84'
+DEPENDENCIES_DIGEST = '89c89d78969d932eae2e1430f1beeb97a197463f9fecb85258c894dcc9d82985'
 
 # Pareto tab options (deliberate amendment): updateParetoPlot gains the paretoHistoricalArchive and
 # paretoAttainmentSurface checklists (two new layout ids) and State STN_data, from which it builds any
@@ -124,15 +125,26 @@ DEPENDENCIES_DIGEST = '147e88c01c936cc6f3e2714819cea41457e9533d6ccdf6ecf2e46e9ed
 # Re-captured for that callback only: its contract entry, statement, free names and HTTP response, the
 # dependency/callback-list/layout digests, and process_STN_data's HTTP response and free names (its
 # entries now carry opt_weights and final_clean_front_fitnesses).
-CALLBACKS = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_data.data...STN_MO_data.data...STN_MO_series_labels.data...MO_data_PPP.data..': {'ast': '48b1f2274964f30c5d80bfb3ae6b52ef9d813cbbbedc916a463321bc8100ea8c',
+# MO-STN views (deliberate amendment): process_STN_data gains Input mo_stn_pov (the point of view) and builds
+# the STN entries with mo_frames.stn_view_entries (stn_entries and the old modes are gone); a new callback,
+# toggle_mo_stn_pov (order 35), disables the POV for single-front views, so the five later callbacks move up
+# one. Re-captured for those: the order, the two contract entries, their free names and HTTP responses, the
+# dependency/callback-list/layout digests and the layout ids (mo_stn_pov), and update_plot's free names
+# (add_mo_fronts and debug_mo_counts changed). row_view's pin is the known, separate pre-existing failure.
+# MO-STN hover (deliberate amendment): stn_view_entries' items carry evals and add_mo_fronts stores first_evals,
+# so process_STN_data's HTTP response and those two free-name hashes are re-captured.
+# Node-size option (deliberate amendment): update_plot gains Input mo-stn-node-size (Multiobjective STN options'
+# Node size); re-captured: its contract entry, parse_callback_inputs' free-name hash, the dependency/callback-list/
+# layout digests and the layout ids. Its HTTP responses are unchanged (the probe's graphs are not multiobjective).
+CALLBACKS = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_data.data...STN_MO_data.data...STN_MO_series_labels.data...MO_data_PPP.data..': {'ast': 'ca21b235c787be431f1bae31e6a5c9ec463bbea77ca487f273da68d3de23fecc',
                                                                                                                                                         'inputs': ['STN_data.data',
-                                                                                                                                                                   'mo_plot_type.value'],
-                                                                                                                                                        'literals': 'faa5ec224e0461295135f49759b947de448edc4ec964c44de6b9957f06beea78',
+                                                                                                                                                                   'mo_plot_type.value', 'mo_stn_pov.value'],
+                                                                                                                                                        'literals': '3aa4f9fb4f70802b889c7448372b04be96de5a4082615921caaffd1ea2ecae79',
                                                                                                                                                         'module': 'dashboard/Dashboard.py',
                                                                                                                                                         'name': 'process_STN_data',
                                                                                                                                                         'order': 34,
                                                                                                                                                         'params': ['stn_rows',
-                                                                                                                                                                   'mo_plot_type',
+                                                                                                                                                                   'mo_plot_type', 'mo_stn_pov',
                                                                                                                                                                    'group_cols'],
                                                                                                                                                         'prevent_initial_call': False,
                                                                                                                                                         'state': []},
@@ -150,7 +162,7 @@ CALLBACKS = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitness
                                                                                         'literals': 'be02d83664a644a710d01376409d09088dda76cc66c428247c7429a1c6a67743',
                                                                                         'module': 'dashboard/Dashboard.py',
                                                                                         'name': 'handle_print_mode',
-                                                                                        'order': 38,
+                                                                                        'order': 39,
                                                                                         'params': ['annotation_options'],
                                                                                         'prevent_initial_call': True,
                                                                                         'state': []},
@@ -179,7 +191,7 @@ CALLBACKS = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitness
                                                                        'boxplot_values'],
                                                             'prevent_initial_call': False,
                                                             'state': []},
- '..trajectory-plot.figure...run-print-info.children...stn-stats-table.children...lon-stats-table.children...lon-feas-error-scatter.figure...lon-selected-correlation.children...lon-feas-error-correlations.children..': {'ast': '9d7e90e48a252a6fb5d50dbc2eadcecf011f599e190248182477a8628926c733',
+ '..trajectory-plot.figure...run-print-info.children...stn-stats-table.children...lon-stats-table.children...lon-feas-error-scatter.figure...lon-selected-correlation.children...lon-feas-error-correlations.children..': {'ast': '9b9bf0e187d11a923db0e9deb50aee43b099a7e0cfdad956a4b4d2c52321b810',
                                                                                                                                                                                                                            'inputs': ['optimum.data',
                                                                                                                                                                                                                                       'PID.data',
                                                                                                                                                                                                                                       'opt_goal.data',
@@ -234,11 +246,11 @@ CALLBACKS = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitness
                                                                                                                                                                                                                                       'lon-scatter-x-axis.value',
                                                                                                                                                                                                                                       'lon-scatter-y-axis.value',
                                                                                                                                                                                                                                       'lon-scatter-plot-style.value',
-                                                                                                                                                                                                                                      'lon-scatter-multi-noise.value'],
-                                                                                                                                                                                                                           'literals': 'f51280651ead6cd2aabe12d5dfd46f47adc2e919410cbc538c757a78bf83328c',
+                                                                                                                                                                                                                                      'lon-scatter-multi-noise.value', 'mo-stn-node-size.value'],
+                                                                                                                                                                                                                           'literals': 'dbbf2708106d34f4a05fe506e8200d8bc496b0481628775d43dcf97605fb60a7',
                                                                                                                                                                                                                            'module': 'dashboard/Dashboard.py',
                                                                                                                                                                                                                            'name': 'update_plot',
-                                                                                                                                                                                                                           'order': 39,
+                                                                                                                                                                                                                           'order': 40,
                                                                                                                                                                                                                            'params': ['optimum',
                                                                                                                                                                                                                                       'PID',
                                                                                                                                                                                                                                       'opt_goal',
@@ -293,7 +305,7 @@ CALLBACKS = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitness
                                                                                                                                                                                                                                       'lon_scatter_x',
                                                                                                                                                                                                                                       'lon_scatter_y',
                                                                                                                                                                                                                                       'lon_scatter_plot_style',
-                                                                                                                                                                                                                                      'lon_scatter_multi_noise'],
+                                                                                                                                                                                                                                      'lon_scatter_multi_noise', 'mo_stn_node_size'],
                                                                                                                                                                                                                            'prevent_initial_call': False,
                                                                                                                                                                                                                            'state': []},
  '2DBoxAdvancedMisjudgementsSO.figure': {'ast': 'c53d16ee5a0a4774f2af690a8318cf4813881213a63e7fbd9901b771556705f1',
@@ -495,7 +507,7 @@ CALLBACKS = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitness
                       'literals': 'a89565368bc3c07d609e2e3c23f34e6ea7418f08816f87b0a4abbaf161010609',
                       'module': 'dashboard/Dashboard.py',
                       'name': 'clean_axis_values',
-                      'order': 37,
+                      'order': 38,
                       'params': ['custom_x_min',
                                  'custom_x_max',
                                  'custom_y_min',
@@ -606,6 +618,15 @@ CALLBACKS = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitness
                                                      'sci_value'],
                                           'prevent_initial_call': False,
                                           'state': []},
+ 'mo_stn_pov.disabled': {'ast': 'a9c7ad5fe42ef852eb70d81cdeb2822348fe10d0adf1c9c7cada48fc15f4c113',
+                         'inputs': ['mo_plot_type.value'],
+                         'literals': 'c823466225e8ed3ad30a815ff97ea7fc02b43ce20dd98ef4613f6537becbec46',
+                         'module': 'dashboard/callbacks/graph_data.py',
+                         'name': 'toggle_mo_stn_pov',
+                         'order': 35,
+                         'params': ['mo_plot_type'],
+                         'prevent_initial_call': False,
+                         'state': []},
  'penalty-filter-dropdown.options': {'ast': '1fc2ac755429e8bd246cc5bb84fe155cf4c25723a4ff5466ad3361f795be1296',
                                      'inputs': ['table2.derived_virtual_data'],
                                      'literals': '99d97ede88ca6c0a103be0a4935a21ad36316767b9b309b2a435da78edca924e',
@@ -656,7 +677,7 @@ CALLBACKS = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitness
                             'literals': '555e6961a397e618fea78765cad3c058e0d64a0ba8696b326b36c0ac1c226f7b',
                             'module': 'dashboard/Dashboard.py',
                             'name': 'updateParetoPlot',
-                            'order': 40,
+                            'order': 41,
                             'params': ['frontdata',
                                        'series_labels',
                                        'paretoFrontPlotType',
@@ -692,7 +713,7 @@ CALLBACKS = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitness
                                       'literals': '48a4b42e43cd07e2cbe8613e36cb3f150da005b7424a5fd8f4be09f36a333c27',
                                       'module': 'dashboard/Dashboard.py',
                                       'name': 'update_table2_selected',
-                                      'order': 36,
+                                      'order': 37,
                                       'params': ['series_list'],
                                       'prevent_initial_call': False,
                                       'state': []},
@@ -701,7 +722,7 @@ CALLBACKS = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitness
                           'literals': '6bfa310fd1a4e7fff91cd0235d7c0db86b65e9165127b0054bd52eb70131e66b',
                           'module': 'dashboard/Dashboard.py',
                           'name': 'toggle_run_print_info',
-                          'order': 35,
+                          'order': 36,
                           'params': ['value'],
                           'prevent_initial_call': False,
                           'state': []},
@@ -769,7 +790,7 @@ CONFIG = {'assets_folder': 'src/noisyvis/dashboard/assets',
  'url_base_pathname': None,
  'use_pages': False}
 
-LAYOUT_DIGEST = '1e73563ac882856bd8bb79eb4b8b4c4df329f5ef9daf8dfaf7c1675a59fbcfc8'
+LAYOUT_DIGEST = '87aefaead93166ee1349125195d7821058b2f9d646ccd9f88017e30f0dc4d25e'
 
 LAYOUT_IDS = ['2DPlotTabContent',
  '2DPlotTabSelection',
@@ -842,7 +863,9 @@ LAYOUT_IDS = ['2DPlotTabContent',
  'lon-table-selected-pid-store',
  'mann-whitney-table',
  'misjudgements-summary-table',
+ 'mo-stn-node-size',
  'mo_plot_type',
+ 'mo_stn_pov',
  'noise-cap-input',
  'noisy_fitnesses_data',
  'opacity_noise_bar',
@@ -907,9 +930,9 @@ FREE_NAMES = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnes
                                                                                                                                                         'row_view': {'ast': '1a7234f1b9afe6eb58b9383f9be8b7ddd014355129f514c435c804027ba34f32',
                                                                                                                                                                      'kind': 'callable',
                                                                                                                                                                      'name': 'row_view'},
-                                                                                                                                                        'stn_entries': {'ast': '0ce9067f4096f4db7c2a09591900ba1ad308e28288447884378af3aa8a3d5cce',
-                                                                                                                                                                        'kind': 'callable',
-                                                                                                                                                                        'name': 'stn_entries'}},
+                                                                                                                                                        'stn_view_entries': {'ast': 'a4290e5325f11055b155e0ec05f58c3fffddb0bb70232f2de3549a6836444523', 'kind': 'callable', 'name': 'stn_view_entries'},
+    'DEFAULT_STN_POV': {'canon': 'algo', 'kind': 'value'},
+    'DEFAULT_STN_VIEW': {'canon': 'population_noisy', 'kind': 'value'}},
  '..advanced-misjudgement-algo-dropdown.options...advanced-misjudgement-algo-dropdown.value..': {'pd': {'kind': 'module',
                                                                                                         'name': 'pandas'}},
  '..annotation-options.value...axes-text-scale.value...annotation-text-scale.value..': {'dash': {'kind': 'module',
@@ -965,7 +988,9 @@ FREE_NAMES = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnes
                                                                                                                                                                                                                            'add_lon_nodes': {'ast': '16374f54f260ab1e2fee43f985834ce62309305b8cc8fbcd9fde6a709a5a1eb5',
                                                                                                                                                                                                                                              'kind': 'callable',
                                                                                                                                                                                                                                              'name': 'add_lon_nodes'},
-                                                                                                                                                                                                                           'add_mo_fronts': {'ast': 'd7d09e7be956b3ab28c5c69c410b4d3c508d8916c6dd009e84730d0953f9d788',
+    # Deliberate amendment (MO-STN Stages 2 and 4): add_mo_fronts builds front-state nodes only; debug_mo_counts
+    # names primary and satellite states (tests/test_mo_stn_graph.py).
+                                                                                                                                                                                                                           'add_mo_fronts': {'ast': '0841f570d4c3696f7a479a196d2b320622a246cdf5f46286914bf29de13cf04b',
                                                                                                                                                                                                                                              'kind': 'callable',
                                                                                                                                                                                                                                              'name': 'add_mo_fronts'},
                                                                                                                                                                                                                            'add_prior_noise_stn_algo_pov': {'ast': '62496cb4794186ccf7b1fbd987e708bd40e2fa8fd2bfab25f0871667c0befcf8',
@@ -1027,7 +1052,7 @@ FREE_NAMES = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnes
                                                                                                                                                                                                                            'dataclass_replace': {'ast': '5acb1e995024f6a66ba151df2a6bd81582edd0738a546abc53349a5f3a406bc7',
                                                                                                                                                                                                                                                  'kind': 'callable',
                                                                                                                                                                                                                                                  'name': 'replace'},
-                                                                                                                                                                                                                           'debug_mo_counts': {'ast': 'c463074b4ea8f62d2554f140c1bcc73a9bc26978d1e09a864f69746a73ec976c',
+                                                                                                                                                                                                                           'debug_mo_counts': {'ast': '1e370602aa8ac353c004d5bb2839a66034a87940ab5d293ec0441b29b7e20c1e',
                                                                                                                                                                                                                                                'kind': 'callable',
                                                                                                                                                                                                                                                'name': 'debug_mo_counts'},
                                                                                                                                                                                                                            'filter_local_optima': {'ast': 'c5ca48a389db20b6275e538dbfacb26d5d6675a1a51f6f2008fcd53e63cac1cc',
@@ -1054,7 +1079,7 @@ FREE_NAMES = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnes
                                                                                                                                                                                                                                                              'name': 'increasing_noise_step_indices'},
                                                                                                                                                                                                                            'nx': {'kind': 'module',
                                                                                                                                                                                                                                   'name': 'networkx'},
-                                                                                                                                                                                                                           'parse_callback_inputs': {'ast': 'b3211930c9b4e6d78f5c6ef5b39b6793911b31be5b3150fcb3f1e7e6d533d899',
+                                                                                                                                                                                                                           'parse_callback_inputs': {'ast': 'cedb3a4794a9ccb74fb6cc5fe161f3726c82ce689256655c18f730c9b35ba9e3',
                                                                                                                                                                                                                                                      'kind': 'callable',
                                                                                                                                                                                                                                                      'name': 'parse_callback_inputs'},
                                                                                                                                                                                                                            'pd': {'kind': 'module',
@@ -1284,6 +1309,9 @@ FREE_NAMES = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnes
                                                                   ['fontSize', '14px'],
                                                                   ['padding', '0px']]},
                                                'kind': 'value'}},
+ 'mo_stn_pov.disabled': {'DEFAULT_STN_VIEW': {'canon': 'population_noisy', 'kind': 'value'},
+                         'stn_view_fronts': {'ast': '425ab004f48dfea7362ab262b05104b9794ef8c8487f29905ba474e2a4810bec',
+                                             'kind': 'callable', 'name': 'stn_view_fronts'}},
  'misjudgements-summary-table.children': {'_format_median_std': {'ast': 'e7c35cd2186c7adcee6b7b8baa4aa97dc2133408c901e489521aa07c2860bbd3',
                                                                  'kind': 'callable',
                                                                  'name': '_format_median_std'},
@@ -1359,8 +1387,8 @@ FREE_NAMES = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnes
  'table2-selected-store.data': {},
  'table2.data': {'pd': {'kind': 'module', 'name': 'pandas'}}}
 
-HTTP = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_data.data...STN_MO_data.data...STN_MO_series_labels.data...MO_data_PPP.data..': {'digest': 'b40570d425866c8ebe7524d1abd46bdfa1bee5037907a0ef0e0272ec278e0f96',
-                                                                                                                                                        'length': 2968,
+HTTP = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_data.data...STN_MO_data.data...STN_MO_series_labels.data...MO_data_PPP.data..': {'digest': 'e90fb364b896a075eb3b1d80c1017d3e2bc28152317c3c4f1f51d9162065e0d0',
+                                                                                                                                                        'length': 3263,
                                                                                                                                                         'props': ['MO_data_PPP.data',
                                                                                                                                                                   'STN_MO_data.data',
                                                                                                                                                                   'STN_MO_series_labels.data',
@@ -1511,6 +1539,8 @@ HTTP = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_da
                                  'props': ['mann-whitney-table.children'],
                                  'status': 200,
                                  'traces': {}},
+ 'mo_stn_pov.disabled': {'digest': '646d39ea8f21f29b57ae81770d2915fe4d821c0d96e702a50227f826e4745b05',
+                         'length': 58, 'props': ['mo_stn_pov.disabled'], 'status': 200, 'traces': {}},
  'misjudgements-summary-table.children': {'digest': '7fcac64f28bf58c074d5cde34c6a4e51d61360c90f57a68ceaf43ee0aa4cbef8',
                                           'length': 1265,
                                           'props': ['misjudgements-summary-table.children'],
@@ -3414,6 +3444,7 @@ CALLBACK_MODULES = {'..STN_data_processed.data...STN_series_labels.data...noisy_
  'knapsack-info-display.children': 'dashboard/callbacks/selection.py',
  'lon-table-selected-pid-store.data': 'dashboard/callbacks/graph_data.py',
  'mann-whitney-table.children': 'dashboard/callbacks/performance.py',
+ 'mo_stn_pov.disabled': 'dashboard/callbacks/graph_data.py',
  'misjudgements-summary-table.children': 'dashboard/callbacks/performance.py',
  'penalty-filter-dropdown.options': 'dashboard/callbacks/performance.py',
  'penalty-filter-dropdown.value': 'dashboard/callbacks/performance.py',
@@ -3639,6 +3670,11 @@ ALLOWED_CHANGES = {
     ("dashboard/Dashboard.py",
      "cb|..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_data.data...STN_MO_data.data..."
      "STN_MO_series_labels.data...MO_data_PPP.data.."): "builds the MO plot data from mo_record via MORunView",
+    # Node-size option (deliberate amendment): update_plot takes the Multiobjective STN options' Node size.
+    ("dashboard/Dashboard.py",
+     "cb|..trajectory-plot.figure...run-print-info.children...stn-stats-table.children...lon-stats-table.children..."
+     "lon-feas-error-scatter.figure...lon-selected-correlation.children...lon-feas-error-correlations.children.."):
+        "takes Input mo-stn-node-size and passes it to parse_callback_inputs as mo_node_size",
 }
 
 # `dataio.__all__` is the one structural deletion: a package export list, with no consumer, for a
@@ -4094,7 +4130,9 @@ def build_values(data):
         "STN_MO_series_labels.data": [],
         "MO_data_PPP.data": [],
         "noisy_fitnesses_data.data": [],
-        "mo_plot_type.value": "npnhv",
+        "mo_plot_type.value": "population_noisy",
+        "mo_stn_pov.value": "algo",
+        "mo-stn-node-size.value": "all",
         "penalty-filter-dropdown.value": None,
         "so-fitness-mode.value": "best",
         "plot-theme.value": "Viridis",

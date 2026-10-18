@@ -9,7 +9,6 @@ data, through MORunView, on the server (browser stores carry only a row id):
                      consumed them: the legacy recorder's entries exactly (the frozen reference-#3
                      projection), now with the real generation (gen_idx) and the change position
                      (change_idx) as separate fields
-    STN modes        the per-mode front/metric pairs, unchanged
     archives         the passive archives and lost clean solutions, available server-side
 
 It also documents where the removed recorder's per-entry lists cannot be reproduced from a record: tied
@@ -33,7 +32,6 @@ from noisyvis.dashboard.mo_frames import (
     change_generations,
     front_entries,
     row_view,
-    stn_entries,
     without_legacy_mo_rows,
 )
 from noisyvis.results.mo_view import MORunView
@@ -98,21 +96,6 @@ def test_entries_are_the_legacy_entries_with_real_generations(name, prob):
         assert (e["algo_front_noisy_hypervolume"], e["algo_front_clean_hypervolume"], e["clean_front_hypervolume"]) == \
             (legacy["noisy_pf_noisy_hypervolumes"][k], legacy["noisy_pf_true_hypervolumes"][k],
              legacy["true_pf_hypervolumes"][k])
-
-
-def test_stn_modes_pair_the_same_fronts_and_metrics():
-    entry = {"algo_front_solutions": "noisy", "clean_front_solutions": "clean", "algo_front_noisy_hypervolume": 1.0,
-             "algo_front_clean_hypervolume": 2.0, "clean_front_hypervolume": 3.0, "gen_idx": 7, "change_idx": 2}
-    expected = {
-        "npnhv": ("noisy", None, 1.0, None), "npthv": ("noisy", None, 2.0, None), "tpthv": ("clean", None, 3.0, None),
-        "npbhv": ("noisy", None, 2.0, 1.0), "bpbhv": ("clean", "noisy", 3.0, 1.0),
-        "bpbhv_algo_pov": ("noisy", "clean", 1.0, 3.0), "tpbhv": ("noisy", None, 3.0, None),
-    }
-    for mode, (front1, front2, metric1, metric2) in expected.items():
-        [node] = stn_entries([entry], mode)
-        assert node == {"front1": front1, "front2": front2, "metric1": metric1, "metric2": metric2,
-                        "gen_idx": 7, "change_idx": 2}, mode
-    assert stn_entries([entry], None)[0]["metric1"] == 1.0  # default npnhv
 
 
 def test_archive_snapshot_serves_the_passive_archives():

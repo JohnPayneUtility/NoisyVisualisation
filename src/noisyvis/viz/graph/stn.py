@@ -292,104 +292,98 @@ def add_mo_fronts(
     noisy_node_color: str = 'grey'
 ) -> List[Tuple[str, Dict]]:
     """
-    Add multi-objective STN nodes and edges to the graph.
+    Add multi-objective STN nodes and edges to the graph, from each run's front-state items
+    (dashboard.mo_frames.stn_view_entries).
 
-    Creates nodes for each front at each generation, with optional noisy nodes
-    when dual metrics are provided. Connects consecutive generations with edges.
+    A node is a front state, reused within its run whenever its state id recurs: primary
+    `MO_S{s}_R{r}_P{state1}` (type STN_MO), satellite `MO_S{s}_R{r}_Q{state2}` (type STN_MO_Noise). Edges
+    are added once per (u, v, type):
+        STN_MO      primary -> primary, at each change to a different primary state
+        Noise_MO    primary -> satellite, for each pairing of the two states that becomes active
+    A satellite-only change adds no temporal edge and keeps the current primary. Metadata:
+        node generations    the generations at which the run entered that state (its first appearance and
+                            each return to it); visits is their number; gen_idx the first of them. A
+                            state that stays active adds nothing, and a primary is not re-entered when only
+                            its satellite changes (nor a satellite when only its primary does).
+        node n_observations the state's member count at its first appearance (not part of its identity)
+        node first_evals    the evaluations completed by the end of gen_idx (the item's evals), the state's
+                            first appearance
+        edge generations    STN_MO: the generations of that transition; Noise_MO: those at which that
+                            pairing became active
+    An HV without a reference point is NaN (null once the items have been through a browser store).
 
     Args:
         G: NetworkX MultiDiGraph to modify
-        mo_runs_for_series: List of runs, each containing a sequence of front data
-        edge_color: Color to use for edges
+        mo_runs_for_series: List of runs, each a sequence of front-state items
+        edge_color: Color to use for nodes and temporal edges
         series_idx: Index of the series (for labeling)
-        noisy_node_color: Color for noisy/noise edges
+        noisy_node_color: Color for satellite edges
 
     Returns:
         List of (node_name, node_data) tuples for all MO nodes added
     """
-    print(f"[MO DEBUG] add_mo_fronts_to_graph(series_idx={series_idx})", flush=True)
+    print(f"[MO DEBUG] add_mo_fronts(series_idx={series_idx})", flush=True)
     mo_nodes = []
 
+    def as_hv(value):
+        return float('nan') if value is None else float(value)
+
+    def same_hv(a, b):
+        return a == b or (np.isnan(a) and np.isnan(b))
+
+    def state_node(node, node_type, front, hv, n_observations, run_idx, g, evals, entered):
+        """A front-state node, added at its first appearance; a reuse must be the same state."""
+        if node not in G.nodes:
+            G.add_node(
+                node,
+                type=node_type,
+                is_noisy=node_type == "STN_MO_Noise",
+                front_solutions=front,
+                front_size=len(front),
+                hypervolume=hv,
+                fitness=hv,  # z-axis value
+                run_idx=run_idx,
+                gen_idx=g,
+                color=edge_color,
+                n_observations=n_observations,
+                first_evals=evals,
+                generations=[],
+                visits=0,
+            )
+            mo_nodes.append((node, G.nodes[node]))
+        elif G.nodes[node]["front_solutions"] != front or not same_hv(G.nodes[node]["hypervolume"], hv):
+            raise ValueError(f"{node}: one state id given two different front states")
+        if entered:
+            G.nodes[node]["generations"].append(g)
+            G.nodes[node]["visits"] += 1
+
+    def link(u, v, edge_type, g, color, is_noisy):
+        """A u -> v edge of edge_type, added once; a repeat records its generation on the existing edge."""
+        for data in (G.get_edge_data(u, v) or {}).values():
+            if data.get("edge_type") == edge_type:
+                data["generations"].append(g)
+                return
+        G.add_edge(u, v, weight=0.5, color=color, edge_type=edge_type, is_noisy=is_noisy, generations=[g])
+
     for run_idx, front_seq in enumerate(mo_runs_for_series or []):
-        prev_base = None
+        n_paired = sum(1 for item in front_seq if item.get('state2') is not None)
+        print(f"[MO DEBUG] Run {run_idx}: {len(front_seq)} state changes, {n_paired} with a satellite", flush=True)
 
-        count_front1 = sum(1 for it in front_seq if (it.get('front1') is not None))
-        count_front2 = sum(1 for it in front_seq if (it.get('front2') is not None))
-        print(f"[MO DEBUG] Run {run_idx}: front1_gens={count_front1}, front2_gens={count_front2}, total_gens={len(front_seq)}", flush=True)
-
-        for item in front_seq or []:
-            front1 = item.get('front1') or []
-            front2 = item.get('front2') or None
-            m1_raw = item.get('metric1', 0.0)
-            m2_raw = item.get('metric2', None)
-            g = int(item.get('gen_idx', 0))
-
-            # Safe numeric conversion
-            try:
-                m1 = float(m1_raw if m1_raw is not None else 0.0)
-            except Exception:
-                m1 = 0.0
-            try:
-                m2 = float(m2_raw) if m2_raw is not None else None
-            except Exception:
-                m2 = None
-
-            # -------- base (front1, metric1) node --------
-            node_base = f"MO_S{series_idx}_R{run_idx}_G{g}_True"
-            if node_base not in G.nodes:
-                G.add_node(
-                    node_base,
-                    type="STN_MO",
-                    is_noisy=False,
-                    front_solutions=front1,
-                    front_size=len(front1),
-                    hypervolume=m1,
-                    fitness=m1,  # z-axis value
-                    run_idx=run_idx,
-                    gen_idx=g,
-                    color=edge_color,
-                )
-            mo_nodes.append((node_base, G.nodes[node_base]))
-
-            # -------- optional noisy node (metric2) --------
-            if m2 is not None:
-                noisy_front = front2 if (front2 is not None) else front1
-                node_noisy = f"MO_S{series_idx}_R{run_idx}_G{g}_Noisy"
-                if node_noisy not in G.nodes:
-                    G.add_node(
-                        node_noisy,
-                        type="STN_MO_Noise",
-                        is_noisy=True,
-                        front_solutions=noisy_front,
-                        front_size=len(noisy_front),
-                        hypervolume=m2,
-                        fitness=m2,
-                        run_idx=run_idx,
-                        gen_idx=g,
-                        color=edge_color,
-                    )
-                mo_nodes.append((node_noisy, G.nodes[node_noisy]))
-
-                # edge between metric1 and metric2 nodes (noisy)
-                G.add_edge(
-                    node_base,
-                    node_noisy,
-                    weight=0.5,
-                    color=noisy_node_color,
-                    edge_type="Noise_MO",
-                    is_noisy=True,
-                )
-
-            # -------- temporal link across generations --------
-            if prev_base is not None:
-                G.add_edge(
-                    prev_base,
-                    node_base,
-                    weight=0.5,
-                    color=edge_color,
-                    edge_type="STN_MO",
-                    is_noisy=False,
-                )
+        prev_base = prev_satellite = None
+        for item in front_seq:
+            g = int(item['gen_idx'])
+            node_base = f"MO_S{series_idx}_R{run_idx}_P{item['state1']}"
+            entered = bool(item['primary_changed']) and node_base != prev_base
+            state_node(node_base, "STN_MO", item['front1'], as_hv(item['metric1']), item['n_obs1'],
+                       run_idx, g, item.get('evals'), entered)
+            if entered and prev_base is not None:
+                link(prev_base, node_base, "STN_MO", g, edge_color, False)
+            if item.get('state2') is not None:
+                node_sat = f"MO_S{series_idx}_R{run_idx}_Q{item['state2']}"
+                state_node(node_sat, "STN_MO_Noise", item['front2'], as_hv(item['metric2']), item['n_obs2'],
+                           run_idx, g, item.get('evals'), node_sat != prev_satellite)
+                link(node_base, node_sat, "Noise_MO", g, noisy_node_color, True)
+                prev_satellite = node_sat
             prev_base = node_base
 
     return mo_nodes
@@ -866,13 +860,14 @@ def debug_mo_counts(
     max_list: int = 12
 ) -> str:
     """
-    Generate a summary of MO (multi-objective) nodes and edges in the graph.
+    Generate a summary of MO (multi-objective) nodes and edges in the graph. Nodes are front states:
+    primaries (the trajectory) and satellites, each listed once however often its state recurs.
 
     Args:
         G: NetworkX MultiDiGraph to analyze
         by: Attribute to group by ('run_idx' or 'series_idx')
         label: Label prefix for output
-        list_fronts: If True, list front sizes per generation
+        list_fronts: If True, list each primary state's first generation and front size
         max_list: Maximum number of entries to list
 
     Returns:
@@ -887,7 +882,7 @@ def debug_mo_counts(
     noisy_nodes = total - len(true_nodes)
 
     output_lines = []
-    line = f"\033[33m{label} nodes total={total} true={len(true_nodes)} noisy={noisy_nodes}\033[0m"
+    line = f"\033[33m{label} nodes total={total} primary={len(true_nodes)} satellite={noisy_nodes}\033[0m"
     print(line)
     output_lines.append(line)
 
@@ -909,15 +904,15 @@ def debug_mo_counts(
         fs_mean = (fs_sum / len(front_sizes)) if front_sizes else 0
 
         line = (
-            f"\033[33m  {by} {key}: true={len(group_true)} noisy={group_noisy} "
-            f"gens={len(gens)} | front_size sum={fs_sum}, mean={fs_mean:.2f}, "
+            f"\033[33m  {by} {key}: primary states={len(group_true)} satellite states={group_noisy} "
+            f"first-seen gens={len(gens)} | primary front_size sum={fs_sum}, mean={fs_mean:.2f}, "
             f"min={fs_min}, max={fs_max}\033[0m"
         )
         print(line)
         output_lines.append(line)
 
         if list_fronts and group_true:
-            # List per-generation front sizes (first max_list entries)
+            # List each primary state's first generation and front size (first max_list entries)
             per_gen = sorted(
                 (int(d.get("gen_idx", -1)), int(d.get("front_size", 0)))
                 for _, d in group_true
@@ -925,7 +920,7 @@ def debug_mo_counts(
             shown = per_gen[:max_list]
             tail = " ..." if len(per_gen) > max_list else ""
             gen_str = ", ".join(f"G{g}:{sz}" for g, sz in shown)
-            line = f"\033[33m    fronts (G: size): {gen_str}{tail}\033[0m"
+            line = f"\033[33m    primary states (first G: size): {gen_str}{tail}\033[0m"
             print(line)
             output_lines.append(line)
 
