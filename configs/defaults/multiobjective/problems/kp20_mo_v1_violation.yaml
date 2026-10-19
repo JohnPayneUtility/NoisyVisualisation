@@ -15,7 +15,7 @@ problem:
     _target_: noisyvis.problems.instances.load_problem_KP
     filename: f10_l-d_kp_20_879
 
-  fitness_fn: eval_noisy_kp_v1_mo_violation
+  fitness_fn: noisy_mokp_violation_v1
   fitness_params:
     items_dict: null
     capacity: null

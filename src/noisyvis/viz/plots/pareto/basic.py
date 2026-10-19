@@ -16,12 +16,13 @@ from ..base import (
     FRONT_KEYS,
     UNSUPPORTED_METRIC_TITLE,
     front_line,
-    hv_front,
+    selected_front,
 )
 
 
 def plot_basic(frontdata, series_labels, continuous_colorscale=True,
-               colorscale='Viridis', IndVsDist_IndType="NoisyHV", attainment=False):
+               colorscale='Viridis', IndVsDist_IndType="noisy_population", attainment=False,
+               gridlines=None):
     """
     Generate a basic Pareto front plot showing all generations.
 
@@ -34,15 +35,17 @@ def plot_basic(frontdata, series_labels, continuous_colorscale=True,
         continuous_colorscale: If True, use continuous color scale instead of discrete colors
         colorscale: The colorscale to use when continuous_colorscale is True
                    (e.g., 'Viridis', 'Plasma', 'Cividis')
-        IndVsDist_IndType: 'NoisyHV' plots the noisy front under y, 'CleanHV' the clean front under f(x)
+        IndVsDist_IndType: the front type (a FRONT_KEYS key): its members, objective values and stored HV
         attainment: If True, join each front by its attainment staircase instead of straight segments
+        gridlines: None, or an (x, y) pair: a grey vertical line at x and a grey horizontal line at y
+                   (either may be None to omit that line), e.g. the bounds of the valid objective space
 
     Returns:
         go.Figure: Plotly figure with the Pareto front visualization
     """
     fig = go.Figure()
 
-    front = hv_front(IndVsDist_IndType)
+    front = selected_front(IndVsDist_IndType)
     if front is None:
         return create_empty_figure(UNSUPPORTED_METRIC_TITLE)
     _, fits_key, _, front_label = FRONT_KEYS[front]
@@ -119,6 +122,13 @@ def plot_basic(frontdata, series_labels, continuous_colorscale=True,
                     line_shape=line_shape
                 )
             )
+
+    if gridlines is not None:
+        gx, gy = gridlines
+        if gx is not None:
+            fig.add_vline(x=gx, line=dict(color='grey', width=1))
+        if gy is not None:
+            fig.add_hline(y=gy, line=dict(color='grey', width=1))
 
     fig.update_layout(
         title=f"{front_label} PF - {series_name}, Run {run_idx}",

@@ -193,19 +193,25 @@ def compute_generation_range(gen_entries):
 # Front Selection, Distance and Line Geometry
 # ==============================================================================
 
-# Per front: (solution key, fitness key, hypervolume key, label). The noisy front (or noisy archive) is
-# measured under the observed y; the clean front (or clean archive) is non-dominated and measured under f(x).
+# The front types (the multi-objective STN's front kinds, dashboard.mo_frames.STN_FRONT_KINDS) and, per type,
+# (solution key, fitness key, hypervolume key, label) of its Pareto-tab entries. Every type's entries share
+# the keys: its members (noisy types: each observation, under the observed y; the others: each genotype,
+# under f(x)) and the stored HV of that front.
+_ENTRY_KEYS = ('front_solutions', 'front_fitnesses', 'front_hypervolume')
 FRONT_KEYS = {
-    'noisy': ('algo_front_solutions', 'algo_front_noisy_fitnesses', 'algo_front_noisy_hypervolume', 'Noisy'),
-    'clean': ('clean_front_solutions', 'clean_front_fitnesses', 'clean_front_hypervolume', 'Clean'),
+    'noisy_population': (*_ENTRY_KEYS, 'noisy population'),
+    'corrected_noisy': (*_ENTRY_KEYS, 'noisy population corrected'),
+    'clean_population': (*_ENTRY_KEYS, 'clean population'),
+    'noisy_archive': (*_ENTRY_KEYS, 'historical archive noisy'),
+    'clean_archive': (*_ENTRY_KEYS, 'historical archive clean'),
 }
 
-UNSUPPORTED_METRIC_TITLE = "Select Noisy HV or Clean HV"
+UNSUPPORTED_METRIC_TITLE = "Select a front type"
 
 
-def hv_front(ind_type):
-    """The front a metric selection refers to: 'noisy' for NoisyHV, 'clean' for CleanHV, else None."""
-    return {'NoisyHV': 'noisy', 'CleanHV': 'clean'}.get(ind_type)
+def selected_front(front_type):
+    """The front type a selection refers to (a FRONT_KEYS key), else None."""
+    return front_type if front_type in FRONT_KEYS else None
 
 
 def unique_solutions(front):

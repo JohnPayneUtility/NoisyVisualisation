@@ -17,7 +17,7 @@ from ..base import (
     FRONT_KEYS,
     UNSUPPORTED_METRIC_TITLE,
     genotype_front_distance,
-    hv_front,
+    selected_front,
 )
 
 
@@ -27,7 +27,7 @@ def plot_movement_correlation(
     group_idx=0,
     run_idx=0,
     solution_key=None,
-    IndVsDist_IndType="NoisyHV",
+    IndVsDist_IndType="noisy_population",
     window=25,
     corr_method="pearson",
     show_deltas=True,
@@ -44,7 +44,7 @@ def plot_movement_correlation(
         group_idx: Index of the group to use
         run_idx: Index of the run to use
         solution_key: Key for solution data (None: the selected front's)
-        IndVsDist_IndType: 'NoisyHV' (noisy front, HV under y) or 'CleanHV' (clean front, HV under f(x))
+        IndVsDist_IndType: the front type (a FRONT_KEYS key): its members, objective values and stored HV
         window: Sliding window size for correlation
         corr_method: 'pearson' or 'spearman'
         show_deltas: Whether to show delta traces
@@ -73,7 +73,7 @@ def plot_movement_correlation(
         fig.update_layout(title=f"Not enough generations for {series_name} (run {run_idx})")
         return fig
 
-    front = hv_front(IndVsDist_IndType)
+    front = selected_front(IndVsDist_IndType)
     if front is None:
         return create_empty_figure(UNSUPPORTED_METRIC_TITLE)
     front_sols_key, _, hv_key, _ = FRONT_KEYS[front]
@@ -156,7 +156,7 @@ def plot_movement_correlation(
         ))
 
     fig.update_layout(
-        title=f"Movement correlation - {series_name} (run {run_idx})",
+        title=f"Movement correlation - {series_name} (run {run_idx}) - {FRONT_KEYS[front][3]}",
         xaxis=dict(title="Generation"),
         yaxis=dict(
             title="Correlation (-1 to 1)",
@@ -195,7 +195,7 @@ def plot_move_delta_histograms(
     series_labels,
     group_idx=0,
     solution_key=None,
-    IndVsDist_IndType="NoisyHV",
+    IndVsDist_IndType="noisy_population",
     bins_decision=50,
     bins_objective=50,
     include_zero_moves=False,
@@ -211,7 +211,7 @@ def plot_move_delta_histograms(
         series_labels: Labels for each series
         group_idx: Index of the group to use
         solution_key: Key for solution data (None: the selected front's)
-        IndVsDist_IndType: 'NoisyHV' (noisy front, HV under y) or 'CleanHV' (clean front, HV under f(x))
+        IndVsDist_IndType: the front type (a FRONT_KEYS key): its members, objective values and stored HV
         bins_decision: Number of bins for decision space histogram
         bins_objective: Number of bins for objective space histogram
         include_zero_moves: Whether to include generations with no change
@@ -224,7 +224,7 @@ def plot_move_delta_histograms(
         subplot_titles=("dD (decision-space front distance)", "dO (objective change)")
     )
 
-    front = hv_front(IndVsDist_IndType)
+    front = selected_front(IndVsDist_IndType)
     if front is None:
         return create_empty_figure(UNSUPPORTED_METRIC_TITLE)
     front_sols_key, _, hv_key, _ = FRONT_KEYS[front]
@@ -280,7 +280,7 @@ def plot_move_delta_histograms(
     )
 
     fig.update_layout(
-        title=f"Move delta histograms (pooled across runs) - {series_name}",
+        title=f"Move delta histograms (pooled across runs) - {series_name} - {FRONT_KEYS[front][3]}",
         bargap=0.05,
         legend=dict(orientation="h"),
     )
@@ -298,7 +298,7 @@ def plot_objective_vs_decision(
     group_idx=0,
     run_idx=None,
     solution_key=None,
-    IndVsDist_IndType="NoisyHV",
+    IndVsDist_IndType="noisy_population",
     include_zero_moves=True,
     color_by="gen",
     marker_size=6,
@@ -315,7 +315,7 @@ def plot_objective_vs_decision(
         group_idx: Index of the group to use
         run_idx: Index of the run to use (None = pool all runs)
         solution_key: Key for solution data (None: the selected front's)
-        IndVsDist_IndType: 'NoisyHV' (noisy front, HV under y) or 'CleanHV' (clean front, HV under f(x))
+        IndVsDist_IndType: the front type (a FRONT_KEYS key): its members, objective values and stored HV
         include_zero_moves: Whether to include generations with no change
         color_by: 'gen' (generation) or 'run' (run index) or None
         marker_size: Size of scatter markers
@@ -325,7 +325,7 @@ def plot_objective_vs_decision(
     """
     fig = go.Figure()
 
-    front = hv_front(IndVsDist_IndType)
+    front = selected_front(IndVsDist_IndType)
     if front is None:
         return create_empty_figure(UNSUPPORTED_METRIC_TITLE)
     front_sols_key, _, hv_key, _ = FRONT_KEYS[front]
@@ -418,7 +418,7 @@ def plot_objective_vs_decision(
 
     title_suffix = "" if run_idx is None else f" (run {run_idx})"
     fig.update_layout(
-        title=f"Objective vs decision movement - {series_name}{title_suffix}",
+        title=f"Objective vs decision movement - {series_name}{title_suffix} - {FRONT_KEYS[front][3]}",
         xaxis_title="dD (decision-space front distance)",
         yaxis_title=f"dO (objective change: {hv_key})",
         legend=dict(orientation="h"),

@@ -5,15 +5,12 @@ Result rows keep their full MO record (`mo_record`) on the server, in `dashboard
 only ever carry a row's metadata and its stable row id (`_row`, the index of `df`); the callbacks resolve
 the record here, open it with `results.mo_view.MORunView`, and build just the plot data they need.
 
-Plot entries are recorded where the selected front changes (`sequence_entries`): by default the current
-noisy front's genotype set, as the plots have always consumed them, or the current clean front, or either
-passive archive (the Pareto tab's historical option); each entry carries its real generation (`gen_idx`)
-and, separately, its position in that sequence of changes (`change_idx`). Front members are listed in
-descending weighted-objective order.
-
-The multi-objective STN views (`stn_view_entries`) instead follow front *states*: a front's distinct genotypes
-and the stored HV of the front it represents. A run yields an item at each generation where its primary or
-satellite front state changes, with per-role state ids that recur when a state does.
+Every plot follows front *states*: a front's distinct genotypes and the stored HV of the front it
+represents, at the generations where that state changes. The multi-objective STN views (`stn_view_entries`)
+yield an item where a primary or satellite front state changes, with per-role state ids that recur when a
+state does; the Pareto tab's sequences (`pareto_front_entries`, `pareto_pair_entries`) draw the same fronts
+at the same changes, listing every recorded member (noisy fronts: each observation; the clean fronts and
+the corrected front: each genotype) in descending weighted-objective order.
 
 Semantics (population-based current fronts, event-based passive archives) are those of MORunView.
 """
@@ -86,7 +83,7 @@ class _IdentityCache:
         return value
 
 
-# Opened records (validation runs once per record) and built front sequences (per view, source and front)
+# Opened records (validation runs once per record) and built front sequences (per view and front kinds)
 _VIEWS = _IdentityCache(maxsize=512)
 _SEQUENCES = _IdentityCache(maxsize=256)
 
@@ -97,22 +94,7 @@ def row_view(df: pd.DataFrame, row_id) -> MORunView | None:
     return _VIEWS.get(record, None, lambda: MORunView(record)) if isinstance(record, dict) else None
 
 
-# ------------------------------------------------------------------ plot entries
-
-def change_generations(view: MORunView) -> list:
-    """
-    Generations where the current noisy front's genotype set changes (generation 0 always). The front's
-    membership only changes at its recorded change points, so those are the only candidates (a membership
-    change need not change the genotype set).
-    """
-    generations, last = [], None
-    for state in view.current_noisy_front_history():
-        signature = frozenset(tuple(int(v) for v in x) for x in state.x)
-        if signature != last:
-            generations.append(int(state.generation))
-            last = signature
-    return generations
-
+# ------------------------------------------------------------------ formatting
 
 def _order(values, weights) -> list:
     wvalues = np.asarray(values, dtype=float) * np.asarray(weights, dtype=float)
@@ -129,104 +111,6 @@ def _points(values, order) -> list:
 
 def _hv(value) -> float:
     return float('nan') if value is None else float(value)
-
-
-def _entry(noisy, clean, hvs, weights, gen, change_idx) -> dict:
-    """One plot entry: a noisy front (or archive) and a clean front (or archive) at generation gen."""
-    n_order, c_order = _order(noisy.observed, weights), _order(clean.true_obj, weights)
-    hv_noisy, hv_cross, hv_clean = (_hv(v) for v in hvs)
-    return {
-        'algo_front_solutions': _solutions(noisy.x, n_order),
-        'algo_front_noisy_fitnesses': _points(noisy.observed, n_order),
-        'algo_front_clean_fitnesses': _points(noisy.true_obj, n_order),
-        'algo_front_noisy_hypervolume': hv_noisy,
-        'algo_front_clean_hypervolume': hv_cross,
-        'clean_front_solutions': _solutions(clean.x, c_order),
-        'clean_front_fitnesses': _points(clean.true_obj, c_order),
-        'clean_front_hypervolume': hv_clean,
-        'opt_weights': [float(w) for w in weights],
-        'gen_idx': gen,
-        'change_idx': change_idx,
-    }
-
-
-def _fronts(view: MORunView, source: str, gen: int) -> tuple:
-    """(noisy, clean, (HV of noisy under y, HV of noisy under f(x), HV of clean)) at generation gen."""
-    if source == 'historical':
-        noisy, clean = view.noisy_archive(gen), view.clean_archive(gen)
-        return noisy, clean, (noisy.hv['noisy_archive__noisy'], noisy.hv['noisy_archive__clean'],
-                              clean.hv['clean_archive__clean'])
-    noisy, clean = view.current_noisy_front(gen), view.current_clean_front(gen)
-    return noisy, clean, (noisy.hv['current_noisy_front__noisy'], noisy.hv['current_noisy_front__clean'],
-                          clean.hv['current_clean_front__clean'])
-
-
-def sequence_generations(view: MORunView, source: str, front: str) -> list:
-    """Generations where the selected front changes: the current noisy front's genotype set (as the plots
-    have always consumed it), the current clean front's members, or a passive archive's members."""
-    if source == 'current' and front == 'noisy':
-        return change_generations(view)
-    if source == 'current' and front == 'clean':
-        history = view.current_clean_front_history()
-    elif source == 'historical' and front == 'noisy':
-        history = view.noisy_archive_history('generation')
-    elif source == 'historical' and front == 'clean':
-        history = view.clean_archive_history('generation')
-    else:
-        raise ValueError(f"unknown front sequence {source!r}/{front!r}")
-    return [int(g) for g in history.starts]
-
-
-def sequence_entries(view: MORunView, source: str, front: str) -> list:
-    """
-    One entry per change of the selected front, `source` 'current' (population fronts) or 'historical'
-    (passive archives) and `front` 'noisy' or 'clean':
-        algo_front_*    the noisy front (or noisy archive): its solutions x, observed y, the same members
-                        under f(x), and its HVs under y and under f(x)
-        clean_front_*   the clean front (or clean archive, independently non-dominated under f(x)) and its HV
-        opt_weights     the objective weights (directions)
-        gen_idx         the real generation; change_idx its position among the changes
-    Each entry holds both fronts as they stood at the end of gen_idx. The last entry also carries
-    final_clean_front_fitnesses: the clean front (or clean archive) at the run's final generation.
-    Built once per view and sequence; callers must not modify the returned entries.
-    """
-    return _SEQUENCES.get(view, (source, front), lambda: _build_sequence(view, source, front))
-
-
-def _build_sequence(view: MORunView, source: str, front: str) -> list:
-    entries = []
-    for change_idx, gen in enumerate(sequence_generations(view, source, front)):
-        noisy, clean, hvs = _fronts(view, source, gen)
-        entries.append(_entry(noisy, clean, hvs, view.weights, gen, change_idx))
-    if entries:
-        final = _fronts(view, source, view.n_generations - 1)[1]
-        entries[-1]['final_clean_front_fitnesses'] = _points(final.true_obj, _order(final.true_obj, view.weights))
-    return entries
-
-
-def front_entries(view: MORunView) -> list:
-    """The current noisy front's sequence (sequence_entries(view, 'current', 'noisy'))."""
-    return sequence_entries(view, 'current', 'noisy')
-
-
-def front_runs(df: pd.DataFrame, stn_rows, source: str, front: str, group_cols=('algo_name', 'noise')) -> list:
-    """MO_data_PPP's shape (series -> runs -> entries) for one front sequence, grouped and ordered as
-    process_STN_data groups the selected rows."""
-    frame = pd.DataFrame(stn_rows or [])
-    groups = []
-    if frame.empty:
-        return groups
-    for _, group_df in frame.groupby(list(group_cols)):
-        runs = []
-        for _, row in group_df.iterrows():
-            view = row_view(df, row['_row']) if '_row' in row and pd.notna(row['_row']) else None
-            if view is None:
-                continue
-            entries = sequence_entries(view, source, front)
-            if entries:
-                runs.append(entries)
-        groups.append(runs)
-    return groups
 
 
 # ------------------------------------------------------------------ STN views (front states)
@@ -304,28 +188,40 @@ class STNFrontState(NamedTuple):
         return self.geno_ids, None if math.isnan(self.hv) else self.hv
 
 
-def stn_front_state(view: MORunView, kind: str, gen: int) -> STNFrontState:
+# The kinds whose members are noisy observations (a genotype observed several times is several members)
+NOISY_FRONT_KINDS = ('noisy_population', 'noisy_archive')
+
+
+def _front_rows(view: MORunView, kind: str, gen: int) -> tuple:
     """
-    The state of a front kind at the end of generation gen. Its HV is the stored metric, never recomputed
-    from the distinct genotypes. The corrected noisy front is the current noisy front's distinct genotypes
-    that no other of them dominates under f(x) (common.pareto.nondominated_mask on weighted values, as the
-    logger decides dominance), so it is always a subset of the noisy front.
+    (snapshot, member rows) of a front kind at the end of generation gen: every row of the snapshot (each
+    observation of a noisy kind, each genotype of a clean kind), or, for the corrected noisy front, the first
+    row of each of the current noisy front's distinct genotypes that no other of them dominates under f(x)
+    (common.pareto.nondominated_mask on weighted values, as the logger decides dominance), so it is always a
+    subset of the noisy front.
     """
     if kind not in STN_FRONT_KINDS:
         raise ValueError(f"unknown STN front kind {kind!r}; expected one of {tuple(STN_FRONT_KINDS)}")
-    snapshot_at, _, metric = STN_FRONT_KINDS[kind]
-    snapshot = snapshot_at(view, gen)
-    geno_ids, first = np.unique(snapshot.geno_ids, return_index=True)
-    n_members = len(snapshot.geno_ids)
-    if kind == 'corrected_noisy':
-        keep = nondominated_mask(snapshot.true_obj[first] * np.asarray(view.weights, dtype=float))
-        geno_ids, first = geno_ids[keep], first[keep]
-        n_members = len(geno_ids)
+    snapshot = STN_FRONT_KINDS[kind][0](view, gen)
+    if kind != 'corrected_noisy':
+        return snapshot, np.arange(len(snapshot.geno_ids))
+    _, first = np.unique(snapshot.geno_ids, return_index=True)
+    keep = nondominated_mask(snapshot.true_obj[first] * np.asarray(view.weights, dtype=float))
+    return snapshot, first[keep]
+
+
+def stn_front_state(view: MORunView, kind: str, gen: int) -> STNFrontState:
+    """
+    The state of a front kind at the end of generation gen (its members: _front_rows). Its HV is the stored
+    metric, never recomputed from the distinct genotypes.
+    """
+    snapshot, rows = _front_rows(view, kind, gen)
+    geno_ids, first = np.unique(snapshot.geno_ids[rows], return_index=True)
     return STNFrontState(
         tuple(int(g) for g in geno_ids),
-        sorted([int(v) for v in x] for x in snapshot.x[first]),
-        _hv(snapshot.hv[metric]),
-        n_members,
+        sorted([int(v) for v in x] for x in snapshot.x[rows[first]]),
+        _hv(snapshot.hv[STN_FRONT_KINDS[kind][2]]),
+        len(rows),
     )
 
 
@@ -391,23 +287,96 @@ def stn_view_entries(view: MORunView, view_id: str = DEFAULT_STN_VIEW, pov: str 
     return _SEQUENCES.get(view, ('stn', primary, satellite), build)
 
 
-def archive_snapshot(view: MORunView, gen: int) -> dict:
+# ------------------------------------------------------------------ Pareto tab (front sequences)
+
+# The Pareto tab's "Noisy" plot types: the two fronts each one draws
+PARETO_NOISY_PAIRS = {
+    'NoisyPopulationVsClean': ('noisy_population', 'clean_population'),
+    'NoisyArchiveVsClean': ('noisy_archive', 'clean_archive'),
+    'NoisyPopulationVsCorrected': ('noisy_population', 'corrected_noisy'),
+}
+
+
+def pareto_front_members(view: MORunView, kind: str, gen: int) -> tuple:
     """
-    The passive historical archives at generation gen, for server-side analysis: the noisy archive
-    (best observations so far, under y and under f(x)), the clean archive (best genuinely generated
-    solutions so far, under f(x)), and the clean-archive members the population no longer holds.
+    (solutions, fitnesses) of a front kind at the end of generation gen: every member (each observation of a
+    noisy kind, under its observed y; each genotype of the other kinds, under f(x)), in descending
+    weighted-objective order.
     """
-    noisy, clean, lost = view.noisy_archive(gen), view.clean_archive(gen), view.lost_clean_solutions(gen)
-    n_order, c_order = _order(noisy.observed, view.weights), _order(clean.true_obj, view.weights)
-    l_order = _order(lost.true_obj, view.weights)
-    return {
-        'noisy_archive_solutions': _solutions(noisy.x, n_order),
-        'noisy_archive_noisy_fitnesses': _points(noisy.observed, n_order),
-        'noisy_archive_clean_fitnesses': _points(noisy.true_obj, n_order),
-        'clean_archive_solutions': _solutions(clean.x, c_order),
-        'clean_archive_fitnesses': _points(clean.true_obj, c_order),
-        'lost_clean_solutions': _solutions(lost.x, l_order),
-        'lost_clean_fitnesses': _points(lost.true_obj, l_order),
-        **{metric: value for snapshot in (noisy, clean) for metric, value in snapshot.hv.items()},
-        'gen_idx': gen,
-    }
+    snapshot, rows = _front_rows(view, kind, gen)
+    values = snapshot.observed if kind in NOISY_FRONT_KINDS else snapshot.true_obj
+    order = [int(rows[i]) for i in _order(values[rows], view.weights)]
+    return _solutions(snapshot.x, order), _points(values, order)
+
+
+def pareto_front_entries(view: MORunView, kind: str) -> list:
+    """
+    One Pareto-tab entry per change of a front kind's state (its distinct genotypes or its stored HV, as the
+    STN views follow it):
+        front_solutions, front_fitnesses    its members (pareto_front_members)
+        front_hypervolume                   the stored HV of that front
+        opt_weights, gen_idx, change_idx    the objective weights, the generation, its position
+    The last entry also carries final_clean_archive_fitnesses, the clean archive's members under f(x) at the
+    run's final generation (IGD's reference). Built once per view and kind; callers must not modify them.
+    """
+    def build():
+        weights = [float(w) for w in view.weights]
+        entries = []
+        for item in stn_state_items((gen, stn_front_state(view, kind, gen), None)
+                                    for gen in stn_candidate_generations(view, kind)):
+            solutions, fitnesses = pareto_front_members(view, kind, item['gen_idx'])
+            entries.append({'front_solutions': solutions, 'front_fitnesses': fitnesses,
+                            'front_hypervolume': item['metric1'], 'opt_weights': weights,
+                            'gen_idx': item['gen_idx'], 'change_idx': item['change_idx']})
+        if entries:
+            entries[-1]['final_clean_archive_fitnesses'] = \
+                pareto_front_members(view, 'clean_archive', view.n_generations - 1)[1]
+        return entries
+
+    return _SEQUENCES.get(view, ('pareto', kind), build)
+
+
+def pareto_pair_entries(view: MORunView, kind_a: str, kind_b: str) -> list:
+    """
+    One entry per generation where either of two front kinds' state changes (as an STN view pairs them):
+    a_solutions/a_fitnesses and b_solutions/b_fitnesses (pareto_front_members of each), opt_weights, gen_idx
+    and change_idx. Built once per view and pair; callers must not modify the returned entries.
+    """
+    def build():
+        weights = [float(w) for w in view.weights]
+        entries = []
+        for item in stn_state_items((gen, stn_front_state(view, kind_a, gen), stn_front_state(view, kind_b, gen))
+                                    for gen in stn_candidate_generations(view, kind_a, kind_b)):
+            a_solutions, a_fitnesses = pareto_front_members(view, kind_a, item['gen_idx'])
+            b_solutions, b_fitnesses = pareto_front_members(view, kind_b, item['gen_idx'])
+            entries.append({'a_solutions': a_solutions, 'a_fitnesses': a_fitnesses,
+                            'b_solutions': b_solutions, 'b_fitnesses': b_fitnesses, 'opt_weights': weights,
+                            'gen_idx': item['gen_idx'], 'change_idx': item['change_idx']})
+        return entries
+
+    return _SEQUENCES.get(view, ('pareto_pair', kind_a, kind_b), build)
+
+
+def pareto_runs(df: pd.DataFrame, stn_rows, entries_of, group_cols=('algo_name', 'noise')) -> tuple:
+    """
+    (groups, labels) for the Pareto tab: the selected rows grouped as process_STN_data groups them (series,
+    then runs, then entries_of(view) for each row with an MO record), and each group's label (its group key,
+    as the STN series labels give it).
+    """
+    frame = pd.DataFrame(stn_rows or [])
+    groups, labels = [], []
+    if frame.empty:
+        return groups, labels
+    for key, group_df in frame.groupby(list(group_cols)):
+        runs = []
+        for _, row in group_df.iterrows():
+            view = row_view(df, row['_row']) if '_row' in row and pd.notna(row['_row']) else None
+            if view is None:
+                continue
+            entries = entries_of(view)
+            if entries:
+                runs.append(entries)
+        groups.append(runs)
+        # plain Python values, as the STN series labels reach the plots through the browser store's JSON
+        labels.append([v.item() if isinstance(v, np.generic) else v for v in (key if isinstance(key, tuple) else (key,))])
+    return groups, labels

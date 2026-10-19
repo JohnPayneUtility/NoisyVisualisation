@@ -49,7 +49,10 @@ PARETO_PLOTS = {
     'SubplotsMulti': plot_subplots_multi,
     'SubplotsHighlight': plot_subplots_highlighted,
     'paretoAnimation': plot_animation,
-    'Noisy': plot_noisy,
+    # the three two-front comparisons (dashboard.mo_frames.PARETO_NOISY_PAIRS give their fronts)
+    'NoisyPopulationVsClean': plot_noisy,
+    'NoisyArchiveVsClean': plot_noisy,
+    'NoisyPopulationVsCorrected': plot_noisy,
     'IndVsDist': plot_ind_vs_dist,
     'IGDVsDist': plot_igd_vs_dist,
     'PPM': plot_progress_per_movement,

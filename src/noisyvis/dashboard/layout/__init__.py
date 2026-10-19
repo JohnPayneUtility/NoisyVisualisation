@@ -36,7 +36,6 @@ from .stores import (
     # Multiobjective stores
     STN_MO_DATA,
     STN_MO_SERIES_LABELS,
-    MO_DATA_PPP,
 )
 
 __all__ = [
@@ -66,5 +65,4 @@ __all__ = [
     'AXIS_VALUES',
     'STN_MO_DATA',
     'STN_MO_SERIES_LABELS',
-    'MO_DATA_PPP',
 ]

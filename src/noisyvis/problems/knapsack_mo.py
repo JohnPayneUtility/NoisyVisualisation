@@ -97,6 +97,42 @@ def eval_noisy_kp_v1_mo_violation(individual, items_dict, capacity, noise_intens
         log_mo_eval(individual, objectives(value + clean1, weight + clean2), observed)
     return observed
 
+def noisy_mokp_v1(individual, items_dict, capacity, noise_intensity=0, noisy_objective=0, penalty=0):
+    noisy_objective = 1
+    penalty = 0
+    observed = eval_noisy_kp_v1_mo(individual, items_dict, capacity, noise_intensity, noisy_objective, penalty)
+    return observed
+
+def noisy_mokp_v2(individual, items_dict, capacity, noise_intensity=0, noisy_objective=0, penalty=0):
+    noisy_objective = 2
+    penalty = 0
+    observed = eval_noisy_kp_v1_mo(individual, items_dict, capacity, noise_intensity, noisy_objective, penalty)
+    return observed
+
+def noisy_mokp_both(individual, items_dict, capacity, noise_intensity=0, noisy_objective=0, penalty=0):
+    noisy_objective = 0
+    penalty = 0
+    observed = eval_noisy_kp_v1_mo(individual, items_dict, capacity, noise_intensity, noisy_objective, penalty)
+    return observed
+
+def noisy_mokp_violation_v1(individual, items_dict, capacity, noise_intensity=0, noisy_objective=0, penalty=0):
+    noisy_objective = 1
+    penalty = 0
+    observed = eval_noisy_kp_v1_mo_violation(individual, items_dict, capacity, noise_intensity, noisy_objective, penalty)
+    return observed
+
+def noisy_mokp_violation_v2(individual, items_dict, capacity, noise_intensity=0, noisy_objective=0, penalty=0):
+    noisy_objective = 2
+    penalty = 0
+    observed = eval_noisy_kp_v1_mo_violation(individual, items_dict, capacity, noise_intensity, noisy_objective, penalty)
+    return observed
+
+def noisy_mokp_violation_both(individual, items_dict, capacity, noise_intensity=0, noisy_objective=0, penalty=0):
+    noisy_objective = 0
+    penalty = 0
+    observed = eval_noisy_kp_v1_mo_violation(individual, items_dict, capacity, noise_intensity, noisy_objective, penalty)
+    return observed
+
 def countingOnesCountingZeros(individual, noise_intensity=0, noisy_objective=0):
     """
     Function to evaluate solutions to counting ones counting zeros

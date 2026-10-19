@@ -7,18 +7,18 @@ defaults:
 # EXPERIMENT SETTINGS
 experiment_name: "MO_test02"
 experiment_description: >
-  test of modified MoUMDA variant algorithms
+  test of revised MOKP problems
 
 hydra:
   mode: MULTIRUN
   sweeper:
     params:
-      +defaults/multiobjective/run: run_mo_test
-      +defaults/multiobjective/problems: kp10_mo_v1, kp10_mo_v1_violation
-      # +defaults/multiobjective/problems: kp10_mo_v1,kp10_mo_violation
+      # +defaults/multiobjective/run: run_mo_test
+      +defaults/multiobjective/run: run_mo_test_small
+      +defaults/multiobjective/problems: kp10_mo_v1, kp10_mo_v2, kp10_mo_both, kp10_mo_v1_violation, kp10_mo_v2_violation, kp10_mo_both_violation, kp20_mo_v1, kp20_mo_v2, kp20_mo_both, kp20_mo_v1_violation, kp20_mo_v2_violation, kp20_mo_both_violation
       # +defaults/multiobjective/algos: moumda_noduplicates,moumda_paretoarchive
-      # +defaults/multiobjective/algos: semo,nsga2
-      +defaults/multiobjective/algos: moumda_kmeans
-      problem.fitness_params.noise_intensity: 0,1,2
+      +defaults/multiobjective/algos: semo,nsga2,moumda
+      # +defaults/multiobjective/algos: moumda_kmeans
+      problem.fitness_params.noise_intensity: 0,1,2,4,8
   sweep:
     dir: data/outputs

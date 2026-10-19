@@ -26,6 +26,7 @@ from .styles import (
     MONOSPACE_STYLE,
 )
 from ..mo_frames import DEFAULT_STN_POV, DEFAULT_STN_VIEW, STN_POV_LABELS, STN_VIEW_LABELS
+from ...viz.plots.base import FRONT_KEYS
 from ...viz import (
     LON_SCATTER_AXIS_OPTIONS,
     LON_SCATTER_DEFAULT_X_AXIS,
@@ -782,7 +783,10 @@ def create_pareto_front_section():
                 {'label': 'Subplots (multi)', 'value': 'SubplotsMulti'},
                 {'label': 'Subplots (highlighted)', 'value': 'SubplotsHighlight'},
                 {'label': 'pareto animation', 'value': 'paretoAnimation'},
-                {'label': 'Noisy', 'value': 'Noisy'},
+                {'label': 'Noisy (noisy population vs clean population)', 'value': 'NoisyPopulationVsClean'},
+                {'label': 'Noisy (noisy archive vs clean archive)', 'value': 'NoisyArchiveVsClean'},
+                {'label': 'Noisy (noisy population vs noisy corrected population)',
+                 'value': 'NoisyPopulationVsCorrected'},
                 {'label': 'HV Vs Distance', 'value': 'IndVsDist'},
                 {'label': 'IGD Vs Distance', 'value': 'IGDVsDist'},
                 {'label': 'Progress per Movement', 'value': 'PPM'},
@@ -795,12 +799,10 @@ def create_pareto_front_section():
             style=DROPDOWN_STYLE
         ),
         dcc.Dropdown(
+            # the front every plot type except the "Noisy (A vs B)" ones draws or measures
             id='IndVsDist_IndType',
-            options=[
-                {'label': 'noisy HV', 'value': 'NoisyHV'},
-                {'label': 'Clean HV', 'value': 'CleanHV'}
-            ],
-            value='NoisyHV',
+            options=[{'label': label, 'value': front} for front, (*_, label) in FRONT_KEYS.items()],
+            value='noisy_population',
             clearable=False,
             style=DROPDOWN_STYLE
         ),
@@ -836,15 +838,15 @@ def create_pareto_front_section():
             value=5
         ),
         dcc.Checklist(
-            id='paretoHistoricalArchive',
-            options=[{'label': ' Historical passive archive', 'value': 'on'}],
-            value=[],
-            style={'display': 'inline-block', 'marginLeft': '20px'},
-        ),
-        dcc.Checklist(
             id='paretoAttainmentSurface',
             options=[{'label': ' Show attainment surface', 'value': 'on'}],
             value=['on'],
+            style={'display': 'inline-block', 'marginLeft': '20px'},
+        ),
+        dcc.Checklist(
+            id='paretoInvalidGridlines',
+            options=[{'label': ' Show invalid solution gridlines', 'value': 'on'}],
+            value=[],
             style={'display': 'inline-block', 'marginLeft': '20px'},
         ),
         dcc.Graph(id="plotParetoFront"),
@@ -1522,6 +1524,7 @@ def create_main_plot_section():
         list: List of main plot components.
     """
     return [
+        html.Div(id='plot-timing-info', style={'fontSize': '14px', 'color': '#555', 'margin': '4px 0'}),
         dcc.Graph(id='trajectory-plot'),
         html.H3("STN Stats"),
         html.Div(id='stn-stats-table'),

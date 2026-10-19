@@ -7,4 +7,4 @@ run:
   seed: 1
   num_runs: 10
   parallel: true
-  verbose_rate: 1000
+  verbose_rate: 0

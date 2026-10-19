@@ -106,18 +106,18 @@ CALLBACK_ORDER = ['..schematic-graph.figure...schematic-legend.children..',
  'lon-table-selected-pid-store.data',
  'LON_data.data',
  'STN_data.data',
- '..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_data.data...STN_MO_data.data...STN_MO_series_labels.data...MO_data_PPP.data..',
+ '..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_data.data...STN_MO_data.data...STN_MO_series_labels.data..',
  'mo_stn_pov.disabled',
  'run-print-info.style',
  'print_STN_series_labels.children',
  'axis-values.data',
  '..annotation-options.value...axes-text-scale.value...annotation-text-scale.value..',
- '..trajectory-plot.figure...run-print-info.children...stn-stats-table.children...lon-stats-table.children...lon-feas-error-scatter.figure...lon-selected-correlation.children...lon-feas-error-correlations.children..',
+ '..trajectory-plot.figure...run-print-info.children...stn-stats-table.children...lon-stats-table.children...lon-feas-error-scatter.figure...lon-selected-correlation.children...lon-feas-error-correlations.children...plot-timing-info.children..',
  'plotParetoFront.figure']
 
-CALLBACK_LIST_DIGEST = '303be5a20962088d0c53236349310a91ac8cdf0b1ccf283378b4075680b9ff48'
+CALLBACK_LIST_DIGEST = '33e561e122a1eecc48b38c24d2307dc50bd88a72d9c0657a0da85075a9e5082e'
 
-DEPENDENCIES_DIGEST = '89c89d78969d932eae2e1430f1beeb97a197463f9fecb85258c894dcc9d82985'
+DEPENDENCIES_DIGEST = '4168a5cddf8210b6ac778046664a0cc0fd5f78dd1f775b2cb8f4bd92d0294a7e'
 
 # Pareto tab options (deliberate amendment): updateParetoPlot gains the paretoHistoricalArchive and
 # paretoAttainmentSurface checklists (two new layout ids) and State STN_data, from which it builds any
@@ -136,18 +136,37 @@ DEPENDENCIES_DIGEST = '89c89d78969d932eae2e1430f1beeb97a197463f9fecb85258c894dcc
 # Node-size option (deliberate amendment): update_plot gains Input mo-stn-node-size (Multiobjective STN options'
 # Node size); re-captured: its contract entry, parse_callback_inputs' free-name hash, the dependency/callback-list/
 # layout digests and the layout ids. Its HTTP responses are unchanged (the probe's graphs are not multiobjective).
-CALLBACKS = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_data.data...STN_MO_data.data...STN_MO_series_labels.data...MO_data_PPP.data..': {'ast': 'ca21b235c787be431f1bae31e6a5c9ec463bbea77ca487f273da68d3de23fecc',
-                                                                                                                                                        'inputs': ['STN_data.data',
-                                                                                                                                                                   'mo_plot_type.value', 'mo_stn_pov.value'],
-                                                                                                                                                        'literals': '3aa4f9fb4f70802b889c7448372b04be96de5a4082615921caaffd1ea2ecae79',
-                                                                                                                                                        'module': 'dashboard/Dashboard.py',
-                                                                                                                                                        'name': 'process_STN_data',
-                                                                                                                                                        'order': 34,
-                                                                                                                                                        'params': ['stn_rows',
-                                                                                                                                                                   'mo_plot_type', 'mo_stn_pov',
-                                                                                                                                                                   'group_cols'],
-                                                                                                                                                        'prevent_initial_call': False,
-                                                                                                                                                        'state': []},
+# Pareto front types (deliberate amendment): updateParetoPlot reads the selected rows (Input STN_data) and its
+# controls, drawing the multi-objective STN's front types (mo_frames.pareto_*), and process_STN_data no longer
+# outputs MO_data_PPP (so its key loses that output; the frozen inventory maps the old key:
+# harness.dashboard_inventory.OUTPUT_CHANGES); the MO_data_PPP store and the paretoHistoricalArchive checklist
+# leave the layout. Re-captured: both contract entries, free names and HTTP responses, the chain, the callback
+# modules, the dependency/callback-list/layout digests and the layout ids. row_view's pin stays as it was.
+# Invalid-solution gridlines (deliberate amendment): updateParetoPlot gains Inputs paretoInvalidGridlines (a new
+# checklist beside paretoAttainmentSurface) and PID, and passes the GRIDLINE_PLOTS (Basic) the knapsack's
+# gridlines (knapsack_gridlines). Re-captured: its contract entry and free names, the dependency/callback-list/
+# layout digests and the layout ids. Its HTTP response is unchanged (the probe's rows are not multiobjective).
+# row_view's pin stays as it was.
+# Plot generation time (deliberate amendment): update_plot times the main plot (graph preparation, layout,
+# figure) and returns the text as a new last Output, plot-timing-info.children (a Div above trajectory-plot),
+# so its key moves (the frozen inventory maps the old key: harness.dashboard_inventory.OUTPUT_CHANGES).
+# The probe masks the wall-clock text (TIMING_RE) and records which props carried it. Re-captured: its
+# contract entry (key, ast, literals), free names (time), HTTP response and chain entry, the callback modules,
+# the dependency/callback-list/layout digests and the layout ids. row_view's pin stays as it was.
+CALLBACKS = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_data.data...STN_MO_data.data...STN_MO_series_labels.data..': {'ast': 'd8e75dff20267c56fb721ea8aa0ddc16dc48df81b4e8bd1a3c3a40fb9b823386',
+                                                                                                                                     'inputs': ['STN_data.data',
+                                                                                                                                                'mo_plot_type.value',
+                                                                                                                                                'mo_stn_pov.value'],
+                                                                                                                                     'literals': '5e089069d393f9a312600c287ce5319065ff511b15388dbe4e0a61f051f83541',
+                                                                                                                                     'module': 'dashboard/callbacks/graph_data.py',
+                                                                                                                                     'name': 'process_STN_data',
+                                                                                                                                     'order': 34,
+                                                                                                                                     'params': ['stn_rows',
+                                                                                                                                                'mo_plot_type',
+                                                                                                                                                'mo_stn_pov',
+                                                                                                                                                'group_cols'],
+                                                                                                                                     'prevent_initial_call': False,
+                                                                                                                                     'state': []},
  '..advanced-misjudgement-algo-dropdown.options...advanced-misjudgement-algo-dropdown.value..': {'ast': '36c7684358ce5e5590b28e5d48051f0f611a2bc8391980e0edb12cc010ca52e6',
                                                                                                  'inputs': ['plot_2d_data.data'],
                                                                                                  'literals': '24fd5cbee18b0697ae6bc6bc33cbbf437090948e4cd663a7a8600487271f6345',
@@ -191,7 +210,7 @@ CALLBACKS = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitness
                                                                        'boxplot_values'],
                                                             'prevent_initial_call': False,
                                                             'state': []},
- '..trajectory-plot.figure...run-print-info.children...stn-stats-table.children...lon-stats-table.children...lon-feas-error-scatter.figure...lon-selected-correlation.children...lon-feas-error-correlations.children..': {'ast': '9b9bf0e187d11a923db0e9deb50aee43b099a7e0cfdad956a4b4d2c52321b810',
+ '..trajectory-plot.figure...run-print-info.children...stn-stats-table.children...lon-stats-table.children...lon-feas-error-scatter.figure...lon-selected-correlation.children...lon-feas-error-correlations.children...plot-timing-info.children..': {'ast': '41e30fb1c7371384a367ed4476f4e57209d653effc74e8d9833663c6122a8bde',
                                                                                                                                                                                                                            'inputs': ['optimum.data',
                                                                                                                                                                                                                                       'PID.data',
                                                                                                                                                                                                                                       'opt_goal.data',
@@ -247,7 +266,7 @@ CALLBACKS = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitness
                                                                                                                                                                                                                                       'lon-scatter-y-axis.value',
                                                                                                                                                                                                                                       'lon-scatter-plot-style.value',
                                                                                                                                                                                                                                       'lon-scatter-multi-noise.value', 'mo-stn-node-size.value'],
-                                                                                                                                                                                                                           'literals': 'dbbf2708106d34f4a05fe506e8200d8bc496b0481628775d43dcf97605fb60a7',
+                                                                                                                                                                                                                           'literals': '5c4139dd4948f0dc5901ac507ff1e0dcd77434391ef6860b80bdb7162381e3ab',
                                                                                                                                                                                                                            'module': 'dashboard/Dashboard.py',
                                                                                                                                                                                                                            'name': 'update_plot',
                                                                                                                                                                                                                            'order': 40,
@@ -664,32 +683,31 @@ CALLBACKS = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitness
                                                    'sci_value'],
                                         'prevent_initial_call': False,
                                         'state': []},
- 'plotParetoFront.figure': {'ast': 'dc6bb06d84ea0919672708cb884d1b0a2cf723204bfd5260e69a8fb7406390dd',
-                            'inputs': ['MO_data_PPP.data',
-                                       'STN_MO_series_labels.data',
+ 'plotParetoFront.figure': {'ast': '33217672c62a93c9849a753189ebdcca5e317d6184f8b794b03725fb947efb2b',
+                            'inputs': ['STN_data.data',
                                        'paretoFrontPlotType.value',
                                        'IndVsDist_IndType.value',
                                        'IndVsDist_DistType.value',
                                        'paretoPlotNumRuns.value',
                                        'paretoPlotWindowSize.value',
-                                       'paretoHistoricalArchive.value',
-                                       'paretoAttainmentSurface.value'],
-                            'literals': '555e6961a397e618fea78765cad3c058e0d64a0ba8696b326b36c0ac1c226f7b',
-                            'module': 'dashboard/Dashboard.py',
+                                       'paretoAttainmentSurface.value',
+                                       'paretoInvalidGridlines.value',
+                                       'PID.data'],
+                            'literals': '607d132a990657f1b14ae481786879e074da5d3d1c753c4f17ff6888bd4f4641',
+                            'module': 'dashboard/callbacks/pareto.py',
                             'name': 'updateParetoPlot',
                             'order': 41,
-                            'params': ['frontdata',
-                                       'series_labels',
+                            'params': ['stn_rows',
                                        'paretoFrontPlotType',
                                        'IndVsDist_IndType',
                                        'IndVsDist_DistType',
                                        'nruns',
                                        'windowSize',
-                                       'historical',
                                        'attainment',
-                                       'stn_rows'],
+                                       'invalid_gridlines',
+                                       'pid'],
                             'prevent_initial_call': False,
-                            'state': ['STN_data.data']},
+                            'state': []},
  'plot_2d_data.data': {'ast': 'ad7f46051502e6864be95a64817a6a4646cdcb1514afcfeb25e7ae1897fc1516',
                        'inputs': ['table2.derived_virtual_data', 'penalty-filter-dropdown.value'],
                        'literals': 'f5a8360cf0142d8e2f58bebc2957497cbc67159c1e9eedf9770dd8d95ade57a5',
@@ -790,7 +808,7 @@ CONFIG = {'assets_folder': 'src/noisyvis/dashboard/assets',
  'url_base_pathname': None,
  'use_pages': False}
 
-LAYOUT_DIGEST = '87aefaead93166ee1349125195d7821058b2f9d646ccd9f88017e30f0dc4d25e'
+LAYOUT_DIGEST = 'fdc94d9835b71e74c609c7ba0fe1ed55b363a521704006e6a5cae23cfe6dab6b'
 
 LAYOUT_IDS = ['2DPlotTabContent',
  '2DPlotTabSelection',
@@ -808,7 +826,6 @@ LAYOUT_IDS = ['2DPlotTabContent',
  'LON_edge_opacity',
  'LON_node_opacity',
  'LON_table',
- 'MO_data_PPP',
  'NLON_fit_func',
  'NLON_intensity',
  'NLON_penalty',
@@ -874,12 +891,13 @@ LAYOUT_IDS = ['2DPlotTabContent',
  'options',
  'paretoAttainmentSurface',
  'paretoFrontPlotType',
- 'paretoHistoricalArchive',
+ 'paretoInvalidGridlines',
  'paretoPlotNumRuns',
  'paretoPlotWindowSize',
  'penalty-filter-dropdown',
  'performance-summary-table',
  'plot-theme',
+ 'plot-timing-info',
  'plotParetoFront',
  'plotType',
  'plot_2d_data',
@@ -920,19 +938,20 @@ GLOBALS = {'bindings': {'noisyvis.dashboard.Dashboard:LON_display_columns': 'lon
 
 SCRIPTS = {'noisyvis-dashboard': 'ModuleNotFoundError', 'noisyvis-mlflow': 'ModuleNotFoundError'}
 
-FREE_NAMES = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_data.data...STN_MO_data.data...STN_MO_series_labels.data...MO_data_PPP.data..': {'df': {'attr': 'df',
-                                                                                                                                                               'kind': 'data'},
-                                                                                                                                                        'front_entries': {'ast': 'ad3fb7d2687afa26512eefa31721da5002af9e64f9c1a9d00d2d660b78c21606',
-                                                                                                                                                                          'kind': 'callable',
-                                                                                                                                                                          'name': 'front_entries'},
-                                                                                                                                                        'pd': {'kind': 'module',
-                                                                                                                                                               'name': 'pandas'},
-                                                                                                                                                        'row_view': {'ast': '1a7234f1b9afe6eb58b9383f9be8b7ddd014355129f514c435c804027ba34f32',
-                                                                                                                                                                     'kind': 'callable',
-                                                                                                                                                                     'name': 'row_view'},
-                                                                                                                                                        'stn_view_entries': {'ast': 'a4290e5325f11055b155e0ec05f58c3fffddb0bb70232f2de3549a6836444523', 'kind': 'callable', 'name': 'stn_view_entries'},
-    'DEFAULT_STN_POV': {'canon': 'algo', 'kind': 'value'},
-    'DEFAULT_STN_VIEW': {'canon': 'population_noisy', 'kind': 'value'}},
+FREE_NAMES = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_data.data...STN_MO_data.data...STN_MO_series_labels.data..': {'DEFAULT_STN_POV': {'canon': 'algo',
+                                                                                                                                                         'kind': 'value'},
+                                                                                                                                     'DEFAULT_STN_VIEW': {'canon': 'population_noisy',
+                                                                                                                                                          'kind': 'value'},
+                                                                                                                                     'df': {'attr': 'df',
+                                                                                                                                            'kind': 'data'},
+                                                                                                                                     'pd': {'kind': 'module',
+                                                                                                                                            'name': 'pandas'},
+                                                                                                                                     'row_view': {'ast': '1a7234f1b9afe6eb58b9383f9be8b7ddd014355129f514c435c804027ba34f32',
+                                                                                                                                                  'kind': 'callable',
+                                                                                                                                                  'name': 'row_view'},
+                                                                                                                                     'stn_view_entries': {'ast': 'a4290e5325f11055b155e0ec05f58c3fffddb0bb70232f2de3549a6836444523',
+                                                                                                                                                          'kind': 'callable',
+                                                                                                                                                          'name': 'stn_view_entries'}},
  '..advanced-misjudgement-algo-dropdown.options...advanced-misjudgement-algo-dropdown.value..': {'pd': {'kind': 'module',
                                                                                                         'name': 'pandas'}},
  '..annotation-options.value...axes-text-scale.value...annotation-text-scale.value..': {'dash': {'kind': 'module',
@@ -947,7 +966,7 @@ FREE_NAMES = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnes
                                                             '_build_schematic_legend': {'ast': '513e5c5d45b66c64432fbf71917d354787c60b3850df4cc0bbb82304d2cf0977',
                                                                                         'kind': 'callable',
                                                                                         'name': '_build_schematic_legend'}},
- '..trajectory-plot.figure...run-print-info.children...stn-stats-table.children...lon-stats-table.children...lon-feas-error-scatter.figure...lon-selected-correlation.children...lon-feas-error-correlations.children..': {'LON_SCATTER_AXIS_LABELS': {'canon': {'dict': [['neigh_feas',
+ '..trajectory-plot.figure...run-print-info.children...stn-stats-table.children...lon-stats-table.children...lon-feas-error-scatter.figure...lon-selected-correlation.children...lon-feas-error-correlations.children...plot-timing-info.children..': {'LON_SCATTER_AXIS_LABELS': {'canon': {'dict': [['neigh_feas',
                                                                                                                                                                                                                                                                            'Neighbourhood '
                                                                                                                                                                                                                                                                            'Feasibility'],
                                                                                                                                                                                                                                                                           ['error',
@@ -1097,7 +1116,9 @@ FREE_NAMES = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnes
                                                                                                                                                                                                                                                           'name': 'select_top_runs_by_fitness'},
                                                                                                                                                                                                                            'style_nodes': {'ast': 'c5c2d640448f6ab7dd351810746c9c323f54cd8182a301433bf482903152f02b',
                                                                                                                                                                                                                                            'kind': 'callable',
-                                                                                                                                                                                                                                           'name': 'style_nodes'}},
+                                                                                                                                                                                                                                           'name': 'style_nodes'},
+                                                                                                                                                                                                                           'time': {'kind': 'module',
+                                                                                                                                                                                                                                           'name': 'time'}},
  '2DBoxAdvancedMisjudgementsSO.figure': {'_cap_noise': {'ast': '59cf9b3bc8ad75a2deb32ca733d18abd1e000007da2f99d36404c3448c5c5f34',
                                                         'kind': 'callable',
                                                         'name': '_cap_noise'},
@@ -1335,31 +1356,73 @@ FREE_NAMES = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnes
                                         'dash_table': {'kind': 'module', 'name': 'dash.dash_table'},
                                         'html': {'kind': 'module', 'name': 'dash.html'},
                                         'pd': {'kind': 'module', 'name': 'pandas'}},
- 'plotParetoFront.figure': {'FRONT_PLOTS': {'canon': {'tuple': ['Basic',
+ 'plotParetoFront.figure': {'FRONT_KEYS': {'canon': {'dict': [['noisy_population',
+                                                               {'tuple': ['front_solutions',
+                                                                          'front_fitnesses',
+                                                                          'front_hypervolume',
+                                                                          'noisy population']}],
+                                                              ['corrected_noisy',
+                                                               {'tuple': ['front_solutions',
+                                                                          'front_fitnesses',
+                                                                          'front_hypervolume',
+                                                                          'noisy population corrected']}],
+                                                              ['clean_population',
+                                                               {'tuple': ['front_solutions',
+                                                                          'front_fitnesses',
+                                                                          'front_hypervolume',
+                                                                          'clean population']}],
+                                                              ['noisy_archive',
+                                                               {'tuple': ['front_solutions',
+                                                                          'front_fitnesses',
+                                                                          'front_hypervolume',
+                                                                          'historical archive noisy']}],
+                                                              ['clean_archive',
+                                                               {'tuple': ['front_solutions',
+                                                                          'front_fitnesses',
+                                                                          'front_hypervolume',
+                                                                          'historical archive clean']}]]},
+                                           'kind': 'value'},
+                            'FRONT_PLOTS': {'canon': {'tuple': ['Basic',
                                                                 'Subplots',
                                                                 'SubplotsMulti',
                                                                 'SubplotsHighlight',
                                                                 'paretoAnimation']},
                                             'kind': 'value'},
-                            'UNSUPPORTED_METRIC_TITLE': {'canon': 'Select '
-                                                                  'Noisy HV or '
-                                                                  'Clean HV',
-                                                         'kind': 'value'},
-                            '_front_of': {'ast': 'b273a675b29419999694495df25e3b85b841a79086f4f3385a2d4dca23f362f9',
-                                          'kind': 'callable',
-                                          'name': '_front_of'},
+                            'GRIDLINE_PLOTS': {'canon': {'tuple': ['Basic']}, 'kind': 'value'},
+                            'PARETO_NOISY_PAIRS': {'canon': {'dict': [['NoisyPopulationVsClean',
+                                                                       {'tuple': ['noisy_population',
+                                                                                  'clean_population']}],
+                                                                      ['NoisyArchiveVsClean',
+                                                                       {'tuple': ['noisy_archive',
+                                                                                  'clean_archive']}],
+                                                                      ['NoisyPopulationVsCorrected',
+                                                                       {'tuple': ['noisy_population',
+                                                                                  'corrected_noisy']}]]},
+                                                   'kind': 'value'},
+                            'UNSUPPORTED_METRIC_TITLE': {'canon': 'Select a front type', 'kind': 'value'},
                             'create_empty_figure': {'ast': '54f395099e0a2bc30d96a7495fa3606f5645e97415071c788e0eab006f798a1c',
                                                     'kind': 'callable',
                                                     'name': 'create_empty_figure'},
                             'df': {'attr': 'df', 'kind': 'data'},
-                            'front_runs': {'ast': '17a5565b0405a4e28aa8102c73b3c8a0cddfee0aae0b3a0196a05abbfc8f7274',
-                                           'kind': 'callable',
-                                           'name': 'front_runs'},
                             'get_pareto_plot': {'ast': '8a660705f72a757524625733cf214685af2dbe09d7c2bf1d58825c804ef4b1fc',
                                                 'kind': 'callable',
                                                 'name': 'get_pareto_plot'},
-                            'go': {'kind': 'module',
-                                   'name': 'plotly.graph_objects'}},
+                            'go': {'kind': 'module', 'name': 'plotly.graph_objects'},
+                            'knapsack_gridlines': {'ast': '57234950d1afa32e3ba2c81aa45da84d507b86c291c6acb64b0e5c871145b95f',
+                                                   'kind': 'callable',
+                                                   'name': 'knapsack_gridlines'},
+                            'pareto_front_entries': {'ast': '26da22b3b01c547efcc9b651e6b0dc13f595141432227f70f6e9234f2ea31215',
+                                                     'kind': 'callable',
+                                                     'name': 'pareto_front_entries'},
+                            'pareto_pair_entries': {'ast': 'abfc9fffa38d60364229eeb818434332251238c8ee9af9dcaac6e9ba3b51f637',
+                                                    'kind': 'callable',
+                                                    'name': 'pareto_pair_entries'},
+                            'pareto_runs': {'ast': '72a5cdcf4ed9133f0b79de0b4a5c11f3c0c72f67916095ec717f817af3797fcf',
+                                            'kind': 'callable',
+                                            'name': 'pareto_runs'},
+                            'selected_front': {'ast': '2359760573bc7df4d74fd0ded254a2149313bb2de3cd79e494d4f4e4af70d609',
+                                               'kind': 'callable',
+                                               'name': 'selected_front'}},
  'plot_2d_data.data': {'_filter_by_table2_selection': {'ast': '23b8ec5ec7423f27a5e7e2e9b6515e934feed0eea26b8f7e88407d9b42816d78',
                                                        'kind': 'callable',
                                                        'name': '_filter_by_table2_selection'},
@@ -1387,16 +1450,15 @@ FREE_NAMES = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnes
  'table2-selected-store.data': {},
  'table2.data': {'pd': {'kind': 'module', 'name': 'pandas'}}}
 
-HTTP = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_data.data...STN_MO_data.data...STN_MO_series_labels.data...MO_data_PPP.data..': {'digest': 'e90fb364b896a075eb3b1d80c1017d3e2bc28152317c3c4f1f51d9162065e0d0',
-                                                                                                                                                        'length': 3263,
-                                                                                                                                                        'props': ['MO_data_PPP.data',
-                                                                                                                                                                  'STN_MO_data.data',
-                                                                                                                                                                  'STN_MO_series_labels.data',
-                                                                                                                                                                  'STN_data_processed.data',
-                                                                                                                                                                  'STN_series_labels.data',
-                                                                                                                                                                  'noisy_fitnesses_data.data'],
-                                                                                                                                                        'status': 200,
-                                                                                                                                                        'traces': {}},
+HTTP = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_data.data...STN_MO_data.data...STN_MO_series_labels.data..': {'digest': '0c1e9c9d7f465048619c6db1c8e1e7426d438814730edc0b553ea58372f80350',
+                                                                                                                                     'length': 2734,
+                                                                                                                                     'props': ['STN_MO_data.data',
+                                                                                                                                               'STN_MO_series_labels.data',
+                                                                                                                                               'STN_data_processed.data',
+                                                                                                                                               'STN_series_labels.data',
+                                                                                                                                               'noisy_fitnesses_data.data'],
+                                                                                                                                     'status': 200,
+                                                                                                                                     'traces': {}},
  '..advanced-misjudgement-algo-dropdown.options...advanced-misjudgement-algo-dropdown.value..': {'digest': 'edbdee8571013412dedd005f57baccd2bf3a29782a61db11cb8db34f786d8ff3',
                                                                                                  'length': 228,
                                                                                                  'props': ['advanced-misjudgement-algo-dropdown.options',
@@ -1422,16 +1484,19 @@ HTTP = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_da
                                                                       'schematic-legend.children'],
                                                             'status': 200,
                                                             'traces': {'schematic-graph.figure': 27}},
- '..trajectory-plot.figure...run-print-info.children...stn-stats-table.children...lon-stats-table.children...lon-feas-error-scatter.figure...lon-selected-correlation.children...lon-feas-error-correlations.children..': {'digest': '304b729b67c2db797db35e407e93a45cd539069e33baa56dbd0cc46d9682213f',
-                                                                                                                                                                                                                           'length': 15769,
+ '..trajectory-plot.figure...run-print-info.children...stn-stats-table.children...lon-stats-table.children...lon-feas-error-scatter.figure...lon-selected-correlation.children...lon-feas-error-correlations.children...plot-timing-info.children..': {'digest': '8dda3387506f908f73b15eec19c2f3f4673455de90aba43c94cdca0b7af4f40b',
+                                                                                                                                                                                                                           'length': 15835,
                                                                                                                                                                                                                            'props': ['lon-feas-error-correlations.children',
                                                                                                                                                                                                                                      'lon-feas-error-scatter.figure',
                                                                                                                                                                                                                                      'lon-selected-correlation.children',
                                                                                                                                                                                                                                      'lon-stats-table.children',
+                                                                                                                                                                                                                                     'plot-timing-info.children',
                                                                                                                                                                                                                                      'run-print-info.children',
                                                                                                                                                                                                                                      'stn-stats-table.children',
                                                                                                                                                                                                                                      'trajectory-plot.figure'],
                                                                                                                                                                                                                            'status': 200,
+                                                                                                                                                                                                                           'timing_props': ['plot-timing-info.children'],
+                                                                                                                                                                                                                           'timings': 1,
                                                                                                                                                                                                                            'traces': {'lon-feas-error-scatter.figure': 0,
                                                                                                                                                                                                                                       'trajectory-plot.figure': 3}},
  '2DBoxAdvancedMisjudgementsSO.figure': {'digest': '16f4da18247a4e2e9d653ff3246793512649c8b324191d47d221255eda1220bf',
@@ -1561,8 +1626,8 @@ HTTP = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_da
                                         'props': ['performance-summary-table.children'],
                                         'status': 200,
                                         'traces': {}},
- 'plotParetoFront.figure': {'digest': '3030a4e89fe1afbe7bb3a822a0697841acf1564d02c004742749f590a6a51657',
-                            'length': 7087,
+ 'plotParetoFront.figure': {'digest': '593828a3ba90b61a0b1808bfe337fee05127c1a2c6163646abf6498ef21af17d',
+                            'length': 7079,
                             'props': ['plotParetoFront.figure'],
                             'status': 200,
                             'traces': {'plotParetoFront.figure': 0}},
@@ -1612,16 +1677,15 @@ HTTP = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_da
                  'status': 200,
                  'traces': {}}}
 
-CHAIN = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_data.data...STN_MO_data.data...STN_MO_series_labels.data...MO_data_PPP.data..': {'digest': '187231ddee9a22c9a4ad3542f6027a92cec16d11508c9f82c50d81388ee094af',
-                                                                                                                                                        'length': 1287,
-                                                                                                                                                        'props': ['MO_data_PPP.data',
-                                                                                                                                                                  'STN_MO_data.data',
-                                                                                                                                                                  'STN_MO_series_labels.data',
-                                                                                                                                                                  'STN_data_processed.data',
-                                                                                                                                                                  'STN_series_labels.data',
-                                                                                                                                                                  'noisy_fitnesses_data.data'],
-                                                                                                                                                        'status': 200,
-                                                                                                                                                        'traces': {}},
+CHAIN = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_data.data...STN_MO_data.data...STN_MO_series_labels.data..': {'digest': 'f64cab2f4ed7684649b5b6190fd7ce5145b94ba5528f9d63185e1691dac7f796',
+                                                                                                                                     'length': 1259,
+                                                                                                                                     'props': ['STN_MO_data.data',
+                                                                                                                                               'STN_MO_series_labels.data',
+                                                                                                                                               'STN_data_processed.data',
+                                                                                                                                               'STN_series_labels.data',
+                                                                                                                                               'noisy_fitnesses_data.data'],
+                                                                                                                                     'status': 200,
+                                                                                                                                     'traces': {}},
  '..optimum.data...PID.data...opt_goal.data...fit_func_store.data..': {'digest': 'e8020fbd3d15bc0869ed50644fa2516952bb9f11cbfa0d550f4fab54cfbdbc4c',
                                                                        'length': 161,
                                                                        'props': ['PID.data',
@@ -1630,16 +1694,19 @@ CHAIN = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_d
                                                                                  'optimum.data'],
                                                                        'status': 200,
                                                                        'traces': {}},
- '..trajectory-plot.figure...run-print-info.children...stn-stats-table.children...lon-stats-table.children...lon-feas-error-scatter.figure...lon-selected-correlation.children...lon-feas-error-correlations.children..': {'digest': 'b972b1a6b94c2b2615ddf4566507ba87135e890afc4648d62ed64e3c2d31a8b0',
-                                                                                                                                                                                                                           'length': 23610,
+ '..trajectory-plot.figure...run-print-info.children...stn-stats-table.children...lon-stats-table.children...lon-feas-error-scatter.figure...lon-selected-correlation.children...lon-feas-error-correlations.children...plot-timing-info.children..': {'digest': 'fcec1574196e8f578f7d713cd20db9da48239560e5e5491a0f45db6882679ea2',
+                                                                                                                                                                                                                           'length': 23676,
                                                                                                                                                                                                                            'props': ['lon-feas-error-correlations.children',
                                                                                                                                                                                                                                      'lon-feas-error-scatter.figure',
                                                                                                                                                                                                                                      'lon-selected-correlation.children',
                                                                                                                                                                                                                                      'lon-stats-table.children',
+                                                                                                                                                                                                                                     'plot-timing-info.children',
                                                                                                                                                                                                                                      'run-print-info.children',
                                                                                                                                                                                                                                      'stn-stats-table.children',
                                                                                                                                                                                                                                      'trajectory-plot.figure'],
                                                                                                                                                                                                                            'status': 200,
+                                                                                                                                                                                                                           'timing_props': ['plot-timing-info.children'],
+                                                                                                                                                                                                                           'timings': 1,
                                                                                                                                                                                                                            'traces': {'lon-feas-error-scatter.figure': 0,
                                                                                                                                                                                                                                       'trajectory-plot.figure': 17}},
  'LON_data.data': {'digest': 'e08ca5a27bc9265bff6e314ce09db8d5442e26667397c57c1641ea07ea297c4e',
@@ -3417,12 +3484,12 @@ STATEMENTS = {'app/app.py': [{'ast': '83bbd18258b8f5aa841b8d4d088a2dca8eed99d624
                              'module': 'dataio/transformers.py',
                              'name': 'get_lon_display_columns'}]}
 
-CALLBACK_MODULES = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_data.data...STN_MO_data.data...STN_MO_series_labels.data...MO_data_PPP.data..': 'dashboard/callbacks/graph_data.py',
+CALLBACK_MODULES = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_data.data...STN_MO_data.data...STN_MO_series_labels.data..': 'dashboard/callbacks/graph_data.py',
  '..advanced-misjudgement-algo-dropdown.options...advanced-misjudgement-algo-dropdown.value..': 'dashboard/callbacks/performance.py',
  '..annotation-options.value...axes-text-scale.value...annotation-text-scale.value..': 'dashboard/callbacks/visualization.py',
  '..optimum.data...PID.data...opt_goal.data...fit_func_store.data..': 'dashboard/callbacks/selection.py',
  '..schematic-graph.figure...schematic-legend.children..': 'dashboard/callbacks/schematic.py',
- '..trajectory-plot.figure...run-print-info.children...stn-stats-table.children...lon-stats-table.children...lon-feas-error-scatter.figure...lon-selected-correlation.children...lon-feas-error-correlations.children..': 'dashboard/callbacks/visualization.py',
+ '..trajectory-plot.figure...run-print-info.children...stn-stats-table.children...lon-stats-table.children...lon-feas-error-scatter.figure...lon-selected-correlation.children...lon-feas-error-correlations.children...plot-timing-info.children..': 'dashboard/callbacks/visualization.py',
  '2DBoxAdvancedMisjudgementsSO.figure': 'dashboard/callbacks/performance.py',
  '2DBoxPlot.figure': 'dashboard/callbacks/performance.py',
  '2DBoxPlotEvalsSO.figure': 'dashboard/callbacks/performance.py',
@@ -3644,6 +3711,8 @@ REMOVED_IMPORTS = (
     ("from", "noisyvis.problems.knapsack", "*", None),
     ("from", "noisyvis.problems.continuous", "*", None),
     ("from", "noisyvis.common.embedding", "*", None),
+    # Pareto front types (deliberate amendment): the MO_data_PPP store is gone, and with it its id constant
+    ("from", "noisyvis.dashboard.layout.stores", "MO_DATA_PPP", None),
 )
 
 # The four names that Stage 11 rewrites onto explicit imports, with the module that supplies them.
@@ -3671,10 +3740,15 @@ ALLOWED_CHANGES = {
      "cb|..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_data.data...STN_MO_data.data..."
      "STN_MO_series_labels.data...MO_data_PPP.data.."): "builds the MO plot data from mo_record via MORunView",
     # Node-size option (deliberate amendment): update_plot takes the Multiobjective STN options' Node size.
+    # Plot generation time (deliberate amendment): it also returns the main plot's generation time.
     ("dashboard/Dashboard.py",
      "cb|..trajectory-plot.figure...run-print-info.children...stn-stats-table.children...lon-stats-table.children..."
      "lon-feas-error-scatter.figure...lon-selected-correlation.children...lon-feas-error-correlations.children.."):
-        "takes Input mo-stn-node-size and passes it to parse_callback_inputs as mo_node_size",
+        "takes Input mo-stn-node-size and passes it to parse_callback_inputs as mo_node_size; times the "
+        "main plot's stages and returns the text as Output plot-timing-info",
+    # Pareto front types (deliberate amendment): the Pareto tab draws the multi-objective STN's front types.
+    ("dashboard/Dashboard.py", "cb|plotParetoFront.figure"):
+        "reads the selected rows and draws the selected front type (or a Noisy type's two fronts)",
 }
 
 # `dataio.__all__` is the one structural deletion: a package export list, with no consumer, for a
@@ -3692,7 +3766,7 @@ PARENTS_ANCHORS = ("results/paths.py",)
 ORCHESTRATOR_OUTPUTS = ("trajectory-plot.figure", "run-print-info.children",
                         "stn-stats-table.children", "lon-stats-table.children",
                         "lon-feas-error-scatter.figure", "lon-selected-correlation.children",
-                        "lon-feas-error-correlations.children")
+                        "lon-feas-error-correlations.children", "plot-timing-info.children")
 ORCHESTRATOR_INPUTS = ("STN_data_processed.data", "STN_MO_data.data", "LON_data.data")
 
 
@@ -3730,6 +3804,7 @@ import importlib.util
 import inspect
 import json
 import os
+import re
 import sys
 import textwrap
 from pathlib import Path
@@ -4128,7 +4203,6 @@ def build_values(data):
         "STN_series_labels.data": [],
         "STN_MO_data.data": [],
         "STN_MO_series_labels.data": [],
-        "MO_data_PPP.data": [],
         "noisy_fitnesses_data.data": [],
         "mo_plot_type.value": "population_noisy",
         "mo_stn_pov.value": "algo",
@@ -4205,6 +4279,12 @@ def build_values(data):
     return values
 
 
+# update_plot reports its wall-clock generation time: exactly this format is masked before hashing.
+TIMING_RE = re.compile(r"Time to generate plot: \d+\.\d{2} s \(graph preparation: \d+\.\d{2} s, "
+                       r"layout: \d+\.\d{2} s, figure: \d+\.\d{2} s\)")
+TIMING_MASK = "Time to generate plot: <masked>"
+
+
 def call(client, spec, values):
     """One `/_dash-update-component` POST, exactly as the browser makes it."""
     output = spec["output"]
@@ -4220,11 +4300,17 @@ def call(client, spec, values):
         "changedPropIds": [f'{spec["inputs"][0]["id"]}.{spec["inputs"][0]["property"]}'],
     }
     response = client.post("/_dash-update-component", json=body)
-    text = response.get_data(as_text=True)
+    text, timings = TIMING_RE.subn(TIMING_MASK, response.get_data(as_text=True))
     entry = {"status": response.status_code}
     payload = None
     if response.status_code == 200:
         payload = json.loads(text)
+        if timings:  # which props carried the timing: it must stay outside the figure
+            entry["timings"] = timings
+            entry["timing_props"] = sorted(f"{cid}.{prop}"
+                                           for cid, props in payload.get("response", {}).items()
+                                           for prop, value in props.items()
+                                           if TIMING_MASK in json.dumps(value))
         entry["digest"] = digest(payload)
         entry["props"] = sorted(f"{cid}.{prop}"
                                 for cid, props in payload.get("response", {}).items()
@@ -4253,11 +4339,12 @@ CHAIN = ["data-problem-specific.data",
          "plot_2d_data.data",
          "STN_data.data",
          "..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_data.data..."
-         "STN_MO_data.data...STN_MO_series_labels.data...MO_data_PPP.data..",
+         "STN_MO_data.data...STN_MO_series_labels.data..",
          "LON_data.data",
          "..trajectory-plot.figure...run-print-info.children...stn-stats-table.children..."
          "lon-stats-table.children...lon-feas-error-scatter.figure..."
-         "lon-selected-correlation.children...lon-feas-error-correlations.children.."]
+         "lon-selected-correlation.children...lon-feas-error-correlations.children..."
+         "plot-timing-info.children.."]
 
 CHAIN_FEEDS = {
     "data-problem-specific.data": [("data-problem-specific", "data")],
@@ -4623,6 +4710,9 @@ def test_shared_graph_orchestrator_is_single(app_probe):
     )
     figure = app_probe["chain"][orchestrator]["traces"]["trajectory-plot.figure"]
     assert figure == CHAIN[orchestrator]["traces"]["trajectory-plot.figure"] > 0
+    # The generation time is dashboard text above the plot, never part of the figure.
+    response = app_probe["chain"][orchestrator]
+    assert (response.get("timings"), response.get("timing_props")) == (1, ["plot-timing-info.children"])
 
 
 def test_callback_free_names_resolve(app_probe):

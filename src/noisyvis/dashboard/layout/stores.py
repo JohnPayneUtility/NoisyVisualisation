@@ -33,7 +33,6 @@ AXIS_VALUES = "axis-values"
 # Multiobjective data stores
 STN_MO_DATA = "STN_MO_data"
 STN_MO_SERIES_LABELS = "STN_MO_series_labels"
-MO_DATA_PPP = "MO_data_PPP"
 
 
 def create_selection_stores():
@@ -83,7 +82,6 @@ def create_multiobjective_stores():
     return [
         dcc.Store(id=STN_MO_DATA, data=[]),
         dcc.Store(id=STN_MO_SERIES_LABELS, data=[]),
-        dcc.Store(id=MO_DATA_PPP, data=[]),
     ]
 
 

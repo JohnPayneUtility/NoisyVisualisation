@@ -87,6 +87,31 @@ RENAMES = {
     "2DBoxPlot.figure": "display_box_so",
 }
 
+# Callbacks whose outputs changed deliberately after PRE_STAGE_11, so their key (the output id) moved: the
+# frozen key -> the current one. The statement must still be found exactly once, under its current key; its
+# body change is governed as any other (test_dashboard_package.ALLOWED_CHANGES).
+OUTPUT_CHANGES = {
+    # The Pareto restructuring: process_STN_data no longer outputs MO_data_PPP (the Pareto tab builds its fronts)
+    "..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_data.data...STN_MO_data.data..."
+    "STN_MO_series_labels.data...MO_data_PPP.data..":
+        "..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_data.data...STN_MO_data.data..."
+        "STN_MO_series_labels.data..",
+    # Plot generation time: update_plot also outputs the main plot's generation time (plot-timing-info)
+    "..trajectory-plot.figure...run-print-info.children...stn-stats-table.children...lon-stats-table.children..."
+    "lon-feas-error-scatter.figure...lon-selected-correlation.children...lon-feas-error-correlations.children..":
+        "..trajectory-plot.figure...run-print-info.children...stn-stats-table.children...lon-stats-table.children..."
+        "lon-feas-error-scatter.figure...lon-selected-correlation.children...lon-feas-error-correlations.children..."
+        "plot-timing-info.children..",
+}
+
+
+def current_key(key: tuple) -> tuple:
+    """Where a frozen statement key is found now (OUTPUT_CHANGES; every other key is unchanged)."""
+    if key[0] == "cb" and key[1] in OUTPUT_CHANGES:
+        return ("cb", OUTPUT_CHANGES[key[1]])
+    return key
+
+
 MAIN_TEST = "__name__ == '__main__'"
 
 # T4 (plan §9): in the moved MLflow page, `render_experiments` stops counting parents and uses
@@ -270,7 +295,7 @@ def _anchor_module(found, frozen_entries):
         key = tuple(entry["key"])
         if key == ("doc",):
             continue
-        matches = found.get(key, [])
+        matches = found.get(current_key(key), [])
         if len(matches) == 1:
             return matches[0]
         return None
@@ -317,7 +342,7 @@ def locate(pkg: Path, pre_file: str, frozen_entries: list, constants) -> list:
     report = []
     for entry in frozen_entries:
         key = tuple(entry["key"])
-        matches = found.get(key, [])
+        matches = found.get(current_key(key), [])
         if key == ("doc",):
             matches = _docstring_of(pkg, anchor[0]) if anchor else []
         record = {"key": list(key), "count": len(matches)}
@@ -414,7 +439,7 @@ def reassemble(pkg: Path, pre_file: str, frozen_entries: list, constants):
     body = []
     for entry in frozen_entries:
         key = tuple(entry["key"])
-        matches = found.get(key, [])
+        matches = found.get(current_key(key), [])
         if key == ("doc",):
             matches = _docstring_of(pkg, anchor[0]) if anchor else []
         if key == ("main",):

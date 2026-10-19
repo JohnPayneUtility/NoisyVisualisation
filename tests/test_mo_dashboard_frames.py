@@ -5,11 +5,10 @@ data, through MORunView, on the server (browser stores carry only a row id):
 
     legacy rows      skipped row by row: legacy MO payload present and no mo_record in that row (old and
                      new rows share one frame after a warehouse append, so both columns exist)
-    plot entries     one per change of the current noisy front's genotype set, as the plots have always
-                     consumed them: the legacy recorder's entries exactly (the frozen reference-#3
-                     projection), now with the real generation (gen_idx) and the change position
-                     (change_idx) as separate fields
-    archives         the passive archives and lost clean solutions, available server-side
+    row views        each row's record opened once, as an MORunView
+
+The plot data built from those views is tested with its plots (test_mo_stn_* for the STN views,
+test_pareto_dashboard_options for the Pareto tab).
 
 It also documents where the removed recorder's per-entry lists cannot be reproduced from a record: tied
 objective values (ParetoFront orders ties by insertion) and prior-noise observation identity (the
@@ -25,12 +24,9 @@ import pandas as pd
 import pytest
 
 from harness.mo_legacy import legacy_columns
-from harness.mo_runs import ALGORITHM_NAMES, build, step_run
+from harness.mo_runs import build, step_run
 from noisyvis.dashboard.mo_frames import (
     LEGACY_MO_COLUMNS,
-    archive_snapshot,
-    change_generations,
-    front_entries,
     row_view,
     without_legacy_mo_rows,
 )
@@ -71,43 +67,6 @@ def test_legacy_rows_are_skipped_row_by_row():
     # without an mo_record column the legacy row still goes; a row with neither payload stays
     assert list(without_legacy_mo_rows(frame.drop(columns=["mo_record"]))["seed"]) == [1, 3]
     assert list(without_legacy_mo_rows(frame.drop(columns=["pareto_solutions", "final_true_hv"]))["seed"]) == [1, 2, 3]
-
-
-# ------------------------------------------------------------------------------ plot entries
-
-@pytest.mark.parametrize("prob", ["kp0", "kp1", "kpviol1"])
-@pytest.mark.parametrize("name", ALGORITHM_NAMES)
-def test_entries_are_the_legacy_entries_with_real_generations(name, prob):
-    """Posterior noise: every entry equals the removed recorder's entry (the projection the frozen
-    baselines are compared through, verified against the live recorder before its removal), members in
-    order; gen_idx is the generation of the change and change_idx its position."""
-    _, view = view_of(name, prob)
-    legacy = legacy_columns(view)
-    entries = front_entries(view)
-    generations = change_generations(view)
-    assert len(entries) == len(legacy["pareto_solutions"]) == len(generations)
-    assert [e["gen_idx"] for e in entries] == generations and [e["change_idx"] for e in entries] == list(range(len(entries)))
-    for k, e in enumerate(entries):
-        assert e["algo_front_solutions"] == legacy["pareto_solutions"][k]
-        assert e["algo_front_noisy_fitnesses"] == legacy["pareto_fitnesses"][k]
-        assert e["algo_front_clean_fitnesses"] == legacy["pareto_true_fitnesses"][k]
-        assert e["clean_front_solutions"] == legacy["true_pareto_solutions"][k]
-        assert e["clean_front_fitnesses"] == legacy["true_pareto_fitnesses"][k]
-        assert (e["algo_front_noisy_hypervolume"], e["algo_front_clean_hypervolume"], e["clean_front_hypervolume"]) == \
-            (legacy["noisy_pf_noisy_hypervolumes"][k], legacy["noisy_pf_true_hypervolumes"][k],
-             legacy["true_pf_hypervolumes"][k])
-
-
-def test_archive_snapshot_serves_the_passive_archives():
-    _, view = view_of("NSGA2", "prior")
-    last = view.n_generations - 1
-    snapshot = archive_snapshot(view, last)
-    noisy, clean, lost = view.noisy_archive(last), view.clean_archive(last), view.lost_clean_solutions(last)
-    assert sorted(map(tuple, snapshot["noisy_archive_solutions"])) == sorted(tuple(int(v) for v in x) for x in noisy.x)
-    assert sorted(map(tuple, snapshot["clean_archive_solutions"])) == sorted(tuple(int(v) for v in x) for x in clean.x)
-    assert sorted(map(tuple, snapshot["lost_clean_solutions"])) == sorted(tuple(int(v) for v in x) for x in lost.x)
-    assert snapshot["noisy_archive__noisy"] == noisy.hv["noisy_archive__noisy"]
-    assert snapshot["clean_archive__clean"] == clean.hv["clean_archive__clean"] and snapshot["gen_idx"] == last
 
 
 # ------------------------------------------------------------------------------ documented limits

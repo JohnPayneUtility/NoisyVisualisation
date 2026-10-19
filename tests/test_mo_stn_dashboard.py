@@ -3,7 +3,7 @@
     controls    mo_plot_type lists the five views (default population_noisy, not clearable); mo_stn_pov the
                 two points of view (default algo), disabled for the single-front views
     callbacks   process_STN_data builds STN_MO_data with mo_frames.stn_view_entries for the selected view and
-                POV, and MO_data_PPP (the Pareto tab's data) with front_entries, whatever the view or POV
+                POV (the Pareto tab builds its own fronts: test_pareto_dashboard_options)
     pipeline    STN_MO_data, through the browser store's JSON, into add_mo_fronts, calculate_positions_mo
                 and the node and edge traces
 
@@ -36,7 +36,6 @@ from noisyvis.dashboard.mo_frames import (
     DEFAULT_STN_POV,
     DEFAULT_STN_VIEW,
     STN_VIEWS,
-    front_entries,
     row_view,
     stn_view_entries,
     stn_view_fronts,
@@ -99,7 +98,7 @@ def frame():
 @pytest.fixture(scope="module")
 def process(frame):
     return callback("process_STN_data", {
-        "pd": pd, "df": frame, "row_view": row_view, "front_entries": front_entries,
+        "pd": pd, "df": frame, "row_view": row_view,
         "stn_view_entries": stn_view_entries, "DEFAULT_STN_VIEW": DEFAULT_STN_VIEW, "DEFAULT_STN_POV": DEFAULT_STN_POV})
 
 
@@ -170,19 +169,16 @@ def test_pov_is_disabled_exactly_for_single_front_views():
 
 # ------------------------------------------------------------------------------ callbacks
 
-def test_stn_data_follows_view_and_pov_and_pareto_data_does_not(frame, process):
+def test_stn_data_follows_view_and_pov(frame, process):
     rows = stn_rows(frame)
     groups = [list(g.index) for _, g in frame.groupby(['algo_name', 'noise'])]
-    pareto = None
     for view_id in STN_VIEWS:
         for pov in ('algo', 'true'):
-            _, _, _, mo_data, mo_series, mo_ppp = process(rows, view_id, pov)
+            outputs = process(rows, view_id, pov)
+            assert len(outputs) == 5                                 # no MO_data_PPP any more
+            _, _, _, mo_data, mo_series = outputs
             assert mo_data == [[stn_view_entries(row_view(frame, r), view_id, pov) for r in g] for g in groups]
             assert mo_series == [k for k, _ in frame.groupby(['algo_name', 'noise'])]
-            if pareto is None:
-                pareto = mo_ppp
-                assert mo_ppp == [[front_entries(row_view(frame, r)) for r in g] for g in groups]
-            assert mo_ppp == pareto, (view_id, pov)                  # the Pareto tab's data never moves
     # single-front views ignore the POV; paired views do not
     for view_id in SINGLE:
         assert process(rows, view_id, 'true')[3] == process(rows, view_id, 'algo')[3]
@@ -197,7 +193,7 @@ def test_missing_values_take_the_defaults_and_unknown_ids_are_refused(frame, pro
     for view_id, pov in (('npnhv', 'algo'), ('population_noisy', 'clean')):
         with pytest.raises(ValueError):
             process(rows, view_id, pov)
-    assert process([], 'population_noisy', 'algo') == ([], [], [], [], [], [])
+    assert process([], 'population_noisy', 'algo') == ([], [], [], [], [])
 
 
 # ------------------------------------------------------------------------------ to the plotted graph

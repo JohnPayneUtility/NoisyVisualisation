@@ -1,12 +1,13 @@
 """
-Noisy vs clean fitness comparison plot.
+Two-front comparison plot: a noisy front against a clean or corrected front.
 
-This module provides visualization comparing noisy and clean fitness values
-on Pareto fronts.
+This module draws, generation by generation, a noisy front's observed objective values next to a second
+front's true objective values (the Pareto tab's three "Noisy (A vs B)" plot types).
 """
 
 import plotly.graph_objects as go
 
+from ....common import sol_tuple_ints
 from ..base import (
     DEFAULT_TEMPLATE,
     PARETO_COLORSCALE,
@@ -14,28 +15,29 @@ from ..base import (
     get_series_info,
     get_run_entries,
     compute_generation_range,
-    create_empty_figure,
 )
 
 
-def plot_noisy(frontdata, series_labels):
+def plot_noisy(frontdata, series_labels, labels=("noisy population", "clean population")):
     """
-    Plot true (clean) fitness vs noisy fitness for Pareto front solutions.
+    Plot a noisy front (A) against a clean or corrected front (B) for one run, at every generation where
+    either front changes.
 
-    Creates a scatter plot showing:
-    - Clean fitness values as circles
-    - Noisy fitness values as triangles
-    - Dotted lines connecting corresponding clean/noisy pairs
-    - Colors indicating generation number
+    Each entry holds a_solutions/a_fitnesses (A's members under their observed y) and b_solutions/b_fitnesses
+    (B's members under f(x)). The figure shows:
+    - A's points as triangles and B's as circles, coloured by generation on one shared scale
+    - a dotted line from each A point to the B point of the same genotype, when that genotype is on B
 
     Args:
-        frontdata: Data for the Pareto fronts
+        frontdata: Data for the front pairs (list of groups, each containing runs)
         series_labels: Labels for each series
+        labels: (A's label, B's label)
 
     Returns:
-        go.Figure: Plotly figure comparing noisy and clean fitness
+        go.Figure: Plotly figure comparing the two fronts
     """
     fig = go.Figure()
+    label_a, label_b = labels
 
     if not frontdata:
         fig.update_layout(title="No multi-objective data")
@@ -57,58 +59,61 @@ def plot_noisy(frontdata, series_labels):
 
     gmin, gmax = compute_generation_range(gen_entries)
 
-    clean_x, clean_y, clean_c = [], [], []
-    noisy_x, noisy_y, noisy_c = [], [], []
+    a_x, a_y, a_c = [], [], []
+    b_x, b_y, b_c = [], [], []
 
     for entry in gen_entries:
         g = entry.get("gen_idx", 0)
-        clean_pts = entry.get("algo_front_clean_fitnesses") or []
-        noisy_pts = entry.get("algo_front_noisy_fitnesses") or []
         col = generation_color(g, gmin, gmax)
+        on_b = {sol_tuple_ints(s): p for s, p in zip(entry.get("b_solutions") or [], entry.get("b_fitnesses") or [])}
 
-        for c_fit, n_fit in zip(clean_pts, noisy_pts):
-            # Draw dotted connector
-            fig.add_trace(go.Scatter(
-                x=[float(c_fit[0]), float(n_fit[0])],
-                y=[float(c_fit[1]), float(n_fit[1])],
-                mode="lines",
-                line=dict(dash="dot", width=0.4, color=col),
-                hoverinfo="skip",
-                showlegend=False
-            ))
-            clean_x.append(float(c_fit[0]))
-            clean_y.append(float(c_fit[1]))
-            clean_c.append(g)
-            noisy_x.append(float(n_fit[0]))
-            noisy_y.append(float(n_fit[1]))
-            noisy_c.append(g)
+        for sol, a_fit in zip(entry.get("a_solutions") or [], entry.get("a_fitnesses") or []):
+            b_fit = on_b.get(sol_tuple_ints(sol))
+            if b_fit is not None:
+                # Draw dotted connector to the same genotype on front B
+                fig.add_trace(go.Scatter(
+                    x=[float(a_fit[0]), float(b_fit[0])],
+                    y=[float(a_fit[1]), float(b_fit[1])],
+                    mode="lines",
+                    line=dict(dash="dot", width=0.4, color=col),
+                    hoverinfo="skip",
+                    showlegend=False
+                ))
+            a_x.append(float(a_fit[0]))
+            a_y.append(float(a_fit[1]))
+            a_c.append(g)
 
-    # Clean points (circles) with colorbar
+        for b_fit in entry.get("b_fitnesses") or []:
+            b_x.append(float(b_fit[0]))
+            b_y.append(float(b_fit[1]))
+            b_c.append(g)
+
+    # Front B (circles) with colorbar
     fig.add_trace(go.Scatter(
-        x=clean_x, y=clean_y, mode="markers", name="Clean fitness",
+        x=b_x, y=b_y, mode="markers", name=label_b,
         marker=dict(
-            symbol="circle", size=8, color=clean_c,
+            symbol="circle", size=8, color=b_c,
             colorscale=PARETO_COLORSCALE, colorbar=dict(title="Generation"),
             cmin=gmin, cmax=gmax
         )
     ))
 
-    # Noisy points (triangles) same scale
+    # Front A (triangles) same scale
     fig.add_trace(go.Scatter(
-        x=noisy_x, y=noisy_y, mode="markers", name="Noisy fitness",
+        x=a_x, y=a_y, mode="markers", name=label_a,
         marker=dict(
-            symbol="triangle-up", size=4, color=noisy_c,
+            symbol="triangle-up", size=4, color=a_c,
             colorscale=PARETO_COLORSCALE, showscale=False,
             cmin=gmin, cmax=gmax
         )
     ))
 
     fig.update_layout(
-        title=f"True vs Noisy Fitness - {series_name}, Run {run_idx}",
+        title=f"{label_a} vs {label_b} - {series_name}, Run {run_idx}",
         xaxis_title="Objective 1",
         yaxis_title="Objective 2",
         template=DEFAULT_TEMPLATE,
-        legend_title="Type"
+        legend_title="Front"
     )
 
     return fig

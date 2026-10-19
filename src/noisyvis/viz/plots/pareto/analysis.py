@@ -17,11 +17,11 @@ from ..base import (
     FRONT_KEYS,
     UNSUPPORTED_METRIC_TITLE,
     genotype_front_distance,
-    hv_front,
+    selected_front,
 )
 
 
-def plot_ind_vs_dist(frontdata, series_labels, distance_method='cumulative', nruns=1, IndVsDist_IndType="NoisyHV"):
+def plot_ind_vs_dist(frontdata, series_labels, distance_method='cumulative', nruns=1, IndVsDist_IndType="noisy_population"):
     """
     Plot hypervolume vs front distance using various distance methods.
 
@@ -38,15 +38,14 @@ def plot_ind_vs_dist(frontdata, series_labels, distance_method='cumulative', nru
             - 'tsne': t-SNE 1D embedding
             - 'isomap': Isomap 1D embedding
         nruns: Number of runs to include
-        IndVsDist_IndType: 'NoisyHV' for the noisy front's hypervolume under y, 'CleanHV' for the clean
-            front's hypervolume under f(x)
+        IndVsDist_IndType: the front type (a FRONT_KEYS key): its members, objective values and stored HV
 
     Returns:
         go.Figure: Plotly figure with hypervolume vs distance
     """
     fig = go.Figure()
 
-    front = hv_front(IndVsDist_IndType)
+    front = selected_front(IndVsDist_IndType)
     if front is None:
         return create_empty_figure(UNSUPPORTED_METRIC_TITLE)
     solution_set, _, metric, front_label = FRONT_KEYS[front]
@@ -270,14 +269,14 @@ def plot_ind_vs_dist(frontdata, series_labels, distance_method='cumulative', nru
     return fig
 
 
-def plot_igd_vs_dist(frontdata, series_labels, distance_method='cumulative', nruns=1):
+def plot_igd_vs_dist(frontdata, series_labels, distance_method='cumulative', nruns=1,
+                     IndVsDist_IndType="noisy_population"):
     """
     Plot IGD (Inverted Generational Distance) vs front distance.
 
-    Shows how IGD changes as the Pareto front moves in decision space.
-    IGD is computed relative to the clean front (or clean archive) of the run's final generation, carried
-    by the last entry as final_clean_front_fitnesses (else that entry's clean front). Front distances are
-    between the fronts' distinct genotypes.
+    Shows how IGD changes as the selected front moves in decision space. Each entry's IGD is computed
+    between its front's objective values and the run's final clean archive (under f(x)), carried by the
+    last entry as final_clean_archive_fitnesses. Front distances are between the fronts' distinct genotypes.
 
     Args:
         frontdata: Data for the Pareto fronts
@@ -289,15 +288,17 @@ def plot_igd_vs_dist(frontdata, series_labels, distance_method='cumulative', nru
             - 'tsne': t-SNE 1D embedding
             - 'isomap': Isomap 1D embedding
         nruns: Number of runs to include
+        IndVsDist_IndType: the front type (a FRONT_KEYS key): its members and objective values
 
     Returns:
         go.Figure: Plotly figure with IGD vs distance
     """
     fig = go.Figure()
 
-    solution_set = "algo_front_solutions"
-    approx_fits_key = "algo_front_noisy_fitnesses"
-    ref_fits_key = "clean_front_fitnesses"
+    front = selected_front(IndVsDist_IndType)
+    if front is None:
+        return create_empty_figure(UNSUPPORTED_METRIC_TITLE)
+    solution_set, approx_fits_key, _, front_label = FRONT_KEYS[front]
     num_runs = nruns
 
     def igd(approx_front, ref_front):
@@ -339,7 +340,7 @@ def plot_igd_vs_dist(frontdata, series_labels, distance_method='cumulative', nru
         gen_entries = sorted(gen_entries, key=lambda e: e.get("gen_idx", 0))
         last_entry = gen_entries[-1] if gen_entries else {}
 
-        ref_front = last_entry.get("final_clean_front_fitnesses", last_entry.get(ref_fits_key)) or []
+        ref_front = last_entry.get("final_clean_archive_fitnesses") or []
 
         fronts = []
         igds = []
@@ -548,7 +549,7 @@ def plot_igd_vs_dist(frontdata, series_labels, distance_method='cumulative', nru
     fig.update_layout(
         title=plot_title,
         xaxis_title=xaxis_title,
-        yaxis_title="IGD (from ref front)",
+        yaxis_title=f"IGD of {front_label} (from final clean archive)",
         template=DEFAULT_TEMPLATE,
     )
 
@@ -560,8 +561,7 @@ def plot_progress_per_movement(
     series_labels,
     group_idx=0,
     run_idx=0,
-    solution_key="clean_front_solutions",
-    hv_key="clean_front_hypervolume",
+    IndVsDist_IndType="noisy_population",
     eps=1e-12,
     k_patience=10,
     use_ratio=True,
@@ -579,8 +579,7 @@ def plot_progress_per_movement(
         series_labels: Labels for each series
         group_idx: Index of the group to use
         run_idx: Index of the run to use
-        solution_key: Key for solution data
-        hv_key: Key for hypervolume data
+        IndVsDist_IndType: the front type (a FRONT_KEYS key): its members and stored HV
         eps: Small value to prevent division by zero
         k_patience: Window size for stop detection
         use_ratio: Whether to include ratio in stop condition
@@ -591,8 +590,13 @@ def plot_progress_per_movement(
     """
     fig = go.Figure()
 
+    front = selected_front(IndVsDist_IndType)
+    if front is None:
+        return create_empty_figure(UNSUPPORTED_METRIC_TITLE)
+    solution_key, _, hv_key, front_label = FRONT_KEYS[front]
+
     if not frontdata:
-        fig.update_layout(title="No MO_data_PPP provided")
+        fig.update_layout(title="No multi-objective data")
         return fig
 
     runs_full, series_name = get_series_info(frontdata, series_labels, group_idx)
@@ -680,7 +684,7 @@ def plot_progress_per_movement(
         ))
 
     fig.update_layout(
-        title=f"Progress movement ratio - {series_name} (run {run_idx})",
+        title=f"Progress movement ratio - {series_name} (run {run_idx}) - {front_label}",
         xaxis=dict(title="Generation"),
         yaxis=dict(title="dO/dD"),
         yaxis2=dict(

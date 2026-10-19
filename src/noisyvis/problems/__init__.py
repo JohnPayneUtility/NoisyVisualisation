@@ -29,5 +29,15 @@ from .knapsack import (
 )
 from .continuous import rastrigin_eval, birastrigin_eval, ackley
 from .instances import load_problem_KP, get_knapsack_problem_stats, interpret_correlation
-from .knapsack_mo import eval_noisy_kp_v1_mo, eval_noisy_kp_v1_mo_violation, countingOnesCountingZeros
+from .knapsack_mo import (
+    eval_noisy_kp_v1_mo,
+    eval_noisy_kp_v1_mo_violation,
+    noisy_mokp_v1,
+    noisy_mokp_v2,
+    noisy_mokp_both,
+    noisy_mokp_violation_v1,
+    noisy_mokp_violation_v2,
+    noisy_mokp_violation_both,
+    countingOnesCountingZeros
+)
 from .constraints import knap_violation

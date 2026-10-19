@@ -19,16 +19,16 @@ from ..base import (
     UNSUPPORTED_METRIC_TITLE,
     front_line,
     genotype_front_distance,
-    hv_front,
+    selected_front,
 )
 
 
 def _front_title(front):
-    """The title prefix of a subplot figure: unchanged for the noisy front."""
-    return "True Fitness of Noisy PF" if front == 'noisy' else "Clean PF"
+    """The title prefix of a subplot figure: the front type's label."""
+    return f"{FRONT_KEYS[front][3]} PF"
 
 
-def plot_subplots(frontdata, series_labels, IndVsDist_IndType="NoisyHV", attainment=False):
+def plot_subplots(frontdata, series_labels, IndVsDist_IndType="noisy_population", attainment=False):
     """
     Plot each generation's Pareto front in its own subplot.
 
@@ -38,13 +38,13 @@ def plot_subplots(frontdata, series_labels, IndVsDist_IndType="NoisyHV", attainm
     Args:
         frontdata: Data for the Pareto fronts
         series_labels: Labels for each series
-        IndVsDist_IndType: 'NoisyHV' plots the noisy front under y, 'CleanHV' the clean front under f(x)
+        IndVsDist_IndType: the front type (a FRONT_KEYS key): its members, objective values and stored HV
         attainment: If True, join each front by its attainment staircase instead of straight segments
 
     Returns:
         go.Figure: Plotly figure with subplot grid
     """
-    front = hv_front(IndVsDist_IndType)
+    front = selected_front(IndVsDist_IndType)
     if front is None:
         return create_empty_figure(UNSUPPORTED_METRIC_TITLE)
     _, fits_key, _, _ = FRONT_KEYS[front]
@@ -112,7 +112,7 @@ def plot_subplots(frontdata, series_labels, IndVsDist_IndType="NoisyHV", attainm
     return fig
 
 
-def plot_subplots_multi(frontdata, series_labels, nruns=1, IndVsDist_IndType="NoisyHV", attainment=False):
+def plot_subplots_multi(frontdata, series_labels, nruns=1, IndVsDist_IndType="noisy_population", attainment=False):
     """
     Plot multiple runs' Pareto fronts in subplots, with all runs overlaid per generation.
 
@@ -123,13 +123,13 @@ def plot_subplots_multi(frontdata, series_labels, nruns=1, IndVsDist_IndType="No
         frontdata: Data for the Pareto fronts
         series_labels: Labels for each series
         nruns: Number of runs to display (default: 1)
-        IndVsDist_IndType: 'NoisyHV' plots the noisy front under y, 'CleanHV' the clean front under f(x)
+        IndVsDist_IndType: the front type (a FRONT_KEYS key): its members, objective values and stored HV
         attainment: If True, join each front by its attainment staircase instead of straight segments
 
     Returns:
         go.Figure: Plotly figure with subplot grid and multiple runs
     """
-    front = hv_front(IndVsDist_IndType)
+    front = selected_front(IndVsDist_IndType)
     if front is None:
         return create_empty_figure(UNSUPPORTED_METRIC_TITLE)
     _, fits_key, _, _ = FRONT_KEYS[front]
@@ -227,7 +227,7 @@ def plot_subplots_highlighted(
     solutions_key=None,
     fits_key=None,
     dist_decimals=3,
-    IndVsDist_IndType="NoisyHV",
+    IndVsDist_IndType="noisy_population",
     attainment=False,
 ):
     """
@@ -242,13 +242,13 @@ def plot_subplots_highlighted(
         solutions_key: Key for solution data in entries (None: the selected front's)
         fits_key: Key for fitness data in entries (None: the selected front's)
         dist_decimals: Decimal places for distance display
-        IndVsDist_IndType: 'NoisyHV' plots the noisy front under y, 'CleanHV' the clean front under f(x)
+        IndVsDist_IndType: the front type (a FRONT_KEYS key): its members, objective values and stored HV
         attainment: If True, join each front by its attainment staircase instead of straight segments
 
     Returns:
         go.Figure: Plotly figure with highlighted changes
     """
-    front = hv_front(IndVsDist_IndType)
+    front = selected_front(IndVsDist_IndType)
     if front is None:
         return create_empty_figure(UNSUPPORTED_METRIC_TITLE)
     front_sols_key, front_fits_key, _, _ = FRONT_KEYS[front]

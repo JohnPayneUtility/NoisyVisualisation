@@ -5,6 +5,8 @@ series-label controls.
 population, styling, LON statistics and guide nodes, then one positioning pass, then presentation.
 """
 
+import time
+
 import dash
 import pandas as pd
 import plotly.graph_objects as go
@@ -263,7 +265,8 @@ def handle_print_mode(annotation_options):
      Output('lon-stats-table', 'children'),
      Output('lon-feas-error-scatter', 'figure'),
      Output('lon-selected-correlation', 'children'),
-     Output('lon-feas-error-correlations', 'children')],
+     Output('lon-feas-error-correlations', 'children'),
+     Output('plot-timing-info', 'children')],
     [Input("optimum", "data"),
      Input("PID", "data"),
      Input("opt_goal", "data"),
@@ -340,6 +343,7 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
     This refactored callback delegates to specialized modules in src/visualization/
     for graph building, node styling, positioning, and trace creation.
     """
+    t_start = time.perf_counter()
     print('\033[1m\033[31mCreating new Plot...\033[0m', flush=True)
 
     # ==========
@@ -665,11 +669,13 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
     # ==========
     if 'show-guides' in (annotation_options or []):
         _add_guide_nodes(G)
+    t_graph = time.perf_counter()
 
     # ==========
     # STEP 7: Calculate node positions
     # ==========
     pos = calculate_positions(G, config.layout_type, config.stn_plot_type, config.plot_3d, config.lon.lmds_multiplier)
+    t_layout = time.perf_counter()
 
     # ==========
     # STEP 8: Build visualization traces
@@ -945,6 +951,13 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
         # Fallback for other plot types
         fig = go.Figure()
 
+    # Main-plot generation time (secondary tables and the LON scatter below are not counted)
+    t_fig = time.perf_counter()
+    timing_text = (f'Time to generate plot: {t_fig - t_start:.2f} s '
+                   f'(graph preparation: {t_graph - t_start:.2f} s, '
+                   f'layout: {t_layout - t_graph:.2f} s, figure: {t_fig - t_layout:.2f} s)')
+    print(timing_text, flush=True)
+
     # Build LON stats table
     lon_nodes = [n for n in G.nodes() if "Local Optimum" in n]
     total_optima = len(lon_nodes)
@@ -1031,4 +1044,4 @@ def update_plot(optimum, PID, opt_goal, options, run_options, STN_lower_fit_limi
         feas_error_corr_component = html.Div("Select NLon_box or NLon_IQR plot type to view this chart.")
 
     return (fig, debug_summary_component, stn_stats_table, lon_stats_table,
-            feas_error_fig, selected_corr_component, feas_error_corr_component)
+            feas_error_fig, selected_corr_component, feas_error_corr_component, timing_text)
