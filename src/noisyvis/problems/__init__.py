@@ -38,6 +38,17 @@ from .knapsack_mo import (
     noisy_mokp_violation_v1,
     noisy_mokp_violation_v2,
     noisy_mokp_violation_both,
-    countingOnesCountingZeros
+    oneMinMax,
+    noisyMax_OneMinMax,
+    noisymin_OneMinMax,
+    noisyboth_OneMinMax,
+    countingOnesCountingZeros,
+    noisyOnes_COCZ,
+    noisyCOCZ_COCZ,
+    noisyboth_COCZ,
+    leadingOnesTrailingZeros,
+    noisyLO_LOTZ,
+    noisyTZ_LOTZ,
+    noisyboth_LOTZ
 )
 from .constraints import knap_violation

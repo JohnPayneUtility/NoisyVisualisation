@@ -1,0 +1,21 @@
+# @package _global_
+problem:
+  PID: LOTZ10
+  prob_name: LOTZ
+  prob_type: discrete
+  opt_goal: maximise
+  dimensions: 10        # bit-string length
+  opt_global: 10        # known optimum
+  capacity: 0            # Not applicable, set to 0
+  mean_value: 5.0       # Not applicable, set to middle value
+  mean_weight: 0.5       # Not applicable, set to middle value
+
+  loader: null
+
+  fitness_fn: noisyTZ_LOTZ
+  fitness_params:
+    noise_intensity: 0
+
+  attr_function: binary_attribute
+  weights: [1.0, 1.0]
+  ref_point: [-1, -1]

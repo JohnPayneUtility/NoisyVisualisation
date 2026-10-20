@@ -42,7 +42,9 @@ from noisyvis.problems import (
     countingOnesCountingZeros,
     eval_noisy_kp_v1_mo,
     eval_noisy_kp_v1_mo_violation,
+    leadingOnesTrailingZeros,
     load_problem_KP,
+    oneMinMax,
 )
 
 WEIGHTS = (1.0, -1.0)
@@ -200,15 +202,34 @@ def evaluator_cases():
     feasible = [1, 0, 1, 1, 0, 0, 0, 0, 0, 1]
     infeasible = [1, 1, 1, 1, 1, 1, 0, 1, 0, 0]
     cases = []
-    for fn in (eval_noisy_kp_v1_mo, eval_noisy_kp_v1_mo_violation):
-        for bits in (feasible, infeasible):
-            for noisy_objective in (0, 1, 2, 3):
-                for penalty in (0, 1):
-                    cases.append((fn, bits, dict(kp, noisy_objective=noisy_objective, penalty=penalty)))
-    for noisy_objective in (0, 1, 2, 3):
-        cases.append((countingOnesCountingZeros, [1, 0, 1, 1, 0, 0, 1, 0, 1, 1],
-                      {"noisy_objective": noisy_objective}))
+    for bits in (feasible, infeasible):
+        for noisy_objective in (0, 1, 2, 3):
+            for penalty in (0, 1):
+                cases.append((eval_noisy_kp_v1_mo, bits, dict(kp, noisy_objective=noisy_objective, penalty=penalty)))
+            cases.append((eval_noisy_kp_v1_mo_violation, bits, dict(kp, noisy_objective=noisy_objective)))
+    for fn in BIT_COUNT_EVALUATORS:
+        for noisy_objective in (0, 1, 2, 3):
+            cases.append((fn, [1, 0, 1, 1, 0, 0, 1, 0, 1, 1], {"noisy_objective": noisy_objective}))
     return cases
+
+
+def leading_ones(bits):
+    count = 0
+    for bit in bits:
+        if bit != 1:
+            break
+        count += 1
+    return count
+
+
+# The bit-counting evaluators (noise standard deviation noise_intensity) and their deterministic objectives
+BIT_COUNT_OBJECTIVES = {
+    oneMinMax: lambda bits: (sum(bits), len(bits) - sum(bits)),
+    countingOnesCountingZeros: lambda bits: (
+        sum(bits), sum(bits[:len(bits) // 2]) + len(bits) // 2 - sum(bits[len(bits) // 2:])),
+    leadingOnesTrailingZeros: lambda bits: (leading_ones(bits), leading_ones([1 - b for b in reversed(bits)])),
+}
+BIT_COUNT_EVALUATORS = tuple(BIT_COUNT_OBJECTIVES)
 
 
 EVALUATOR_CASES = evaluator_cases()
@@ -222,32 +243,36 @@ def draws_for(noisy_objective):
 
 
 def reference_evaluation(fn, bits, noise_intensity, kwargs):
-    """The objective vector the evaluator computed before the zero-noise fix: random.gauss(0, sigma)
-    drawn for objective 1 then objective 2 (whichever noisy_objective selects), whatever sigma is."""
+    """The objective vector each evaluator computes: random.gauss(0, sigma) drawn for objective 1 then
+    objective 2 (whichever noisy_objective selects), and at zero noise no draw and no noise added. The
+    violation evaluator adds objective 2's noise to the clamped violation, max(0, weight - capacity)."""
     noisy_objective = kwargs["noisy_objective"]
-    if fn is countingOnesCountingZeros:
+    if fn in BIT_COUNT_OBJECTIVES:
         sigma = noise_intensity
     else:
         items = kwargs["items_dict"]
         sigma = noise_intensity * (sum(w for _, w in items.values()) / len(items))
-    noise1 = random.gauss(0, sigma) if noisy_objective in (0, 1) else 0
-    noise2 = random.gauss(0, sigma) if noisy_objective in (0, 2) else 0
-    if fn is countingOnesCountingZeros:
-        return (sum(bits) + noise1, len(bits) - sum(bits) + noise2)
-    items, capacity, penalty = kwargs["items_dict"], kwargs["capacity"], kwargs["penalty"]
-    weight = sum(items[i][1] * bits[i] for i in range(len(bits))) + noise2
+    noise1 = random.gauss(0, sigma) if noise_intensity and noisy_objective in (0, 1) else 0
+    noise2 = random.gauss(0, sigma) if noise_intensity and noisy_objective in (0, 2) else 0
+    if fn in BIT_COUNT_OBJECTIVES:
+        first, second = BIT_COUNT_OBJECTIVES[fn](bits)
+        return (first + noise1, second + noise2)
+    items, capacity = kwargs["items_dict"], kwargs["capacity"]
+    clean_weight = sum(items[i][1] * bits[i] for i in range(len(bits)))
     value = sum(items[i][0] * bits[i] for i in range(len(bits))) + noise1
-    second = weight if fn is eval_noisy_kp_v1_mo else max(0, float(sum(items[i][1] * bits[i] for i in range(len(bits))) - capacity))
-    if weight > capacity and penalty == 1:
+    if fn is eval_noisy_kp_v1_mo_violation:
+        return (value, max(0, float(clean_weight - capacity)) + noise2)
+    weight = clean_weight + noise2
+    if weight > capacity and kwargs["penalty"] == 1:
         return (capacity - weight, weight)
-    return (value, second)
+    return (value, weight)
 
 
 @pytest.mark.parametrize("fn,bits,kwargs", EVALUATOR_CASES, ids=EVALUATOR_IDS)
 def test_zero_noise_evaluation_consumes_no_rng(fn, bits, kwargs):
-    """At zero noise the MO evaluators draw nothing, from Python or NumPy, and return exactly what they
-    returned before the fix (which drew random.gauss(0, 0) and added its 0.0): equal values of the same
-    types, compared by repr, so an int where a float was returned (or -0.0 for 0.0) would fail."""
+    """At zero noise the MO evaluators draw nothing, from Python or NumPy, and return their deterministic
+    objectives unchanged: equal values of the same types, compared by repr, so a float where the
+    objective's own int is expected (as when random.gauss(0, 0) added 0.0 before the fix) would fail."""
     random.seed(3)
     np.random.seed(3)
     before = rng_state()
@@ -259,36 +284,28 @@ def test_zero_noise_evaluation_consumes_no_rng(fn, bits, kwargs):
     assert repr(result) == repr(expected)
 
 
-F, I = np.float64, np.int64  # knapsack sums over the loaded instance are NumPy integers
+I = np.int64  # knapsack sums over the loaded instance are NumPy integers
 ZERO_NOISE_TYPES = [
     # (evaluator, noisy_objective, exact types at zero noise) for a feasible solution, penalty 0.
-    # An objective selected as noisy is a float, as it was when random.gauss(0, 0) (0.0) was added to
-    # it; an objective that is not noisy keeps its integer type. Noise never touches the violation,
-    # max(0, float(weight - capacity)), which for this feasible solution is the int 0.
-    (eval_noisy_kp_v1_mo, 0, (F, F)),
-    (eval_noisy_kp_v1_mo, 1, (F, I)),
-    (eval_noisy_kp_v1_mo, 2, (I, F)),
-    (eval_noisy_kp_v1_mo, 3, (I, I)),
-    (eval_noisy_kp_v1_mo_violation, 0, (F, int)),
-    (eval_noisy_kp_v1_mo_violation, 1, (F, int)),
-    (eval_noisy_kp_v1_mo_violation, 2, (I, int)),
-    (eval_noisy_kp_v1_mo_violation, 3, (I, int)),
-    (countingOnesCountingZeros, 0, (float, float)),  # Python int counts become Python floats
-    (countingOnesCountingZeros, 1, (float, int)),
-    (countingOnesCountingZeros, 2, (int, float)),
-    (countingOnesCountingZeros, 3, (int, int)),
+    # Zero noise adds nothing, so every objective keeps its own type whichever objectives are noisy: the
+    # knapsack sums are NumPy integers, the violation max(0, float(weight - capacity)) is the int 0 for
+    # this feasible solution, and the bit counts are Python ints.
+    *((fn, no, types) for fn, types in ((eval_noisy_kp_v1_mo, (I, I)), (eval_noisy_kp_v1_mo_violation, (I, int)),
+                                        *((fn, (int, int)) for fn in BIT_COUNT_EVALUATORS))
+      for no in (0, 1, 2, 3)),
 ]
 
 
 @pytest.mark.parametrize("fn,noisy_objective,types", ZERO_NOISE_TYPES,
                          ids=[f"{fn.__name__}-no{no}" for fn, no, _ in ZERO_NOISE_TYPES])
 def test_zero_noise_objective_types(fn, noisy_objective, types):
-    if fn is countingOnesCountingZeros:
+    if fn in BIT_COUNT_OBJECTIVES:
         result = fn([1, 0, 1, 1, 0], noise_intensity=0, noisy_objective=noisy_objective)
     else:
         n_items, capacity, items_dict = knapsack()
+        penalty = {"penalty": 0} if fn is eval_noisy_kp_v1_mo else {}
         result = fn([1, 0, 1, 1, 0, 0, 0, 0, 0, 1], items_dict=items_dict, capacity=capacity,
-                    noise_intensity=0, noisy_objective=noisy_objective, penalty=0)
+                    noise_intensity=0, noisy_objective=noisy_objective, **penalty)
     assert tuple(type(v) for v in result) == types, result
 
 

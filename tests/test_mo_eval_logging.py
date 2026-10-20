@@ -47,6 +47,8 @@ from noisyvis.problems import (
     countingOnesCountingZeros,
     eval_noisy_kp_v1_mo,
     eval_noisy_kp_v1_mo_violation,
+    leadingOnesTrailingZeros,
+    oneMinMax,
 )
 from noisyvis.tracking.logger import clear_active_logger, get_active_logger, set_active_logger
 from noisyvis.tracking.mo_logger import (
@@ -338,14 +340,14 @@ def evaluator_cases():
     n_items, capacity, items_dict = knapsack()
     kp = {"items_dict": items_dict, "capacity": capacity}
     cases = []
-    for fn in (eval_noisy_kp_v1_mo, eval_noisy_kp_v1_mo_violation):
-        for bits in ([1, 0, 1, 1, 0, 0, 0, 0, 0, 1], [1, 1, 1, 1, 1, 1, 0, 1, 0, 0]):
-            for noisy_objective in (0, 1, 2, 3):
-                for penalty in (0, 1):
-                    cases.append((fn, bits, dict(kp, noisy_objective=noisy_objective, penalty=penalty)))
-    for noisy_objective in (0, 1, 2, 3):
-        cases.append((countingOnesCountingZeros, [1, 0, 1, 1, 0, 0, 1, 0, 1, 1],
-                      {"noisy_objective": noisy_objective}))
+    for bits in ([1, 0, 1, 1, 0, 0, 0, 0, 0, 1], [1, 1, 1, 1, 1, 1, 0, 1, 0, 0]):
+        for noisy_objective in (0, 1, 2, 3):
+            for penalty in (0, 1):
+                cases.append((eval_noisy_kp_v1_mo, bits, dict(kp, noisy_objective=noisy_objective, penalty=penalty)))
+            cases.append((eval_noisy_kp_v1_mo_violation, bits, dict(kp, noisy_objective=noisy_objective)))
+    for fn in (oneMinMax, countingOnesCountingZeros, leadingOnesTrailingZeros):
+        for noisy_objective in (0, 1, 2, 3):
+            cases.append((fn, [1, 0, 1, 1, 0, 0, 1, 0, 1, 1], {"noisy_objective": noisy_objective}))
     return cases
 
 

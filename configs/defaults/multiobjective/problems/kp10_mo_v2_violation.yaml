@@ -20,7 +20,6 @@ problem:
     items_dict: null
     capacity: null
     noise_intensity: 0
-    penalty: 0
 
   attr_function: binary_attribute
   weights: [1.0, -1.0]

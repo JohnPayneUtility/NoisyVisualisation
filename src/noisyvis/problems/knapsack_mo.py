@@ -30,7 +30,6 @@ def eval_noisy_kp_v1_mo(individual, items_dict, capacity, noise_intensity=0, noi
                 value_with_penalty = capacity - weight
                 return (value_with_penalty, weight)
             else:
-                # return (0, 100000)
                 return (value, weight)
         return (value, weight) # Not over capacity return value
 
@@ -39,115 +38,86 @@ def eval_noisy_kp_v1_mo(individual, items_dict, capacity, noise_intensity=0, noi
     weight = sum(items_dict[i][1] * individual[i] for i in range(n_items)) # Calc solution weight
     value = sum(items_dict[i][0] * individual[i] for i in range(n_items)) # Calc solution value
     # initialise and generate noise; at zero noise nothing is drawn, so a clean evaluation
-    # (noise_intensity=0) leaves the RNG untouched. A noisy objective still gets a float 0.0, exactly
-    # what random.gauss(0, 0) returned, so its value keeps the float type it always had.
+    # (noise_intensity=0) leaves the RNG untouched.
     noise1, noise2 = 0, 0
-    clean1, clean2 = 0, 0  # what a clean evaluation adds: 0.0 to a noisy objective
     if noisy_objective == 0 or noisy_objective == 1:
-        noise1 = random.gauss(0, noise_intensity * mean_weight(items_dict)) if noise_intensity != 0 else 0.0
-        clean1 = 0.0
+        noise1 = random.gauss(0, noise_intensity * mean_weight(items_dict)) if noise_intensity != 0 else 0
     if noisy_objective == 0 or noisy_objective == 2:
-        noise2 = random.gauss(0, noise_intensity * mean_weight(items_dict)) if noise_intensity != 0 else 0.0
-        clean2 = 0.0
+        noise2 = random.gauss(0, noise_intensity * mean_weight(items_dict)) if noise_intensity != 0 else 0
     # Add noise to objectives
     observed = objectives(value + noise1, weight + noise2)
+    # log and return fitness values
     log_mo_eval = getattr(get_active_logger(), "log_mo_eval", None)
     if log_mo_eval is not None:
-        log_mo_eval(individual, objectives(value + clean1, weight + clean2), observed)
+        log_mo_eval(individual, objectives(value, weight), observed)
     return observed
 
-def eval_noisy_kp_v1_mo_violation(individual, items_dict, capacity, noise_intensity=0, noisy_objective=0, penalty=0):
+def noisy_mokp_v1(individual, items_dict, capacity, noise_intensity=0, noisy_objective=0, penalty=0):
+    noisy_objective = 1
+    observed = eval_noisy_kp_v1_mo(individual, items_dict, capacity, noise_intensity, noisy_objective, penalty)
+    return observed
+
+def noisy_mokp_v2(individual, items_dict, capacity, noise_intensity=0, noisy_objective=0, penalty=0):
+    noisy_objective = 2
+    observed = eval_noisy_kp_v1_mo(individual, items_dict, capacity, noise_intensity, noisy_objective, penalty)
+    return observed
+
+def noisy_mokp_both(individual, items_dict, capacity, noise_intensity=0, noisy_objective=0, penalty=0):
+    noisy_objective = 0
+    observed = eval_noisy_kp_v1_mo(individual, items_dict, capacity, noise_intensity, noisy_objective, penalty)
+    return observed
+
+def eval_noisy_kp_v1_mo_violation(individual, items_dict, capacity, noise_intensity=0, noisy_objective=0):
     """ Function calculates fitness for knapsack problem individual """
     def knap_violation(ind, items_dict, capacity):
         # items_dict[i] -> (value, weight); feasible iff total_w - capacity <= 0
         total_w = sum(int(ind[i]) * items_dict[i][1] for i in range(len(ind)))
         return max(0, float(total_w - capacity))
 
-    def objectives(value, weight):
-        # Check if over capacity and return reduced value
-        if weight > capacity:
-            if penalty == 1:
-                value_with_penalty = capacity - weight
-                return (value_with_penalty, weight)
-            else:
-                # return (0, 100000)
-                return (value, v)
-        return (value, v) # Not over capacity return value
-
-    # Calculate weights and values
+    # Calculate value and violation
     n_items = len(individual)
-    v = knap_violation(individual, items_dict, capacity)
-    weight = sum(items_dict[i][1] * individual[i] for i in range(n_items)) # Calc solution weight
+    violation = knap_violation(individual, items_dict, capacity)
     value = sum(items_dict[i][0] * individual[i] for i in range(n_items)) # Calc solution value
     # initialise and generate noise; at zero noise nothing is drawn, so a clean evaluation
-    # (noise_intensity=0) leaves the RNG untouched. A noisy objective still gets a float 0.0, exactly
-    # what random.gauss(0, 0) returned, so its value keeps the float type it always had.
+    # (noise_intensity=0) leaves the RNG untouched.
     noise1, noise2 = 0, 0
-    clean1, clean2 = 0, 0  # what a clean evaluation adds: 0.0 to a noisy objective
     if noisy_objective == 0 or noisy_objective == 1:
-        noise1 = random.gauss(0, noise_intensity * mean_weight(items_dict)) if noise_intensity != 0 else 0.0
-        clean1 = 0.0
+        noise1 = random.gauss(0, noise_intensity * mean_weight(items_dict)) if noise_intensity != 0 else 0
     if noisy_objective == 0 or noisy_objective == 2:
-        noise2 = random.gauss(0, noise_intensity * mean_weight(items_dict)) if noise_intensity != 0 else 0.0
-        clean2 = 0.0
+        noise2 = random.gauss(0, noise_intensity * mean_weight(items_dict)) if noise_intensity != 0 else 0
     # Add noise to objectives
-    observed = objectives(value + noise1, weight + noise2)
+    observed = (value + noise1, violation + noise2)
     log_mo_eval = getattr(get_active_logger(), "log_mo_eval", None)
     if log_mo_eval is not None:
-        log_mo_eval(individual, objectives(value + clean1, weight + clean2), observed)
+        log_mo_eval(individual, (value, violation), observed)
     return observed
 
-def noisy_mokp_v1(individual, items_dict, capacity, noise_intensity=0, noisy_objective=0, penalty=0):
+def noisy_mokp_violation_v1(individual, items_dict, capacity, noise_intensity=0, noisy_objective=0):
     noisy_objective = 1
-    penalty = 0
-    observed = eval_noisy_kp_v1_mo(individual, items_dict, capacity, noise_intensity, noisy_objective, penalty)
+    observed = eval_noisy_kp_v1_mo_violation(individual, items_dict, capacity, noise_intensity, noisy_objective)
     return observed
 
-def noisy_mokp_v2(individual, items_dict, capacity, noise_intensity=0, noisy_objective=0, penalty=0):
+def noisy_mokp_violation_v2(individual, items_dict, capacity, noise_intensity=0, noisy_objective=0):
     noisy_objective = 2
-    penalty = 0
-    observed = eval_noisy_kp_v1_mo(individual, items_dict, capacity, noise_intensity, noisy_objective, penalty)
+    observed = eval_noisy_kp_v1_mo_violation(individual, items_dict, capacity, noise_intensity, noisy_objective)
     return observed
 
-def noisy_mokp_both(individual, items_dict, capacity, noise_intensity=0, noisy_objective=0, penalty=0):
+def noisy_mokp_violation_both(individual, items_dict, capacity, noise_intensity=0, noisy_objective=0):
     noisy_objective = 0
-    penalty = 0
-    observed = eval_noisy_kp_v1_mo(individual, items_dict, capacity, noise_intensity, noisy_objective, penalty)
+    observed = eval_noisy_kp_v1_mo_violation(individual, items_dict, capacity, noise_intensity, noisy_objective)
     return observed
 
-def noisy_mokp_violation_v1(individual, items_dict, capacity, noise_intensity=0, noisy_objective=0, penalty=0):
-    noisy_objective = 1
-    penalty = 0
-    observed = eval_noisy_kp_v1_mo_violation(individual, items_dict, capacity, noise_intensity, noisy_objective, penalty)
-    return observed
-
-def noisy_mokp_violation_v2(individual, items_dict, capacity, noise_intensity=0, noisy_objective=0, penalty=0):
-    noisy_objective = 2
-    penalty = 0
-    observed = eval_noisy_kp_v1_mo_violation(individual, items_dict, capacity, noise_intensity, noisy_objective, penalty)
-    return observed
-
-def noisy_mokp_violation_both(individual, items_dict, capacity, noise_intensity=0, noisy_objective=0, penalty=0):
-    noisy_objective = 0
-    penalty = 0
-    observed = eval_noisy_kp_v1_mo_violation(individual, items_dict, capacity, noise_intensity, noisy_objective, penalty)
-    return observed
-
-def countingOnesCountingZeros(individual, noise_intensity=0, noisy_objective=0):
+def oneMinMax(individual, noise_intensity=0, noisy_objective=0):
     """
-    Function to evaluate solutions to counting ones counting zeros
+    Function to evaluate solutions to one min max
     """
     # initialise and generate noise; at zero noise nothing is drawn, so a clean evaluation
-    # (noise_intensity=0) leaves the RNG untouched. A noisy objective still gets a float 0.0, exactly
-    # what random.gauss(0, 0) returned, so its value keeps the float type it always had.
+    # (noise_intensity=0) leaves the RNG untouched.
     noise1, noise2 = 0, 0
-    clean1, clean2 = 0, 0  # what a clean evaluation adds: 0.0 to a noisy objective
     if noisy_objective == 0 or noisy_objective == 1:
-        noise1 = random.gauss(0, noise_intensity) if noise_intensity != 0 else 0.0
-        clean1 = 0.0
+        noise1 = random.gauss(0, noise_intensity) if noise_intensity != 0 else 0
     if noisy_objective == 0 or noisy_objective == 2:
-        noise2 = random.gauss(0, noise_intensity) if noise_intensity != 0 else 0.0
-        clean2 = 0.0
+        noise2 = random.gauss(0, noise_intensity) if noise_intensity != 0 else 0
     # Count ones and zeros
     num_ones = sum(individual)
     num_zeros = len(individual) - num_ones
@@ -158,7 +128,112 @@ def countingOnesCountingZeros(individual, noise_intensity=0, noisy_objective=0):
     observed = (value_ones, value_zeros)
     log_mo_eval = getattr(get_active_logger(), "log_mo_eval", None)
     if log_mo_eval is not None:
-        log_mo_eval(individual, (num_ones + clean1, num_zeros + clean2), observed)
+        log_mo_eval(individual, (num_ones, num_zeros), observed)
     return observed
 
+def noisyMax_OneMinMax(individual, noise_intensity=0, noisy_objective=0):
+    noisy_objective = 1
+    observed = oneMinMax(individual, noise_intensity, noisy_objective)
+    return observed
 
+def noisymin_OneMinMax(individual, noise_intensity=0, noisy_objective=0):
+    noisy_objective = 2
+    observed = oneMinMax(individual, noise_intensity, noisy_objective)
+    return observed
+
+def noisyboth_OneMinMax(individual, noise_intensity=0, noisy_objective=0):
+    noisy_objective = 0
+    observed = oneMinMax(individual, noise_intensity, noisy_objective)
+    return observed
+
+def countingOnesCountingZeros(individual, noise_intensity=0, noisy_objective=0):
+    """
+    Function to evaluate solutions to counting ones counting zeros
+    """
+    # initialise and generate noise; at zero noise nothing is drawn, so a clean evaluation
+    # (noise_intensity=0) leaves the RNG untouched.
+    noise1, noise2 = 0, 0
+    if noisy_objective == 0 or noisy_objective == 1:
+        noise1 = random.gauss(0, noise_intensity) if noise_intensity != 0 else 0
+    if noisy_objective == 0 or noisy_objective == 2:
+        noise2 = random.gauss(0, noise_intensity) if noise_intensity != 0 else 0
+    # Calculate COCZ objectives
+    n = len(individual)
+    half = n // 2
+    num_ones = sum(individual)
+    ones_first_half = sum(individual[:half])
+    zeros_second_half = half - sum(individual[half:])
+    cocz = ones_first_half + zeros_second_half
+    # Add noise to objectives
+    value_ones = num_ones + noise1
+    value_cocz = cocz + noise2
+    # record and return observation
+    observed = (value_ones, value_cocz)
+    log_mo_eval = getattr(get_active_logger(), "log_mo_eval", None)
+    if log_mo_eval is not None:
+        log_mo_eval(individual, (num_ones, cocz), observed)
+    return observed
+
+def noisyOnes_COCZ(individual, noise_intensity=0, noisy_objective=0):
+    noisy_objective = 1
+    observed = countingOnesCountingZeros(individual, noise_intensity, noisy_objective)
+    return observed
+
+def noisyCOCZ_COCZ(individual, noise_intensity=0, noisy_objective=0):
+    noisy_objective = 2
+    observed = countingOnesCountingZeros(individual, noise_intensity, noisy_objective)
+    return observed
+
+def noisyboth_COCZ(individual, noise_intensity=0, noisy_objective=0):
+    noisy_objective = 0
+    observed = countingOnesCountingZeros(individual, noise_intensity, noisy_objective)
+    return observed
+
+def leadingOnesTrailingZeros(individual, noise_intensity=0, noisy_objective=0):
+    """
+    Function to evaluate solutions to leading ones trailing zeros
+    """
+    # initialise and generate noise; at zero noise nothing is drawn, so a clean evaluation
+    # (noise_intensity=0) leaves the RNG untouched.
+    noise1, noise2 = 0, 0
+    if noisy_objective == 0 or noisy_objective == 1:
+        noise1 = random.gauss(0, noise_intensity) if noise_intensity != 0 else 0
+    if noisy_objective == 0 or noisy_objective == 2:
+        noise2 = random.gauss(0, noise_intensity) if noise_intensity != 0 else 0
+    # Calculate LOTZ objectives
+    # Count leading ones
+    leading_ones = 0
+    for bit in individual:
+        if bit != 1:
+            break
+        leading_ones += 1
+    # Count trailing zeros
+    trailing_zeros = 0
+    for bit in reversed(individual):
+        if bit != 0:
+            break
+        trailing_zeros += 1
+    # Add noise to objectives
+    value_leading_ones = leading_ones + noise1
+    value_trailing_zeros = trailing_zeros + noise2
+    # record and return observation
+    observed = (value_leading_ones, value_trailing_zeros)
+    log_mo_eval = getattr(get_active_logger(), "log_mo_eval", None)
+    if log_mo_eval is not None:
+        log_mo_eval(individual, (leading_ones, trailing_zeros), observed)
+    return observed
+
+def noisyLO_LOTZ(individual, noise_intensity=0, noisy_objective=0):
+    noisy_objective = 1
+    observed = leadingOnesTrailingZeros(individual, noise_intensity, noisy_objective)
+    return observed
+
+def noisyTZ_LOTZ(individual, noise_intensity=0, noisy_objective=0):
+    noisy_objective = 2
+    observed = leadingOnesTrailingZeros(individual, noise_intensity, noisy_objective)
+    return observed
+
+def noisyboth_LOTZ(individual, noise_intensity=0, noisy_objective=0):
+    noisy_objective = 0
+    observed = leadingOnesTrailingZeros(individual, noise_intensity, noisy_objective)
+    return observed

@@ -142,7 +142,7 @@ def problem(name):
         return (Counting(eval_noisy_kp_v1_mo), params, (eval_noisy_kp_v1_mo, dict(params, noise_intensity=0)),
                 KP_WEIGHTS, kp_ref)
     if name == "kpviol1":
-        params = dict(kp, noise_intensity=1, penalty=1)
+        params = dict(kp, noise_intensity=1)
         return (Counting(eval_noisy_kp_v1_mo_violation), params,
                 (eval_noisy_kp_v1_mo_violation, dict(params, noise_intensity=0)), KP_WEIGHTS, kp_ref)
     if name == "cocz1":

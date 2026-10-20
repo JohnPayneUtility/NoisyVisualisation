@@ -14,9 +14,10 @@ hydra:
   sweeper:
     params:
       +defaults/multiobjective/run: run_mo_test_small
-      +defaults/multiobjective/problems: cocz20
+      +defaults/multiobjective/problems: COCZ/COCZ10_noisyones, COCZ/COCZ10_noisyCOCZ, COCZ/COCZ10_noisyboth, LOTZ/LOTZ10_noisyLO, LOTZ/LOTZ10_noisyTZ, LOTZ/LOTZ10_noisyboth
       # +defaults/multiobjective/problems: kp10_mo_v1,kp10_mo_violation
-      +defaults/multiobjective/algos: semo,nsga2,moumda,moumda_noduplicates,moumda_paretoarchive,moumda_kmeans
-      problem.fitness_params.noise_intensity: 0,1,2,3,4,5
+      # +defaults/multiobjective/algos: semo,nsga2,moumda,moumda_noduplicates,moumda_paretoarchive,moumda_kmeans
+      +defaults/multiobjective/algos: semo,nsga2,moumda
+      problem.fitness_params.noise_intensity: 0,1,2,4,8
   sweep:
     dir: data/outputs

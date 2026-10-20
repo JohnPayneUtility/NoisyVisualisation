@@ -6,9 +6,10 @@ Stage 9 renames `ViolationFunctions` -> `constraints` and `multiobjectiveFunctio
 reproducibility baselines execute only three evaluators and two knapsack instances, and the config gate
 only checks that a name resolves. These tests pin what they cannot see:
 
- 1. the 19 configured `fitness_fn` names resolve, through the runners' dynamic namespace, to unchanged
-    definitions;
- 2. the 31 top-level problem definitions exist exactly once (`mean_weight` exactly twice), unchanged;
+ 1. the configured `fitness_fn` names resolve, through the runners' dynamic namespace, to unchanged
+    definitions (the 19 pre-Stage-9 names plus the post-Stage-9 MO wrappers);
+ 2. the 31 top-level problem definitions exist exactly once (`mean_weight` exactly twice), unchanged, and
+    so do the multi-objective definitions added since (POST_STAGE_9_MO_DEFINITIONS);
  3. every global each of the 24 evaluators reads resolves to the same helper, module or shared object;
  4. every evaluator produces the same output, log records and RNG consumption on fixed inputs;
  5. every configured problem path resolves to its canonical module's object, whichever spelling
@@ -79,6 +80,17 @@ PRE_STAGE_9_DEFINITIONS = {
     "ProblemScripts.py": ("load_problem_KP", "get_knapsack_problem_stats", "interpret_correlation"),
 }
 
+# Multi-objective definitions added to knapsack_mo after Stage 9, in source order: the noisy-objective
+# wrappers of the two knapsack evaluators, and the OneMinMax, COCZ and LOTZ families. (The pre-Stage-9
+# countingOnesCountingZeros now computes COCZ; the counting ones / counting zeros it computed is oneMinMax.)
+POST_STAGE_9_MO_DEFINITIONS = (
+    "noisy_mokp_v1", "noisy_mokp_v2", "noisy_mokp_both",
+    "noisy_mokp_violation_v1", "noisy_mokp_violation_v2", "noisy_mokp_violation_both",
+    "oneMinMax", "noisyMax_OneMinMax", "noisymin_OneMinMax", "noisyboth_OneMinMax",
+    "noisyOnes_COCZ", "noisyCOCZ_COCZ", "noisyboth_COCZ",
+    "leadingOnesTrailingZeros", "noisyLO_LOTZ", "noisyTZ_LOTZ", "noisyboth_LOTZ",
+)
+
 # Every fitness_fn value in configs/ and tests/configs (derived from the corpus, not from this list).
 CONFIGURED_FITNESS_FNS = frozenset({
     "OneMax_fitness", "OneMax_prior_bitflip_fitness", "OneMax_prior_mult_bitflip_fitness",
@@ -89,6 +101,10 @@ CONFIGURED_FITNESS_FNS = frozenset({
     "eval_noisy_kp_1q_prior_bitwise",
     "rastrigin_eval", "birastrigin_eval",
     "eval_noisy_kp_v1_mo", "eval_noisy_kp_v1_mo_violation", "countingOnesCountingZeros",
+    # post-Stage-9 MO wrappers
+    "noisy_mokp_v1", "noisy_mokp_v2", "noisy_mokp_both",
+    "noisy_mokp_violation_v1", "noisy_mokp_violation_v2", "noisy_mokp_violation_both",
+    "noisyOnes_COCZ", "noisyCOCZ_COCZ", "noisyboth_COCZ", "noisyLO_LOTZ", "noisyTZ_LOTZ", "noisyboth_LOTZ",
 })
 
 # The complete evaluator API: the 19 configured names plus five no config uses.
@@ -114,6 +130,13 @@ EVALUATORS = tuple(
 # logging. Their AST pins here, in EVALUATOR_AST, and their EVALUATOR_GLOBALS (which gain get_active_logger
 # and getattr) were re-captured for that change only. EVALUATOR_OUTPUTS, including the +logger cases, is
 # unchanged: a logger without log_mo_eval is never called, and outputs and RNG consumption are identical.
+# Deliberate amendment (2026-10-20, MO evaluator revision): in the same three evaluators a noisy objective
+# at zero noise gets no noise added (0, no longer 0.0), so zero-noise evaluations keep each objective's own
+# type, and f(x) is reported from the raw sums. eval_noisy_kp_v1_mo_violation drops its unused penalty
+# parameter and now adds objective 2's noise to the violation (it was drawn and discarded), and
+# countingOnesCountingZeros now computes COCZ. Their AST pins (here and in EVALUATOR_AST), the violation
+# evaluator's EVALUATOR_DEFAULTS and the EVALUATOR_OUTPUTS of cases 24-26 were re-captured for that
+# revision only; their EVALUATOR_GLOBALS and every other pin are unchanged.
 DEFINITION_AST = {'OneMax_fitness': 'efe119c88de1ff4eae044e5b000fe4f55b78d5a789f756846d4ec2a6b11463cd',
  'OneMax_prior_1q_bitwise_fitness': '945e13dd71f63ca4475d8b8a90b686487ac495afd8067c8053382cda4afa5429',
  'OneMax_prior_bitflip_fitness': '0b59f1f4d4777eb688d96dc6d0d13f5a675f2dcf51805412c2e118b77e749145',
@@ -122,15 +145,15 @@ DEFINITION_AST = {'OneMax_fitness': 'efe119c88de1ff4eae044e5b000fe4f55b78d5a789f
  'ackley': '9b5a0e88c3e600459d6293fcfccc93553523a67a8acf02079e3a1d0afb2ed090',
  'birastrigin_eval': '23465fdf15c7cc14dd2fd9ac7ed8d543acdde7c98d16a7fe8df0fcc319685032',
  'bitflip_prior_noise': '79472046f93ddc94f337649c9fba89d68db8c77414976d6733214266a75f1853',
- 'countingOnesCountingZeros': '2229d61420cb47583bbe5d44c4a5bb92df36dac01a545a76d35d12206298a079',
+ 'countingOnesCountingZeros': '92ce4fe293a5bed122f1ea170f668daeeb346fd337aaee0d66d6f825849caf9f',
  'eval_ind_kp': '8f2531a6d23b80de72dc50e60ef4a7a94df4904b75610dd311c896592f5cb1f1',
  'eval_noisy_kp_1q_prior_bitwise': 'e7fab456eda1f6470baa37053d5d0c8483562673a0152b10c6c8a79e46d6dec6',
  'eval_noisy_kp_pq_prior_bitwise': '10fbabf30a804b709b3752bd0525b405c128e9ca1a1a918a2b0a86cfcac8ca29',
  'eval_noisy_kp_prior_bitflip': 'a8a587c99717bb2ad6e98d3ae4789033abaa0c60bab94016b70edac759baa07b',
  'eval_noisy_kp_prior_mult_bitflip': '4bbd661b666c4ddf69d79b2cc74abdaf93e89931e64423f76a7f265d8c10fa42',
  'eval_noisy_kp_v1': '0db44537754ad3d83418593188aea87bb59b734f9e56182d304ac12c78a7c650',
- 'eval_noisy_kp_v1_mo': '3a003a0eb88e015a7ef31cf19cb76687f18ccbe97f0ea2d4337a4f4d7220e82e',
- 'eval_noisy_kp_v1_mo_violation': 'fa9535185b4c473646204cfe6bd8775edf2a8e5e8e9b84f1dc3ea8ea9a40902a',
+ 'eval_noisy_kp_v1_mo': '513dabe026584bf9f0eb756d91c154a1707cad3fd56f7c9f1cecaab7329771c2',
+ 'eval_noisy_kp_v1_mo_violation': '721beefc651b59f45ab252cab89abc3bbde5b7a31e6af55dfd279043d107a43e',
  'eval_noisy_kp_v1_penalty': '81028aa2516d3504fdabdeae16c863d1ad24d1566b26a63fd0524230016e99eb',
  'eval_noisy_kp_v1_simple': '66c979ff6354a0d1dc03d3ac4b7acbbdf8d93220ff4b4e52408de29a6ec8f25d',
  'eval_noisy_kp_v2': 'ed7ee301c6c97f2094a073cb3ea2cb091d19405f86bf8abe31cbf838b3a13bc6',
@@ -167,9 +190,28 @@ EVALUATOR_AST = {'OneMax_fitness': 'efe119c88de1ff4eae044e5b000fe4f55b78d5a789f7
  'rastrigin_eval': 'f1af9fee394ce5093b2804925538cc56c45d35f6d47c4ec1fbef98a2cdad7c6c',
  'birastrigin_eval': '23465fdf15c7cc14dd2fd9ac7ed8d543acdde7c98d16a7fe8df0fcc319685032',
  'ackley': '9b5a0e88c3e600459d6293fcfccc93553523a67a8acf02079e3a1d0afb2ed090',
- 'eval_noisy_kp_v1_mo': '3a003a0eb88e015a7ef31cf19cb76687f18ccbe97f0ea2d4337a4f4d7220e82e',
- 'eval_noisy_kp_v1_mo_violation': 'fa9535185b4c473646204cfe6bd8775edf2a8e5e8e9b84f1dc3ea8ea9a40902a',
- 'countingOnesCountingZeros': '2229d61420cb47583bbe5d44c4a5bb92df36dac01a545a76d35d12206298a079'}
+ 'eval_noisy_kp_v1_mo': '513dabe026584bf9f0eb756d91c154a1707cad3fd56f7c9f1cecaab7329771c2',
+ 'eval_noisy_kp_v1_mo_violation': '721beefc651b59f45ab252cab89abc3bbde5b7a31e6af55dfd279043d107a43e',
+ 'countingOnesCountingZeros': '92ce4fe293a5bed122f1ea170f668daeeb346fd337aaee0d66d6f825849caf9f'}
+
+# sha256(ast.dump(FunctionDef)) of each POST_STAGE_9_MO_DEFINITIONS entry, captured when it was pinned.
+POST_STAGE_9_MO_AST = {'noisy_mokp_v1': '8321020956094549cc5b0912693eeff3cbfb18375cab591aa8bd30c512d3ac0d',
+ 'noisy_mokp_v2': '2c006429c2c0ab2d45f16fdccc9011b5c2fa50058ff9ea94a425072f1039ef37',
+ 'noisy_mokp_both': '4f77d35d19765bcc75f17a131f62843ca0400b075e4e588fddf83f8cf7bf1242',
+ 'noisy_mokp_violation_v1': '9d81b12ef55a7db815518e9302d75a9f2e96f8a2f60726483108147149b1573d',
+ 'noisy_mokp_violation_v2': 'c3d485ccd3f363c7742b6ee2aaa5987fd09067bf26edb750552682e9bb976106',
+ 'noisy_mokp_violation_both': 'bfe5c98baf263387ff7fdc71680761100c5b4219214b38828779e6c71554eb2f',
+ 'oneMinMax': '1af26fbe7ac951fe88600b72681ea7a5873db62ea23f6ee0756c264e98aff542',
+ 'noisyMax_OneMinMax': 'e9fce03d1af14707806c85af8fde7688606d81024905281ca0947603eea7f5a5',
+ 'noisymin_OneMinMax': 'fedc655c3668a006f8421ac6247da77dc0b6a793d899b050530f219bbcac03ab',
+ 'noisyboth_OneMinMax': '414fc9aa3109ecc75e0ce13fe52db7606423c236f7da9aaffbb2a24f97326555',
+ 'noisyOnes_COCZ': '8fc4e0caff9f349c0f1b08f5cbb1d802c60364d375f63436c95e07357c2ea1e2',
+ 'noisyCOCZ_COCZ': '3fab6a145977994b10db07c3022c857fc8c72785a15a05e3a4bd9018515f97c8',
+ 'noisyboth_COCZ': 'cdc039e4fc658bef3b857779ca73c660df04e66150dd47750803e6e0a6753347',
+ 'leadingOnesTrailingZeros': 'b720520a3f334aac4a1dac3eade8941e928a9afac70be90f9562d97295e9c97a',
+ 'noisyLO_LOTZ': '49c1a6e829e08c33211d4d44c010614337c433af4dcd65c9c5e576e5e0dc6fa9',
+ 'noisyTZ_LOTZ': 'f35ef1f477dbd50fe5415db5b6706e74ac1857f8d608a0633a738ff8a3700c8c',
+ 'noisyboth_LOTZ': 'd692aa128109748c13d25d6b699f36af0a27f25ad5f94c614aae2186b8d5f40a'}
 
 # [repr(__defaults__), repr(__kwdefaults__)] per evaluator.
 EVALUATOR_DEFAULTS = {'OneMax_fitness': ['(0,)', 'None'],
@@ -194,8 +236,22 @@ EVALUATOR_DEFAULTS = {'OneMax_fitness': ['(0,)', 'None'],
  'birastrigin_eval': ['(1, None, 0)', 'None'],
  'ackley': ['(20, 0.2, 6.283185307179586, 0)', 'None'],
  'eval_noisy_kp_v1_mo': ['(0, 0, 0)', 'None'],
- 'eval_noisy_kp_v1_mo_violation': ['(0, 0, 0)', 'None'],
+ 'eval_noisy_kp_v1_mo_violation': ['(0, 0)', 'None'],
  'countingOnesCountingZeros': ['(0, 0)', 'None']}
+
+# [repr(__defaults__), repr(__kwdefaults__)] of each configured POST_STAGE_9_MO_DEFINITIONS entry.
+POST_STAGE_9_MO_DEFAULTS = {'noisy_mokp_v1': ['(0, 0, 0)', 'None'],
+ 'noisy_mokp_v2': ['(0, 0, 0)', 'None'],
+ 'noisy_mokp_both': ['(0, 0, 0)', 'None'],
+ 'noisy_mokp_violation_v1': ['(0, 0)', 'None'],
+ 'noisy_mokp_violation_v2': ['(0, 0)', 'None'],
+ 'noisy_mokp_violation_both': ['(0, 0)', 'None'],
+ 'noisyOnes_COCZ': ['(0, 0)', 'None'],
+ 'noisyCOCZ_COCZ': ['(0, 0)', 'None'],
+ 'noisyboth_COCZ': ['(0, 0)', 'None'],
+ 'noisyLO_LOTZ': ['(0, 0)', 'None'],
+ 'noisyTZ_LOTZ': ['(0, 0)', 'None'],
+ 'noisyboth_LOTZ': ['(0, 0)', 'None']}
 
 # Every global each evaluator reads (def statement, body and nested functions) and what it resolves to.
 EVALUATOR_GLOBALS = {'OneMax_fitness': {'get_active_logger': {'kind': 'function',
@@ -679,30 +735,30 @@ EVALUATOR_OUTPUTS = {'00:OneMax_fitness[bits20]seed=20260917': '2b809de5d50215fd
  '23:eval_noisy_kp_v1_mo[kp_infeasible]seed=1+logger': 'a20737ac84d8ed8cef61d57476218d2e4c393ed6b1bbecb38ef31cfcca7be02d',
  '23:eval_noisy_kp_v1_mo[kp_infeasible]seed=2': 'd7e958d7f04373b10d7baf694147d695be41e6354c8104efa6941a1c724bc8cc',
  '23:eval_noisy_kp_v1_mo[kp_infeasible]seed=2+logger': '5af76b33a31207041db175a5e06acf7cfe1d036fb991f0f1e14231073801de7e',
- '24:eval_noisy_kp_v1_mo_violation[kp_feasible]seed=20260917': '5a74e99bbe11ac34456842c4b44508e9b7e2619baf7174dff842160bf9364255',
- '24:eval_noisy_kp_v1_mo_violation[kp_feasible]seed=20260917+logger': '56564ab2a683bfa9aaea5e7de4498cd3555300b14b4cdb56433847627ee40e05',
- '24:eval_noisy_kp_v1_mo_violation[kp_feasible]seed=1': '7da020ec49d9880367aa6cad9d8621afc8a318318913a54e087e18e815d10374',
- '24:eval_noisy_kp_v1_mo_violation[kp_feasible]seed=1+logger': 'd9ebb3315dd793c2e47fa15025bae6127093317210fc49902b365712fecbf7d8',
- '24:eval_noisy_kp_v1_mo_violation[kp_feasible]seed=2': 'fbfe0713b1cc84e22a191f724c7ce732a331899e102326fc1eb8b588a9feb67c',
- '24:eval_noisy_kp_v1_mo_violation[kp_feasible]seed=2+logger': 'a2f78551bbf34ec63bcfa64b372bcfcfc55d071f974c1c052cd30a8694c4629b',
- '24:eval_noisy_kp_v1_mo_violation[kp_infeasible]seed=20260917': '4708894286b2ef6c84e73acbf17b291a21d0133fa59304cc463773c665203b4d',
- '24:eval_noisy_kp_v1_mo_violation[kp_infeasible]seed=20260917+logger': '05f5f501410968f45bc4dc1ffd7d4270fef0af6458f72c2415cb14be46aadb84',
- '24:eval_noisy_kp_v1_mo_violation[kp_infeasible]seed=1': '81080955aa86c21074ee19f22627709fade41cdbe907fbf6b933508736661be8',
- '24:eval_noisy_kp_v1_mo_violation[kp_infeasible]seed=1+logger': '8603e0a87c4f4a23aaef8988ebd10999f072af45332f8d963b35d7d400cb0900',
- '24:eval_noisy_kp_v1_mo_violation[kp_infeasible]seed=2': '55cf9b7ce4443c41573d8d3aaf8e0e95c682191aa7ed9eb4c5f7516ed7ba5408',
- '24:eval_noisy_kp_v1_mo_violation[kp_infeasible]seed=2+logger': 'a6f83acf7af6f6b08d98bc21831862bea34e6697f010e8fa2777cf0179d8d72e',
- '25:eval_noisy_kp_v1_mo_violation[kp_infeasible]seed=20260917': 'b5ac2d87e74874cb04aa0a126a63c1aa3aae489ea27b48d54abcb1f06323e6c5',
- '25:eval_noisy_kp_v1_mo_violation[kp_infeasible]seed=20260917+logger': 'e01ba40b01799a2782050423101ba0a42c874af53fb065bd50228c5a5e83719c',
- '25:eval_noisy_kp_v1_mo_violation[kp_infeasible]seed=1': 'b6b1a54e54cbfd90b6f03fa4395471050c27abf2e61dedffb93f04e25cfb5a7b',
- '25:eval_noisy_kp_v1_mo_violation[kp_infeasible]seed=1+logger': '34f2269bac1cc3486797c01aa248b559d347d8043c446cdeb8e52b75678ebb86',
- '25:eval_noisy_kp_v1_mo_violation[kp_infeasible]seed=2': 'b39421db5c22bab7580f6c68d76c28690e32cb2495899e2974770b6a2e2fb8d7',
- '25:eval_noisy_kp_v1_mo_violation[kp_infeasible]seed=2+logger': 'bf5f3260ace6d373896e36cfb9b967fc0b9c459013b803be0901224763743f35',
- '26:countingOnesCountingZeros[bits20]seed=20260917': 'b6a07b93ac3ece5c669609feaf31587b6b6e7cf9e0d6266cf9080784978ab348',
- '26:countingOnesCountingZeros[bits20]seed=20260917+logger': '765e3ef77bde9f00b1e12487a4383a8629b78ed465957fe9ef0d30d123de25e9',
- '26:countingOnesCountingZeros[bits20]seed=1': '41659ab49ed1f04824df7e21a0471430d9d09405dd34a85868cc7d28dde1bb7a',
- '26:countingOnesCountingZeros[bits20]seed=1+logger': '0c2e697bb6bbbee7299a87123cb667b47e3f5ab1f9aaffce346df3fd77dacf71',
- '26:countingOnesCountingZeros[bits20]seed=2': '996a81b4e939d2f0f6cbc10299cf2a8a85ceafc8ce88284cc371074991d4dda6',
- '26:countingOnesCountingZeros[bits20]seed=2+logger': '32594d6209c2ecf98d4cc653a5a1d9c9841195e3258f41d95816181accc92361'}
+ '24:eval_noisy_kp_v1_mo_violation[kp_feasible]seed=20260917': '8ec8246774e071f31a2f4637f87efaf052d26268619125f5374b4d49a9273238',
+ '24:eval_noisy_kp_v1_mo_violation[kp_feasible]seed=20260917+logger': '2ef84af2aedce20ba5e9366c7826b14b125d108a9181d3549e967b9eb4c8a410',
+ '24:eval_noisy_kp_v1_mo_violation[kp_feasible]seed=1': 'd511cc52e597e73ba94281fba6affeb2699450ed67c355ebbc638b613174703e',
+ '24:eval_noisy_kp_v1_mo_violation[kp_feasible]seed=1+logger': 'a9758635b017ddb6e2e4eb61197021090a7493c61a84ec000ea44e2693fda4e5',
+ '24:eval_noisy_kp_v1_mo_violation[kp_feasible]seed=2': '348985c55004f792bdfd8c620185fcd25b77e957c80eebb5b7b10cb6c9a23732',
+ '24:eval_noisy_kp_v1_mo_violation[kp_feasible]seed=2+logger': '5992bbef13644ce440f8f551f9b462c21ae3de7ce4507da17428670090ec9330',
+ '24:eval_noisy_kp_v1_mo_violation[kp_infeasible]seed=20260917': '78b565365d523fbec9fa912be157fa3fc8a44582bb8fefe60f41ff4388050be0',
+ '24:eval_noisy_kp_v1_mo_violation[kp_infeasible]seed=20260917+logger': '157997d287a7efb383bbbc32c2f799056738c9ab3a7234a2f3ab954b21bc8a12',
+ '24:eval_noisy_kp_v1_mo_violation[kp_infeasible]seed=1': '5c4d9580732018ffb67e26bcce084a1e9e104728a45b06d5fbee7bd9ee55a999',
+ '24:eval_noisy_kp_v1_mo_violation[kp_infeasible]seed=1+logger': '3a5ae9fe0ee98c8abfd4a27bf6a28caa221b62921b6740116f74ca9fe958932b',
+ '24:eval_noisy_kp_v1_mo_violation[kp_infeasible]seed=2': 'eca76f24d9a03f28f181923f461a4b2490e1e86cc3fb3064267ca46ad451a804',
+ '24:eval_noisy_kp_v1_mo_violation[kp_infeasible]seed=2+logger': '797abf764d30dba658ed5365cc94e6c56a6e2ebfad3bb85741e63a71cadee062',
+ '25:eval_noisy_kp_v1_mo_violation[kp_infeasible]seed=20260917': '1fa29cb17834ecbfaf513a4ec061d42d9a2630fe747f96fe171133c63d1c0aa5',
+ '25:eval_noisy_kp_v1_mo_violation[kp_infeasible]seed=20260917+logger': '4034bbcb1b61abcb213326773fa65f4546530183567f439b40358ac13355dc1b',
+ '25:eval_noisy_kp_v1_mo_violation[kp_infeasible]seed=1': 'adf6f7dad82b214362269cd4d9e5ffe2ba7b9134c14991e911806f6b86e15886',
+ '25:eval_noisy_kp_v1_mo_violation[kp_infeasible]seed=1+logger': 'bf00e3c17c2f6d76c6fe44b47ebf003278ffc687fa552d1165103e95cc4a619d',
+ '25:eval_noisy_kp_v1_mo_violation[kp_infeasible]seed=2': 'cbebce17dffd489968cdfd3506cb083b5662c71eff0ba011e5a18c1c7f3c4844',
+ '25:eval_noisy_kp_v1_mo_violation[kp_infeasible]seed=2+logger': 'f86a73d81eae0c27b5f0909ff2596e1a5a2f7ea59a1208c6e9df6d28bff601c8',
+ '26:countingOnesCountingZeros[bits20]seed=20260917': 'c8cb0eb3f900101c613e59c5585a210705a93c2bc3843c431ad95d1281557bcc',
+ '26:countingOnesCountingZeros[bits20]seed=20260917+logger': 'fc14e842f9d6490c38ef096bab9af3deb0285802e1af0c2249b0bd71375311b5',
+ '26:countingOnesCountingZeros[bits20]seed=1': '13d4ae5f28f4558938dc18ccfc28cefc4c4f240411c9c14dc2a32b6a553dd76a',
+ '26:countingOnesCountingZeros[bits20]seed=1+logger': '9a4f19eb954284caefbf31fdabece6b882affcc5c544443597079a706235205e',
+ '26:countingOnesCountingZeros[bits20]seed=2': '31a817fab3d9972037ca65fc28db1c6fade3a0df4d6b6c8c26f73ebdbb89d025',
+ '26:countingOnesCountingZeros[bits20]seed=2+logger': 'bab70257766a4b2ec6e77cec36d9302cfd8849ffccf80499ceace7817b3306f7'}
 
 # Public namespace of each src.problems forwarder (== its canonical module's).
 FORWARDER_PUBLIC_NAMES = {'ProblemScripts': frozenset({'get_knapsack_problem_stats', 'load_problem_KP', 'interpret_correlation'}),
@@ -1257,7 +1313,7 @@ CASES = [
     ("eval_noisy_kp_v1_mo", KP, {"noise_intensity": 0.5, "noisy_objective": 0}),
     ("eval_noisy_kp_v1_mo", ("kp_infeasible",), {"noise_intensity": 0.5, "noisy_objective": 1, "penalty": 1}),
     ("eval_noisy_kp_v1_mo_violation", KP, {"noise_intensity": 0.5, "noisy_objective": 0}),
-    ("eval_noisy_kp_v1_mo_violation", ("kp_infeasible",), {"noise_intensity": 0.5, "noisy_objective": 2, "penalty": 1}),
+    ("eval_noisy_kp_v1_mo_violation", ("kp_infeasible",), {"noise_intensity": 0.5, "noisy_objective": 2}),
     ("countingOnesCountingZeros", ("bits20",), {"noise_intensity": 1.0, "noisy_objective": 0}),
 ]
 
@@ -1391,7 +1447,7 @@ module_node = ast.parse(textwrap.dedent(inspect.getsource(violation))).body[0]
 def nested_violation(key):
     random.seed(SEED)
     return canon(mo_violation(copy.deepcopy(INPUTS[key]), copy.deepcopy(KP_ITEMS), copy.deepcopy(KP_CAPACITY),
-                              noise_intensity=0, noisy_objective=0, penalty=0)[1])
+                              noise_intensity=0, noisy_objective=0)[1])
 
 
 report["violation"] = {
@@ -1643,23 +1699,28 @@ def test_configured_fitness_fns_resolve_to_pinned_definitions(probe):
         f"  missing: {sorted(CONFIGURED_FITNESS_FNS - set(configured['names']))}\n"
         f"  added:   {sorted(set(configured['names']) - CONFIGURED_FITNESS_FNS)}"
     )
+    ast_pins = {**EVALUATOR_AST, **POST_STAGE_9_MO_AST}
+    default_pins = {**EVALUATOR_DEFAULTS, **POST_STAGE_9_MO_DEFAULTS}
     for name, found in configured["names"].items():
         assert found is not None, f"getattr(sys.modules['noisyvis.problems'], {name!r}) fails"
         assert found["callable"] and found["name"] == name, f"{name}: {found}"
-        assert found["ast"] == EVALUATOR_AST[name], f"{name} resolves to a changed definition"
-        assert [found["defaults"], found["kwdefaults"]] == EVALUATOR_DEFAULTS[name], f"{name} defaults changed"
+        assert found["ast"] == ast_pins[name], f"{name} resolves to a changed definition"
+        assert [found["defaults"], found["kwdefaults"]] == default_pins[name], f"{name} defaults changed"
 
 
 def test_problem_definitions_pinned_and_unique(probe):
     observed = probe["definitions"]
-    expected_names = sorted(name for names in PRE_STAGE_9_DEFINITIONS.values() for name in names)
+    expected_names = sorted([name for names in PRE_STAGE_9_DEFINITIONS.values() for name in names]
+                            + list(POST_STAGE_9_MO_DEFINITIONS))
+    expected = 31 + len(POST_STAGE_9_MO_DEFINITIONS)
 
-    assert len(observed) == 31, f"{len(observed)} top-level problem definitions, expected 31"
+    assert len(observed) == expected, f"{len(observed)} top-level problem definitions, expected {expected}"
     assert all(kind == "FunctionDef" for kind, _, _ in observed), observed
     assert sorted(name for _, name, _ in observed) == expected_names, (
         "problem definitions lost, duplicated or added; only mean_weight may appear twice"
     )
-    changed = sorted({name for _, name, sha in observed if sha != DEFINITION_AST[name]})
+    pins = {**DEFINITION_AST, **POST_STAGE_9_MO_AST}
+    changed = sorted({name for _, name, sha in observed if sha != pins[name]})
     assert not changed, f"problem definitions changed since the pre-Stage-9 tree: {changed}"
     # Only the two loaders may differ from their pins, and only by the INSTANCES_DIR path anchoring.
     assert set(probe["anchor_normalised"]) <= {"load_problem_KP", "get_knapsack_problem_stats"}, (
