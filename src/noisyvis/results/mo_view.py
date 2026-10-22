@@ -3,9 +3,10 @@ Read API over one persisted multi-objective run record (`mo_record`, MO recordin
 
 A `mo_record` is the plain-data freeze of a run's MO evaluation log (tracking.mo_logger.finalise): NumPy
 arrays and Python primitives only. `MORunView` validates one record once and then answers every query
-from the persisted structures: it never replays the evaluation events, recomputes a front or a
-hypervolume, evaluates anything or draws RNG. It depends on NumPy only (no DEAP, Dash, MLflow, pandas,
-algorithm classes or file I/O); the caller passes an already-loaded record.
+from the persisted structures: it never replays the evaluation events, recomputes a stored front or a
+hypervolume, evaluates anything or draws RNG. The one thing it computes is population ranks, on demand,
+with the shared Pareto utilities (noisyvis.common.pareto, DEAP's non-dominated sorts). It never needs
+Dash, MLflow, pandas, algorithm classes or file I/O; the caller passes an already-loaded record.
 
 Semantics, as recorded:
 
@@ -22,19 +23,29 @@ Semantics, as recorded:
                             x~ is not a candidate until it is generated
     archive intervals       evaluation precision, half-open: a member is present after event e iff
                             enter_eval <= e < exit_eval (exit_eval == NOT_EXITED while still a member)
+    current population      (version 2) every member of the population at each generation, as the eval_id
+                            of the evaluation whose y it carries, in the population's order with
+                            duplicates kept; a change-point history of the ordered list. Noisy and true
+                            ranks are computed from it on demand (PopulationSnapshot); version-1 records
+                            have no population and answer only the front and archive queries
 
-Member arrays in snapshots are sorted by member id (observation id or genotype id).
+Member arrays in front snapshots are sorted by member id (observation id or genotype id); population
+snapshots keep the recorded order.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cached_property
 from typing import Callable, Mapping, Optional
 
 import numpy as np
 
+from noisyvis.common.pareto import nondominated_ranks
+
 MO_RECORD_SCHEMA = "noisyvis.mo_record"
-MO_RECORD_VERSION = 1
+MO_RECORD_VERSION = 2
+READABLE_VERSIONS = (1, 2)  # version 1: no current_population (read-only, front and archive queries only)
 NOT_EXITED = -1
 
 CURRENT_FRONT_METRICS = ("current_noisy_front__noisy", "current_noisy_front__clean", "current_clean_front__clean")
@@ -174,6 +185,92 @@ class FrontHistory:
         return self.at(int(self._gen_last_eval[gen]) - 1)
 
 
+RANK_KINDS = ("noisy", "true")
+
+
+@dataclass(frozen=True)
+class PopulationSnapshot:
+    """
+    The population at one generation: one row per member, in the population's recorded order, duplicates
+    kept (a member is never merged with another of the same evaluation, observation or genotype).
+
+        eval_ids        the evaluation whose y each member carries (repeated for clones never re-evaluated)
+        geno_ids, x     its original genotype
+        obs_ids         its canonical observation
+        observed        y of that evaluation: the exact values the algorithm held
+        true_obj        f(x) of its genotype
+        noisy_rank      0-based non-dominated rank under y, over all members (common.pareto.nondominated_ranks)
+        true_rank       0-based non-dominated rank under f(x)
+
+    Ranks are computed on first use and then kept; equal vectors share a rank, so duplicates rank alike.
+    """
+    generation: int
+    n_evals: int
+    weights: tuple
+    eval_ids: np.ndarray
+    geno_ids: np.ndarray
+    obs_ids: np.ndarray
+    x: np.ndarray
+    observed: np.ndarray
+    true_obj: np.ndarray
+
+    @cached_property
+    def noisy_rank(self) -> np.ndarray:
+        return _readonly(nondominated_ranks(self.observed, self.weights))
+
+    @cached_property
+    def true_rank(self) -> np.ndarray:
+        return _readonly(nondominated_ranks(self.true_obj, self.weights))
+
+    def __len__(self) -> int:
+        return len(self.eval_ids)
+
+    def rank(self, kind: str) -> np.ndarray:
+        """The noisy or true rank of every member."""
+        if kind not in RANK_KINDS:
+            raise ValueError(f"rank kind must be one of {RANK_KINDS}, not {kind!r}")
+        return self.noisy_rank if kind == "noisy" else self.true_rank
+
+    def in_ranks(self, kind: str, last: int, first: int = 0) -> np.ndarray:
+        """Row indices of the members whose rank of this kind is in first..last (inclusive), in order."""
+        ranks = self.rank(kind)
+        return np.flatnonzero((ranks >= first) & (ranks <= last))
+
+
+class PopulationHistory:
+    """
+    The recorded population's change points, at generation resolution: state i is the population from
+    generation starts[i] until the next change. Members keep their recorded order, duplicates and eval_ids.
+    """
+
+    def __init__(self, starts: np.ndarray, state: Callable[[int, int], PopulationSnapshot], n_generations: int):
+        self.starts = starts
+        self._state = state
+        self._n_generations = n_generations
+
+    def __len__(self) -> int:
+        return len(self.starts)
+
+    def __getitem__(self, i: int) -> PopulationSnapshot:
+        if not -len(self) <= i < len(self):
+            raise IndexError(f"state {i} of {len(self)}")
+        i %= len(self)
+        return self._state(i, int(self.starts[i]))
+
+    def __iter__(self):
+        return (self[i] for i in range(len(self)))
+
+    def index_at(self, gen: int) -> int:
+        """Index of the state in force at generation `gen`."""
+        if not 0 <= gen < self._n_generations:
+            raise IndexError(f"generation {gen} is not recorded (0..{self._n_generations - 1})")
+        return _row_in_force(self.starts, gen)
+
+    def at(self, gen: int) -> PopulationSnapshot:
+        """The population at generation `gen`."""
+        return self._state(self.index_at(gen), int(gen))
+
+
 @dataclass(frozen=True)
 class HVSeries:
     """
@@ -212,6 +309,17 @@ def _readonly(array: np.ndarray) -> np.ndarray:
     return view
 
 
+def _row_in_force(starts: np.ndarray, gen: int) -> int:
+    """Index of the change-point row in force at generation `gen` (the last row starting at or before it)."""
+    return int(np.searchsorted(starts, gen, side="right")) - 1
+
+
+def _csr_row(block: Mapping, row: int) -> np.ndarray:
+    """The members of one row of a CSR block (member_offsets + members)."""
+    offsets = block["member_offsets"]
+    return block["members"][offsets[row]:offsets[row + 1]]
+
+
 class MORunView:
     """Read-only, NumPy-only view over one validated mo_record."""
 
@@ -240,8 +348,11 @@ class MORunView:
         self._obs_first_eval = _readonly(first)
         self._generation = _readonly(np.searchsorted(self.gen_last_eval, np.arange(self.n_evals), side="right"))
 
+        self.version = record["version"]
         self._current = {"noisy": record["current_noisy_front"], "clean": record["current_clean_front"]}
         self._archive = {"noisy": record["noisy_archive"], "clean": record["clean_archive"]}
+        population = record.get("current_population")  # absent from a version-1 record
+        self._population = None if population is None else {k: _readonly(v) for k, v in population.items()}
         self._hv_series = {}  # metric -> HVSeries (immutable), built on first use
 
     # ------------------------------------------------------------------ generations and events
@@ -294,11 +405,11 @@ class MORunView:
     # ------------------------------------------------------------------ current fronts
 
     def _current_row(self, which: str, gen: int) -> int:
-        return int(np.searchsorted(self._current[which]["gen"], self._gen(gen), side="right")) - 1
+        return _row_in_force(self._current[which]["gen"], self._gen(gen))
 
     def _current_state(self, which: str, row: int, generation: int) -> FrontSnapshot:
         block = self._current[which]
-        members = block["members"][block["member_offsets"][row]:block["member_offsets"][row + 1]]
+        members = _csr_row(block, row)
         n_evals = int(self.gen_last_eval[generation])
         if which == "noisy":
             hv = {"current_noisy_front__noisy": float(block["hv_noisy"][row]),
@@ -323,6 +434,37 @@ class MORunView:
 
     def current_clean_front_history(self) -> FrontHistory:
         return self._current_history("clean")
+
+    # ------------------------------------------------------------------ current population (version 2)
+
+    @property
+    def has_population(self) -> bool:
+        """Whether the record holds the population at every generation (version 2 and later)."""
+        return self._population is not None
+
+    def _require_population(self) -> Mapping:
+        if self._population is None:
+            raise MORecordError(
+                f"population membership was not recorded (mo_record version {self.version}); "
+                "regenerate the run to reconstruct populations and ranks"
+            )
+        return self._population
+
+    def _population_state(self, row: int, generation: int) -> PopulationSnapshot:
+        eval_ids = _csr_row(self._population, row)
+        geno = self._orig[eval_ids]
+        return PopulationSnapshot(generation, int(self.gen_last_eval[generation]), self.weights,
+                                  eval_ids, geno, self._obs_id[eval_ids], self._values[geno],
+                                  self._obs_obj[eval_ids], self._true_obj[geno])
+
+    def population_history(self) -> PopulationHistory:
+        """The recorded population's change-point states, in generation order."""
+        starts = _readonly(self._require_population()["gen"])
+        return PopulationHistory(starts, self._population_state, self.n_generations)
+
+    def population(self, gen: int) -> PopulationSnapshot:
+        """The population at generation `gen`: every member, in recorded order, with its ranks on demand."""
+        return self.population_history().at(gen)
 
     # ------------------------------------------------------------------ passive archives
 
@@ -494,8 +636,9 @@ def _validate(record):
         _fail(f"a mo_record must be a mapping, got {type(record).__name__}")
     if record.get("schema") != MO_RECORD_SCHEMA:
         _fail(f"schema is {record.get('schema')!r}, expected {MO_RECORD_SCHEMA!r}")
-    if record.get("version") != MO_RECORD_VERSION:
-        _fail(f"version {record.get('version')!r} is not supported (this reader reads {MO_RECORD_VERSION})")
+    version = record.get("version")
+    if type(version) is not int or version not in READABLE_VERSIONS:
+        _fail(f"version {version!r} is not supported (this reader reads {READABLE_VERSIONS})")
     for key in ("meta", "genotypes", "events", "gen_last_eval", "current_noisy_front", "current_clean_front",
                 "noisy_archive", "clean_archive"):
         if key not in record:
@@ -557,6 +700,30 @@ def _validate(record):
         _fail("gen_last_eval must hold n_generations >= 1 boundaries")
     if np.any(np.diff(gen_last_eval) < 0) or gen_last_eval[0] < 0 or gen_last_eval[-1] != n:
         _fail("gen_last_eval must be non-decreasing and end at n_evals")
+
+    # current population: required from version 2, absent before
+    if version == 1:
+        if "current_population" in record:
+            _fail("a version-1 record cannot hold current_population")
+    else:
+        if "current_population" not in record:
+            _fail("missing 'current_population'")
+        block = record["current_population"]
+        gens = _array(block, "gen", "i", 1, "current_population")
+        offsets = _array(block, "member_offsets", "i", 1, "current_population")
+        members = _array(block, "members", "i", 1, "current_population")
+        if len(gens) == 0 or gens[0] != 0 or np.any(np.diff(gens) <= 0) or gens[-1] >= t:
+            _fail("current_population.gen must start at 0, strictly increase and stay below n_generations")
+        if offsets.shape != (len(gens) + 1,) or offsets[0] != 0 or offsets[-1] != len(members) \
+                or np.any(np.diff(offsets) < 0):
+            _fail("current_population.member_offsets is not a valid CSR index")
+        _in_range(members, 0, n, "current_population.members")
+        # no member refers to an evaluation after the generation its row starts at (rows hold until the
+        # next change and gen_last_eval never decreases, so this covers every generation a row applies to)
+        if members.size:
+            row_end = np.repeat(gen_last_eval[gens], np.diff(offsets))
+            if np.any(members >= row_end):
+                _fail("current_population.members refers to an evaluation after its generation")
 
     # current fronts
     for which, ids_bound, hv_keys in (("current_noisy_front", o, ("hv_noisy", "hv_clean")),

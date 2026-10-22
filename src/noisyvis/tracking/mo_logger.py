@@ -42,8 +42,13 @@ once per generation g = 0, 1, 2, ... with the current population. It records:
     current clean front     ND(unique original genotypes of the current population) under f(x); members
                             are orig_geno ids. Computed independently, never the noisy front re-scored.
 
+    current population      every member of the population, as the eval_id of the evaluation whose y it
+                            carries, in the population's own order: duplicate members, clones that were
+                            not re-evaluated and distinct evaluations of one genotype are all kept
+
 Both fronts are change-point histories: a row is appended only when the (sorted) membership differs
 from the previous row, and the state in force at generation g is the last row starting at or before g.
+The population is a change-point history too, of the ordered eval_id list (a reorder is a change).
 Each row carries its hypervolumes:
 
     current_noisy_front__noisy   HV of the noisy-front members' observed y
@@ -145,6 +150,10 @@ class MOEvaluationLogger:
         self.clean_front_gens = []
         self.clean_front_members = []   # sorted tuple of orig_geno ids
         self.clean_front_hv = []        # current_clean_front__clean
+
+        # current-population change-point history: the population's eval_ids, in its order
+        self.population_gens = []       # generation each row starts at
+        self.population_members = []    # tuple of eval_ids, duplicates kept
 
         # passive archives: replayed from the events on demand, cached by the event count they cover
         self._archive_cache = None
@@ -312,9 +321,9 @@ class MOEvaluationLogger:
 
     def observe_generation(self, gen: int, population):
         """
-        Record generation `gen` (observed once each, in order from 0): its evaluation boundary and the
-        current noisy and clean fronts of `population`. Reads only: no RNG, no evaluation, no change to
-        any individual.
+        Record generation `gen` (observed once each, in order from 0): its evaluation boundary, the
+        population's members (their eval_ids, in order) and the current noisy and clean fronts of
+        `population`. Reads only: no RNG, no evaluation, no change to any individual.
         """
         if gen != len(self.gen_last_eval):
             raise EvaluationLogError(
@@ -344,6 +353,10 @@ class MOEvaluationLogger:
 
         # everything validated: record (nothing above changes the log)
         self.gen_last_eval.append(len(self))  # exclusive end offset of this generation's events
+        members = tuple(eval_ids)
+        if not self.population_members or members != self.population_members[-1]:
+            self.population_gens.append(gen)
+            self.population_members.append(members)
         if not self.noisy_front_members or noisy != self.noisy_front_members[-1]:
             self.noisy_front_gens.append(gen)
             self.noisy_front_members.append(noisy)
@@ -371,6 +384,10 @@ class MOEvaluationLogger:
     def clean_front_at(self, gen: int) -> tuple:
         """orig_geno ids of the current clean front at generation `gen`."""
         return self.clean_front_members[self._row_at(self.clean_front_gens, gen)]
+
+    def population_at(self, gen: int) -> tuple:
+        """eval_ids of the population at generation `gen`, in its order, duplicates kept."""
+        return self.population_members[self._row_at(self.population_gens, gen)]
 
     def hv_trajectory(self, metric: str) -> list:
         """One value per recorded generation 0..n_generations-1 of a current-front HV metric."""
@@ -575,6 +592,7 @@ class MOEvaluationLogger:
 
         noisy_offsets, noisy_members = csr(self.noisy_front_members)
         clean_offsets, clean_members = csr(self.clean_front_members)
+        population_offsets, population_members = csr(self.population_members)
         hv = archives["hv"]
         return {
             "schema": MO_RECORD_SCHEMA,
@@ -599,6 +617,11 @@ class MOEvaluationLogger:
                 "obs_id": np.asarray(self.obs_id, dtype=np.int32),
             },
             "gen_last_eval": np.asarray(self.gen_last_eval, dtype=np.int64),
+            "current_population": {
+                "gen": np.asarray(self.population_gens, dtype=np.int32),
+                "member_offsets": population_offsets,
+                "members": population_members,
+            },
             "current_noisy_front": {
                 "gen": np.asarray(self.noisy_front_gens, dtype=np.int32),
                 "member_offsets": noisy_offsets,

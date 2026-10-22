@@ -94,6 +94,11 @@ def test_record_schema_types_and_purity(name, prob):
     assert (events["eval_geno"] is None) is (prob != "prior")
     for block in ("noisy_archive", "clean_archive"):
         assert all(record[block][k].dtype == np.int32 for k in ("member", "enter_eval", "exit_eval", "exit_by"))
+    population = record["current_population"]
+    assert (population["gen"].dtype, population["member_offsets"].dtype, population["members"].dtype) == \
+        (np.int32, np.int64, np.int32)
+    assert len(population["gen"]) == len(log.population_gens) and population["gen"][0] == 0
+    assert population["members"].tolist() == [e for row in log.population_members for e in row]
     MORunView(record)  # validates
 
 
@@ -221,8 +226,17 @@ def corrupt_numbering(record):
 
 CORRUPTIONS = {
     "schema": (lambda r: r.update(schema="other.record"), "schema"),
-    "version": (lambda r: r.update(version=2), "version 2"),
+    "version": (lambda r: r.update(version=3), "version 3"),
     "missing block": (lambda r: r.pop("noisy_archive"), "missing"),
+    "population missing": (lambda r: r.pop("current_population"), "missing 'current_population'"),
+    "population in v1": (lambda r: r.update(version=1), "version-1 record cannot hold"),
+    "population gens": (lambda r: r["current_population"]["gen"].__setitem__(0, 1), "current_population.gen"),
+    "population csr": (lambda r: r["current_population"]["member_offsets"].__setitem__(-1, 10**6),
+                       "current_population.member_offsets"),
+    "population range": (lambda r: r["current_population"]["members"].__setitem__(0, r["meta"]["n_evals"]),
+                         "outside"),
+    "population future eval": (lambda r: r["current_population"]["members"].__setitem__(0, r["gen_last_eval"][0]),
+                               "after its generation"),
     "meta type": (lambda r: r["meta"].update(n_evals=float(r["meta"]["n_evals"])), "meta.n_evals"),
     "obs_id dtype": (lambda r: r["events"].update(obs_id=r["events"]["obs_id"].astype(float)), "dtype"),
     "event shape": (lambda r: r["events"].update(obs_obj=r["events"]["obs_obj"][:-1]), "shapes"),

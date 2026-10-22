@@ -1,17 +1,21 @@
 """
-Pure Pareto-front utilities shared by the multi-objective algorithms (front stagnation) and the MO
-evaluation logger (current fronts and passive historical archives). No RNG, no evaluation, no deap
-Individuals required.
+Pure Pareto-front utilities shared by the multi-objective algorithms (front stagnation), the MO
+evaluation logger (current fronts and passive historical archives) and the MO read view (population
+ranks). No RNG, no evaluation, no deap Individuals required.
 
 Dominance throughout is Pareto dominance on weighted values (every objective maximised), as
 deap.base.Fitness.dominates: a dominates b iff a is no worse in every objective and strictly better in at
 least one. Equal vectors never dominate each other.
 """
 
+import functools
 from dataclasses import dataclass
 from typing import Tuple
 
 import numpy as np
+
+from deap import base as deap_base
+from deap import tools as deap_tools
 
 try: # try import fast hypervolume else fallback to python implementation
     from deap.tools._hypervolume import hv as _hv # fast compiled version
@@ -32,6 +36,57 @@ def nondominated_mask(wvalues):
     # dominated_by[i, j]: row j dominates row i
     dominated_by = (w[None, :, :] >= w[:, None, :]).all(axis=2) & (w[None, :, :] > w[:, None, :]).any(axis=2)
     return ~dominated_by.any(axis=1)
+
+
+# ==============================
+# Non-dominated ranks (DEAP's sorts)
+# ==============================
+
+_SORTS = {"log": deap_tools.sortLogNondominated, "standard": deap_tools.sortNondominated}
+
+
+@functools.lru_cache(maxsize=None)
+def _fitness_class(weights):
+    # a deap Fitness with these weights, built directly: no creator registration, no global state
+    return type("RankFitness", (deap_base.Fitness,), {"weights": weights})
+
+
+class _Ranked:
+    """One input row for DEAP's sorts: its Fitness and its row index."""
+    __slots__ = ("fitness", "row")
+
+    def __init__(self, fitness, row):
+        self.fitness = fitness
+        self.row = row
+
+
+def nondominated_ranks(objectives, weights, nd="log"):
+    """
+    0-based non-dominated rank of each row of an (N, M) array of (unweighted) objective values, in row
+    order: rank 0 is the non-dominated rows, rank 1 those non-dominated once rank 0 is removed, and so on.
+    Each row's weighted values are computed by deap's Fitness (values times weights, every objective then
+    maximised), and the ranks are DEAP's front indices: nd="log" uses tools.sortLogNondominated,
+    nd="standard" tools.sortNondominated (the sort selNSGA2 uses by default). Both give the same ranks.
+    Equal rows share a rank, so duplicate rows are all kept and ranked alike. Draws no RNG.
+
+    Dominance is plain Pareto dominance, as nondominated_mask: ranks == 0 is exactly its mask. Ranking under
+    constraint-domination would need constraint data per row and constraint-aware fitness objects; choosing
+    nd="standard" alone does not provide it.
+    """
+    if nd not in _SORTS:
+        raise ValueError(f"nd must be one of {tuple(_SORTS)}, not {nd!r}")
+    values = np.asarray(objectives, dtype=float)
+    if values.ndim != 2:
+        raise ValueError(f"objectives must be an (N, M) array, got shape {values.shape}")
+    ranks = np.zeros(len(values), dtype=np.int64)
+    if len(values) == 0:
+        return ranks
+    fitness = _fitness_class(tuple(float(w) for w in weights))
+    rows = [_Ranked(fitness(row), i) for i, row in enumerate(values.tolist())]
+    for rank, front in enumerate(_SORTS[nd](rows, len(rows))):
+        for ranked in front:
+            ranks[ranked.row] = rank
+    return ranks
 
 
 def hypervolume_of(values, opt_weights, ref_point):

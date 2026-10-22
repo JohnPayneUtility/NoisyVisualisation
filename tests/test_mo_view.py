@@ -216,9 +216,11 @@ def test_snapshots_never_fabricate_observations_for_clean_states():
             bad()
 
 
-def test_the_view_is_numpy_only():
-    """A clean interpreter unpickles a record, builds the view and queries every part of it without
-    importing deap, dash, mlflow or pandas."""
+def test_the_view_needs_no_dashboard_or_tracking_stack():
+    """A clean interpreter unpickles a record, builds the view and queries every part of it, population ranks
+    included, without importing dash, mlflow or pandas. DEAP is allowed: the view ranks populations with
+    the shared Pareto utilities (common.pareto, DEAP's sorts), as the algorithms do; it is the record that
+    must stay plain data (test_mo_record.py: it unpickles without deap or noisyvis)."""
     algo = build("MoUMDA_ParetoArchive", prob="prior")
     step_run(algo)
     script = (
@@ -230,7 +232,9 @@ def test_the_view_is_numpy_only():
         "view.clean_archive(last); view.lost_clean_solutions(last); view.events(); view.event(0)\n"
         "list(view.noisy_archive_history()); list(view.clean_archive_history('generation'))\n"
         "[view.hv(m).by_generation for m in HV_METRICS]; view.summary_scalars()\n"
-        "print(sorted({m.split('.')[0] for m in sys.modules} & {'deap', 'dash', 'mlflow', 'pandas'}))\n"
+        "population = view.population(last); population.noisy_rank; population.true_rank\n"
+        "[p.in_ranks('noisy', 1) for p in view.population_history()]\n"
+        "print(sorted({m.split('.')[0] for m in sys.modules} & {'dash', 'mlflow', 'pandas'}))\n"
     )
     done = subprocess.run([sys.executable, "-c", script], input=pickle.dumps(algo.eval_log.finalise()),
                           capture_output=True, timeout=120)
