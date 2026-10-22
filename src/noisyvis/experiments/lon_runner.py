@@ -32,6 +32,7 @@ import time
 from typing import Any, Dict, List, Tuple, Optional
 import importlib
 
+from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, OmegaConf
 
 import numpy as np
@@ -40,6 +41,7 @@ import mlflow
 import concurrent.futures
 import os
 import random as _rand
+from pathlib import Path
 
 # The fitness-function and attribute-generator names in configs are looked up with
 # getattr(sys.modules['noisyvis.problems' | 'noisyvis.algorithms'], name) (risk R5). These imports
@@ -294,7 +296,7 @@ def _log_and_persist_lon_df(df: pd.DataFrame) -> None:
     df.to_csv(out_dir / "lon_results.csv", index=False)
     mlflow.log_artifact(str(out_dir / "lon_results.pkl"))
     mlflow.log_artifact(str(out_dir / "lon_results.csv"))
-    mlflow.log_artifact("data/outputs/.hydra/config.yaml")
+    mlflow.log_artifact(str(Path(HydraConfig.get().runtime.output_dir) / ".hydra" / "config.yaml"))  # this job's own config
 
 
 # -------------------------------

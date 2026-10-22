@@ -26,10 +26,14 @@ distinct historical schema or experiment family is currently available to test.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
-WORKSPACE = Path("/workspace")
+# Historical artefacts are read only from an explicitly supplied root (a directory containing data/,
+# e.g. an archived copy), never from the live data root, which is regenerated and may be empty.
+HISTORICAL_ROOT_ENV = "NOISYVIS_HISTORICAL_ROOT"
+HISTORICAL_ROOT = Path(os.environ[HISTORICAL_ROOT_ENV]) if os.environ.get(HISTORICAL_ROOT_ENV) else None
 
 # Column contracts, measured at Stage 1 on the unmodified tree. Renaming any of these columns
 # during the restructuring would break the dashboard and every historical artefact (risk R7).
@@ -85,12 +89,14 @@ class Fixture:
     notes: str = ""
 
     def resolve(self) -> Path | None:
-        """The concrete file this fixture refers to today, or None if absent."""
+        """The concrete file this fixture refers to under HISTORICAL_ROOT, or None if absent."""
+        if HISTORICAL_ROOT is None:
+            return None
         if self.path is not None:
-            candidate = WORKSPACE / self.path
+            candidate = HISTORICAL_ROOT / self.path
             return candidate if candidate.is_file() else None
 
-        matches = sorted(WORKSPACE.glob(self.glob), key=lambda p: p.stat().st_mtime)
+        matches = sorted(HISTORICAL_ROOT.glob(self.glob), key=lambda p: p.stat().st_mtime)
         if not matches:
             return None
         return matches[0] if self.select == "oldest" else matches[-1]

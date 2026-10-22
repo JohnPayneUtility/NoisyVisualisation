@@ -15,5 +15,10 @@ services:
       - "8050:8050"
     volumes:
       - /home/ubuntucompute/code/NoisyVisualisation:/workspace:cached
+      # NVMe persistent data; create_host_path: false refuses to start if /mnt/nvme is not mounted.
+      - type: bind
+        source: /mnt/nvme/data
+        target: /workspace/data
+        bind: {create_host_path: false}
     user: "57439:57439"
     restart: unless-stopped

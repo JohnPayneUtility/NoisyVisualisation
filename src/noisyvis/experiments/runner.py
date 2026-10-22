@@ -25,6 +25,7 @@ import sys
 import time
 import random
 import pandas as pd
+from hydra.core.hydra_config import HydraConfig
 from hydra.utils import instantiate
 from omegaconf import OmegaConf, DictConfig
 import mlflow
@@ -296,7 +297,8 @@ def run_so_experiment(cfg: DictConfig):
         df_dashboard = enrich_df_with_payloads(df)
         save_or_append_results(df_dashboard, WAREHOUSE_DIR / 'algo_results.pkl')
 
-        mlflow.log_artifact("data/outputs/.hydra/config.yaml")
+        # This job's own resolved config: data/outputs/.hydra in a single run, data/outputs/<job>/.hydra in a multirun
+        mlflow.log_artifact(str(Path(HydraConfig.get().runtime.output_dir) / ".hydra" / "config.yaml"))
 
     process_time = time.perf_counter() - start_time - compute_time
     print(f"Processing/saving time: {process_time:.2f}s")
@@ -491,7 +493,7 @@ def run_mo_experiment(cfg: DictConfig):
         df.to_pickle(TEMP_DIR / "results.pkl") # save pickle
         save_or_append_results(df, WAREHOUSE_DIR / 'algo_results.pkl')
         mlflow.log_artifact(str(TEMP_DIR / "results.pkl"))
-        mlflow.log_artifact("data/outputs/.hydra/config.yaml")
+        mlflow.log_artifact(str(Path(HydraConfig.get().runtime.output_dir) / ".hydra" / "config.yaml"))  # this job's own config
     
     mlflow.end_run(status="FINISHED")
 

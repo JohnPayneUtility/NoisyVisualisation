@@ -13,7 +13,9 @@ from pathlib import Path
 
 import pytest
 
-from historical_fixtures import FORBIDDEN_MODULE_PREFIXES, REGISTRY, Fixture
+from historical_fixtures import (
+    FORBIDDEN_MODULE_PREFIXES, HISTORICAL_ROOT, HISTORICAL_ROOT_ENV, REGISTRY, Fixture,
+)
 
 
 class _RecordingUnpickler(pickle.Unpickler):
@@ -49,6 +51,10 @@ def _forbidden(referenced) -> list:
 
 @pytest.mark.parametrize("fixture", REGISTRY, ids=lambda f: f.id)
 def test_historical_artefact_loads(fixture: Fixture, note):
+    if HISTORICAL_ROOT is None:
+        note(f"historical fixtures not supplied ({HISTORICAL_ROOT_ENV} unset), so {fixture.id!r} is not exercised")
+        pytest.skip(f"historical fixtures not supplied; set {HISTORICAL_ROOT_ENV} to a directory containing data/")
+
     path = fixture.resolve()
 
     if path is None:

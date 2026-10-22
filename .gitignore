@@ -4,6 +4,7 @@ __pycache__/
 # data
 fast_storage/
 data/
+/data_nvme
 plots/
 outputs/
 notes/

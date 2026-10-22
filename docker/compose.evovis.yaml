@@ -10,7 +10,16 @@ services:
     # user: "1000:1000"
     volumes:
       - /home/ubuntucompute/code/NoisyVisualisation:/workspace:cached
-      - /mnt/nvme:/workspace/fast_storage
+      # NVMe: persistent data and LMDB scratch are separate directories. create_host_path: false makes
+      # Docker refuse to start if a source is missing (e.g. /mnt/nvme not mounted) instead of creating it.
+      - type: bind
+        source: /mnt/nvme/data
+        target: /workspace/data
+        bind: {create_host_path: false}
+      - type: bind
+        source: /mnt/nvme/scratch
+        target: /workspace/fast_storage
+        bind: {create_host_path: false}
 
     environment:
       - MLFLOW_TRACKING_URI=http://192.168.0.66:5000

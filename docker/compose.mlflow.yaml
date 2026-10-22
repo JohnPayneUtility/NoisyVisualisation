@@ -8,14 +8,20 @@ services:
     command: ["mlflow","ui",
               "--backend-store-uri","/workspace/data/mlruns",
               "--host","0.0.0.0","--port","5000"]
+    # Deployed as the Portainer stack "mlflow"; keep this file and the stack in sync.
+    # create_host_path: false refuses to start if /mnt/nvme is not mounted.
     volumes:
-      - /home/ubuntucompute/code/NoisyVisualisation/data/mlruns:/workspace/data/mlruns
+      - type: bind
+        source: /mnt/nvme/data/mlruns
+        target: /workspace/data/mlruns
+        bind: {create_host_path: false}
     ports:
       - "5000:5000"
     restart: unless-stopped
+    # The bitnami image has no curl or wget; probe MLflow's /health endpoint with its own Python.
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:5000/ || exit 1"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=3)"]
       interval: 10s
-      timeout: 3s
+      timeout: 5s
       retries: 6
-      start_period: 15s
+      start_period: 30s
