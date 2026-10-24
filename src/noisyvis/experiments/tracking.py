@@ -7,9 +7,10 @@ then set the config's `mlflow.tracking_uri` themselves, right after resolving th
 must never inherit another workflow's URI, and a missed call fails loudly against the test harness's
 unreachable sentinel instead of logging to the runner's configured server.
 
-Parent-run lifecycles (`set_experiment`, `start_run`, parameters, artefacts, `end_run`) stay inside
-the workflow functions in `runner.py` and `lon_runner.py`, because they interleave with computation
-and persistence.
+Parent-run lifecycles (`set_experiment`, `start_run`, parameters, artefacts) stay inside the workflow
+functions in `runner.py` and `lon_runner.py`, because they interleave with computation and
+persistence. Each workflow skips all of it when the experiment's `mlflow.enabled` is false
+(`mlflow_enabled`); results still reach the temp files and the warehouse.
 """
 
 from typing import Any, Dict
@@ -39,6 +40,15 @@ def set_lon_module_tracking_uri() -> None:
     mlruns_dir = MLRUNS_DIR  # <project root>/data/mlruns (results.paths)
     mlflow.set_tracking_uri(f"file:{mlruns_dir}")
     print("RUN(LON) tracking:", mlflow.get_tracking_uri())
+
+
+def mlflow_enabled(cfg) -> bool:
+    """The experiment's `mlflow.enabled` switch: True when absent, and it must be a real boolean."""
+    mlflow_cfg = cfg.get("mlflow")
+    enabled = mlflow_cfg.get("enabled", True) if mlflow_cfg is not None else True
+    if not isinstance(enabled, bool):
+        raise ValueError(f"mlflow.enabled must be true or false, got {enabled!r}")
+    return enabled
 
 
 def mlflow_log_child_from_row(row: Dict[str, Any], algo_params: Dict[str, Any]) -> str:

@@ -1,3 +1,5 @@
 # @package _global_
 mlflow:
   tracking_uri: "data/mlruns"
+  # enabled: true  # false skips all MLflow runs/artifacts; results still go to the warehouse (CLI: ++mlflow.enabled=false)
+  enabled: false  # false skips all MLflow runs/artifacts; results still go to the warehouse (CLI: ++mlflow.enabled=false)

@@ -5,7 +5,7 @@ defaults:
   - _self_   # ensures overrides below take precedence
 
 # EXPERIMENT SETTINGS
-experiment_name: "MO_test03"
+experiment_name: "MO_test_COCZ_LOTZ"
 experiment_description: >
   test of multiobjective algorithms
 
@@ -14,7 +14,8 @@ hydra:
   sweeper:
     params:
       +defaults/multiobjective/run: run_mo_test_small
-      +defaults/multiobjective/problems: COCZ/COCZ10_noisyones, COCZ/COCZ10_noisyCOCZ, COCZ/COCZ10_noisyboth, LOTZ/LOTZ10_noisyLO, LOTZ/LOTZ10_noisyTZ, LOTZ/LOTZ10_noisyboth
+      # +defaults/multiobjective/problems: COCZ/COCZ10_noisyones, COCZ/COCZ10_noisyCOCZ, COCZ/COCZ10_noisyboth, LOTZ/LOTZ10_noisyLO, LOTZ/LOTZ10_noisyTZ, LOTZ/LOTZ10_noisyboth
+      +defaults/multiobjective/problems: COCZ/COCZ10_noisyones, COCZ/COCZ10_noisyCOCZ, COCZ/COCZ10_noisyboth
       # +defaults/multiobjective/problems: kp10_mo_v1,kp10_mo_violation
       # +defaults/multiobjective/algos: semo,nsga2,moumda,moumda_noduplicates,moumda_paretoarchive,moumda_kmeans
       +defaults/multiobjective/algos: semo,nsga2,moumda

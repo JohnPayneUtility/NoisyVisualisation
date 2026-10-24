@@ -41,6 +41,7 @@ import mlflow
 import concurrent.futures
 import os
 import random as _rand
+from contextlib import nullcontext
 from pathlib import Path
 
 # The fitness-function and attribute-generator names in configs are looked up with
@@ -53,6 +54,7 @@ from noisyvis.networks import BinaryLON, BinaryCoLON, compress_lon_aggregated
 from noisyvis.results.store import save_or_append_results
 from noisyvis.results.paths import TEMP_DIR, WAREHOUSE_DIR
 from noisyvis.experiments.config.workflows import resolve_colon_config, resolve_lon_config
+from noisyvis.experiments.tracking import mlflow_enabled
 
 
 # -------------------------------
@@ -282,21 +284,22 @@ def _lon_compression_rows(cfg: DictConfig, prob_info: Dict[str, Any], aggregated
     return rows
 
 
-def _log_and_persist_lon_df(df: pd.DataFrame) -> None:
-    """Per-row metric, temp and warehouse pickles, CSV and artifacts (LON, LON-parallel, CoLON)."""
-    # Log metric per compression row
-    for i, r in enumerate(df.itertuples()):
-        mlflow.log_metric("n_local_optima", int(r.n_local_optima), step=i)
-
-    # Artifacts
+def _log_and_persist_lon_df(df: pd.DataFrame, track: bool = True) -> None:
+    """Temp and warehouse pickles and CSV, plus (when tracking) per-row metric and MLflow artifacts."""
+    # Temp and warehouse files
     out_dir = TEMP_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
     df.to_pickle(out_dir / "lon_results.pkl")
     save_or_append_results(df, WAREHOUSE_DIR / 'lon_results.pkl')
     df.to_csv(out_dir / "lon_results.csv", index=False)
-    mlflow.log_artifact(str(out_dir / "lon_results.pkl"))
-    mlflow.log_artifact(str(out_dir / "lon_results.csv"))
-    mlflow.log_artifact(str(Path(HydraConfig.get().runtime.output_dir) / ".hydra" / "config.yaml"))  # this job's own config
+
+    if track:
+        # Log metric per compression row
+        for i, r in enumerate(df.itertuples()):
+            mlflow.log_metric("n_local_optima", int(r.n_local_optima), step=i)
+        mlflow.log_artifact(str(out_dir / "lon_results.pkl"))
+        mlflow.log_artifact(str(out_dir / "lon_results.csv"))
+        mlflow.log_artifact(str(Path(HydraConfig.get().runtime.output_dir) / ".hydra" / "config.yaml"))  # this job's own config
 
 
 # -------------------------------
@@ -309,9 +312,11 @@ def run_lon_experiment(cfg: DictConfig):
     # Resolve nested deps
     cfg = resolve_lon_config(cfg)
 
-    # MLflow init
-    mlflow.set_tracking_uri(cfg.mlflow.tracking_uri)
-    mlflow.set_experiment(cfg.experiment_name)
+    # MLflow init (skipped entirely when the experiment sets mlflow.enabled: false)
+    track = mlflow_enabled(cfg)
+    if track:
+        mlflow.set_tracking_uri(cfg.mlflow.tracking_uri)
+        mlflow.set_experiment(cfg.experiment_name)
 
     # Problem metadata
     prob_info = {
@@ -332,19 +337,19 @@ def run_lon_experiment(cfg: DictConfig):
     attr_fn = getattr(sys.modules['noisyvis.algorithms'], cfg.problem.attr_function)
     weights = tuple(cfg.problem.weights)
 
-    with mlflow.start_run(run_name=cfg.lon.name):
-        print("RUN(LON) artifact root:", mlflow.get_artifact_uri())
-
+    with mlflow.start_run(run_name=cfg.lon.name) if track else nullcontext():
         # Log params
-        mlflow.log_params({
-            "dimensions": cfg.problem.dimensions,
-            "seed": cfg.run.seed,
-            "num_runs": cfg.run.num_runs,
-            "pert_attempts": cfg.lon.pert_attempts,
-            "n_flips_mut": cfg.lon.n_flips_mut,
-            "n_flips_pert": cfg.lon.n_flips_pert,
-            **{f"fit_{k}": v for k, v in fit_params.items()},
-        })
+        if track:
+            print("RUN(LON) artifact root:", mlflow.get_artifact_uri())
+            mlflow.log_params({
+                "dimensions": cfg.problem.dimensions,
+                "seed": cfg.run.seed,
+                "num_runs": cfg.run.num_runs,
+                "pert_attempts": cfg.lon.pert_attempts,
+                "n_flips_mut": cfg.lon.n_flips_mut,
+                "n_flips_pert": cfg.lon.n_flips_pert,
+                **{f"fit_{k}": v for k, v in fit_params.items()},
+            })
 
         # -------------------------------
         # Build aggregated LON inline (no helper)
@@ -380,9 +385,7 @@ def run_lon_experiment(cfg: DictConfig):
 
         df = pd.DataFrame(rows)
 
-        _log_and_persist_lon_df(df)
-
-    mlflow.end_run(status="FINISHED")
+        _log_and_persist_lon_df(df, track)
 
     # Summary
     try:
@@ -398,9 +401,11 @@ def run_lon_parallel_experiment(cfg: DictConfig):
     # Resolve nested deps
     cfg = resolve_lon_config(cfg)
 
-    # MLflow init
-    mlflow.set_tracking_uri(cfg.mlflow.tracking_uri)
-    mlflow.set_experiment(cfg.experiment_name)
+    # MLflow init (skipped entirely when the experiment sets mlflow.enabled: false)
+    track = mlflow_enabled(cfg)
+    if track:
+        mlflow.set_tracking_uri(cfg.mlflow.tracking_uri)
+        mlflow.set_experiment(cfg.experiment_name)
 
     # Problem metadata
     prob_info = {
@@ -424,21 +429,21 @@ def run_lon_parallel_experiment(cfg: DictConfig):
     parallel = bool(getattr(cfg.run, "parallel", False))
     num_workers = int(getattr(cfg.run, "num_workers", os.cpu_count() or 1))
 
-    with mlflow.start_run(run_name=cfg.lon.name):
-        print("RUN(LON) artifact root:", mlflow.get_artifact_uri())
-
+    with mlflow.start_run(run_name=cfg.lon.name) if track else nullcontext():
         # Log params
-        mlflow.log_params({
-            "dimensions": cfg.problem.dimensions,
-            "seed": cfg.run.seed,
-            "num_runs": cfg.run.num_runs,
-            "parallel": parallel,
-            "num_workers": num_workers,
-            "pert_attempts": cfg.lon.pert_attempts,
-            "n_flips_mut": cfg.lon.n_flips_mut,
-            "n_flips_pert": cfg.lon.n_flips_pert,
-            **{f"fit_{k}": v for k, v in fit_params.items()},
-        })
+        if track:
+            print("RUN(LON) artifact root:", mlflow.get_artifact_uri())
+            mlflow.log_params({
+                "dimensions": cfg.problem.dimensions,
+                "seed": cfg.run.seed,
+                "num_runs": cfg.run.num_runs,
+                "parallel": parallel,
+                "num_workers": num_workers,
+                "pert_attempts": cfg.lon.pert_attempts,
+                "n_flips_mut": cfg.lon.n_flips_mut,
+                "n_flips_pert": cfg.lon.n_flips_pert,
+                **{f"fit_{k}": v for k, v in fit_params.items()},
+            })
 
         # -------------------------------
         # Build aggregated LON (parallel or sequential)
@@ -495,9 +500,7 @@ def run_lon_parallel_experiment(cfg: DictConfig):
 
         df = pd.DataFrame(rows)
 
-        _log_and_persist_lon_df(df)
-
-    mlflow.end_run(status="FINISHED")
+        _log_and_persist_lon_df(df, track)
 
     # Summary
     try:
@@ -514,9 +517,11 @@ def run_colon_experiment(cfg: DictConfig):
     # Resolve nested deps
     cfg = resolve_colon_config(cfg)
 
-    # MLflow init
-    mlflow.set_tracking_uri(cfg.mlflow.tracking_uri)
-    mlflow.set_experiment(cfg.experiment_name)
+    # MLflow init (skipped entirely when the experiment sets mlflow.enabled: false)
+    track = mlflow_enabled(cfg)
+    if track:
+        mlflow.set_tracking_uri(cfg.mlflow.tracking_uri)
+        mlflow.set_experiment(cfg.experiment_name)
 
     # Problem metadata
     prob_info = {
@@ -544,24 +549,24 @@ def run_colon_experiment(cfg: DictConfig):
     parallel = bool(getattr(cfg.run, "parallel", False))
     num_workers = int(getattr(cfg.run, "num_workers", os.cpu_count() or 1))
 
-    with mlflow.start_run(run_name=cfg.lon.name):
-        print("RUN(LON) artifact root:", mlflow.get_artifact_uri())
-
+    with mlflow.start_run(run_name=cfg.lon.name) if track else nullcontext():
         # Log params
-        mlflow.log_params({
-            "dimensions": cfg.problem.dimensions,
-            "seed": cfg.run.seed,
-            "num_runs": cfg.run.num_runs,
-            "parallel": parallel,
-            "num_workers": num_workers,
-            "pert_attempts": cfg.lon.pert_attempts,
-            "n_flips_mut": cfg.lon.n_flips_mut,
-            "n_flips_pert": cfg.lon.n_flips_pert,
-            "lon_constrained": bool(violation_fn_dotted),
-            "violation_fn": violation_fn_dotted or "None",
-            **{f"fit_{k}": v for k, v in fit_params.items()},
-            **({f"viol_{k}": v for k, v in viol_params.items()} if violation_fn_dotted else {}),
-        })
+        if track:
+            print("RUN(LON) artifact root:", mlflow.get_artifact_uri())
+            mlflow.log_params({
+                "dimensions": cfg.problem.dimensions,
+                "seed": cfg.run.seed,
+                "num_runs": cfg.run.num_runs,
+                "parallel": parallel,
+                "num_workers": num_workers,
+                "pert_attempts": cfg.lon.pert_attempts,
+                "n_flips_mut": cfg.lon.n_flips_mut,
+                "n_flips_pert": cfg.lon.n_flips_pert,
+                "lon_constrained": bool(violation_fn_dotted),
+                "violation_fn": violation_fn_dotted or "None",
+                **{f"fit_{k}": v for k, v in fit_params.items()},
+                **({f"viol_{k}": v for k, v in viol_params.items()} if violation_fn_dotted else {}),
+            })
 
         # -------------------------------
         # Build aggregated LON (parallel or sequential)
@@ -695,9 +700,7 @@ def run_colon_experiment(cfg: DictConfig):
 
         df = pd.DataFrame(rows)
 
-        _log_and_persist_lon_df(df)
-
-    mlflow.end_run(status="FINISHED")
+        _log_and_persist_lon_df(df, track)
 
     # Summary
     print(df[["compression_val", "n_local_optima"]])

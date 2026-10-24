@@ -38,6 +38,7 @@ import noisyvis.problems
 
 import numpy as np
 import concurrent.futures
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Tuple, Any, Dict
 
@@ -52,7 +53,7 @@ from noisyvis.experiments.payloads import (
     persisted_payload_path,
     write_stn_payload,
 )
-from noisyvis.experiments.tracking import mlflow_log_child_from_row
+from noisyvis.experiments.tracking import mlflow_enabled, mlflow_log_child_from_row
 from noisyvis.experiments.resources import measure_run
 
 
@@ -202,10 +203,12 @@ def run_so_experiment(cfg: DictConfig):
 
     # Resolve dependencies in nested config structure
     cfg = resolve_so_config(cfg)
-    
-    # Initialise MLflow
+
+    # Initialise MLflow (skipped entirely when the experiment sets mlflow.enabled: false)
     # mlflow.set_tracking_uri(cfg.mlflow.tracking_uri)
-    mlflow.set_experiment(cfg.experiment_name)
+    track = mlflow_enabled(cfg)
+    if track:
+        mlflow.set_experiment(cfg.experiment_name)
 
     # Problem metadata
     # Problem info is passed to algorithm class via run function
@@ -243,21 +246,23 @@ def run_so_experiment(cfg: DictConfig):
     }
 
     # Run and log via MLflow
-    with mlflow.start_run(run_name=f"SWEEP | PID={cfg.problem.PID} | {cfg.algo.name}") as parent:
-        parent_run_id = parent.info.run_id
-        print("PARENT artifact root:", mlflow.get_artifact_uri())
+    sweep_run = mlflow.start_run(run_name=f"SWEEP | PID={cfg.problem.PID} | {cfg.algo.name}") if track else nullcontext()
+    with sweep_run as parent:
+        parent_run_id = parent.info.run_id if track else None
 
         # ---- Parent-level params ----
-        mlflow.log_params({
-            "PID": cfg.problem.PID,
-            "problem_name": cfg.problem.prob_name,
-            "dimensions": cfg.problem.dimensions,
-            "base_seed": cfg.run.seed,
-            "num_runs": cfg.run.num_runs,
-            "eval_limit": cfg.run.eval_limit,
-            "max_gens": cfg.run.max_gens,
-            **{f"fit_{k}": v for k, v in fit_params.items()}
-        })
+        if track:
+            print("PARENT artifact root:", mlflow.get_artifact_uri())
+            mlflow.log_params({
+                "PID": cfg.problem.PID,
+                "problem_name": cfg.problem.prob_name,
+                "dimensions": cfg.problem.dimensions,
+                "base_seed": cfg.run.seed,
+                "num_runs": cfg.run.num_runs,
+                "eval_limit": cfg.run.eval_limit,
+                "max_gens": cfg.run.max_gens,
+                **{f"fit_{k}": v for k, v in fit_params.items()}
+            })
 
         # Convert configs to plain python before passing to workers
         algo_config_plain = OmegaConf.to_container(cfg.algo.init_args, resolve=True)
@@ -280,25 +285,28 @@ def run_so_experiment(cfg: DictConfig):
         print(f"Computation time: {compute_time:.2f}s")
 
         # ---- Child runs: log results + artifacts ----
-        seed_to_runid = {}
-        for row in df.to_dict(orient="records"):
-            seed_to_runid[row["seed"]] = mlflow_log_child_from_row(row, algo_params)
-
-        df["run_id"] = df["seed"].map(seed_to_runid)
+        if track:
+            seed_to_runid = {}
+            for row in df.to_dict(orient="records"):
+                seed_to_runid[row["seed"]] = mlflow_log_child_from_row(row, algo_params)
+            df["run_id"] = df["seed"].map(seed_to_runid)
+        else:
+            df["run_id"] = None
         df["parent_run_id"] = parent_run_id
 
         # ---- Keep CSV unchanged (backup) ----
         df.to_csv(TEMP_DIR / 'results.csv', index=False)
-        mlflow.log_artifact(str(TEMP_DIR / 'results.csv'))
 
         # Keep your pickle + dashboard append unchanged for now
         df.to_pickle(TEMP_DIR / "results.pkl")
-        mlflow.log_artifact(str(TEMP_DIR / "results.pkl"))
         df_dashboard = enrich_df_with_payloads(df)
         save_or_append_results(df_dashboard, WAREHOUSE_DIR / 'algo_results.pkl')
 
-        # This job's own resolved config: data/outputs/.hydra in a single run, data/outputs/<job>/.hydra in a multirun
-        mlflow.log_artifact(str(Path(HydraConfig.get().runtime.output_dir) / ".hydra" / "config.yaml"))
+        if track:
+            mlflow.log_artifact(str(TEMP_DIR / 'results.csv'))
+            mlflow.log_artifact(str(TEMP_DIR / "results.pkl"))
+            # This job's own resolved config: data/outputs/.hydra in a single run, data/outputs/<job>/.hydra in a multirun
+            mlflow.log_artifact(str(Path(HydraConfig.get().runtime.output_dir) / ".hydra" / "config.yaml"))
 
     process_time = time.perf_counter() - start_time - compute_time
     print(f"Processing/saving time: {process_time:.2f}s")
@@ -409,10 +417,12 @@ def run_mo_experiment(cfg: DictConfig):
 
     # Resolve dependencies in nested config structure
     cfg = resolve_mo_config(cfg)
-    
-    # Initialise MLflow (tracking URI set at module level)
+
+    # Initialise MLflow (tracking URI set at module level; skipped when mlflow.enabled is false)
     # mlflow.set_tracking_uri(cfg.mlflow.tracking_uri)
-    mlflow.set_experiment(cfg.experiment_name)
+    track = mlflow_enabled(cfg)
+    if track:
+        mlflow.set_experiment(cfg.experiment_name)
 
     # Problem metadata
     # Problem info is passed to algorithm class via run function
@@ -461,15 +471,16 @@ def run_mo_experiment(cfg: DictConfig):
     }
 
     # Run and log via MLflow
-    with mlflow.start_run(run_name=cfg.algo.name):
+    with mlflow.start_run(run_name=cfg.algo.name) if track else nullcontext():
         # Log parameters
-        print("RUN artifact root:", mlflow.get_artifact_uri())
-        mlflow.log_params({
-            'dimensions':  cfg.problem.dimensions,
-            'seed':        cfg.run.seed,
-            'max_gens':    cfg.run.max_gens,
-            **{f"fit_{k}": v for k, v in fit_params.items()}
-        })
+        if track:
+            print("RUN artifact root:", mlflow.get_artifact_uri())
+            mlflow.log_params({
+                'dimensions':  cfg.problem.dimensions,
+                'seed':        cfg.run.seed,
+                'max_gens':    cfg.run.max_gens,
+                **{f"fit_{k}": v for k, v in fit_params.items()}
+            })
 
         # Execute experiment (single or multirun seed)
         df = mo_algo_data_multi(
@@ -481,21 +492,21 @@ def run_mo_experiment(cfg: DictConfig):
             parallel=cfg.run.parallel
         )
 
-        # Log metrics and artifacts
-        for row in df.itertuples():
-            # Final-generation hypervolumes of the current fronts and passive archives
-            for metric in MO_HV_METRICS:
-                value = getattr(row, f"final_hv_{metric}")
-                if value is not None and not np.isnan(value):
-                    mlflow.log_metric(f"final_hv_{metric}", value, step=row.seed)
         df.drop(columns=['mo_record']).to_csv(TEMP_DIR / 'results.csv', index=False) # save csv (identity, config, scalars)
-        mlflow.log_artifact(str(TEMP_DIR / 'results.csv'))
         df.to_pickle(TEMP_DIR / "results.pkl") # save pickle
         save_or_append_results(df, WAREHOUSE_DIR / 'algo_results.pkl')
-        mlflow.log_artifact(str(TEMP_DIR / "results.pkl"))
-        mlflow.log_artifact(str(Path(HydraConfig.get().runtime.output_dir) / ".hydra" / "config.yaml"))  # this job's own config
-    
-    mlflow.end_run(status="FINISHED")
+
+        # Log metrics and artifacts
+        if track:
+            for row in df.itertuples():
+                # Final-generation hypervolumes of the current fronts and passive archives
+                for metric in MO_HV_METRICS:
+                    value = getattr(row, f"final_hv_{metric}")
+                    if value is not None and not np.isnan(value):
+                        mlflow.log_metric(f"final_hv_{metric}", value, step=row.seed)
+            mlflow.log_artifact(str(TEMP_DIR / 'results.csv'))
+            mlflow.log_artifact(str(TEMP_DIR / "results.pkl"))
+            mlflow.log_artifact(str(Path(HydraConfig.get().runtime.output_dir) / ".hydra" / "config.yaml"))  # this job's own config
 
     # Print summary - show final hypervolume instead of final_fit
     summary_df = df[['seed', 'n_gens', 'n_evals', 'run_wall_time_s', 'peak_ram_mb']].copy()
