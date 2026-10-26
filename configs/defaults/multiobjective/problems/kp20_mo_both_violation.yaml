@@ -23,4 +23,4 @@ problem:
 
   attr_function: binary_attribute
   weights: [1.0, -1.0]
-  ref_point: [0, 269]
+  ref_point: [0, 879]

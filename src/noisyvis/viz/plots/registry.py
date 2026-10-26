@@ -21,6 +21,7 @@ from .pareto import (
     plot_subplots_multi,
     plot_subplots_highlighted,
     plot_animation,
+    plot_rank_layers,
     plot_noisy,
     plot_ind_vs_dist,
     plot_igd_vs_dist,
@@ -59,6 +60,8 @@ PARETO_PLOTS = {
     'MoveCorr': plot_movement_correlation,
     'Hist': plot_move_delta_histograms,
     'Scatter': plot_objective_vs_decision,
+    # one population's rank layers (its data is dashboard.mo_frames.rank_layer_data, not front entries)
+    'RankLayers': plot_rank_layers,
 }
 
 

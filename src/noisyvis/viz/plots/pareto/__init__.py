@@ -7,6 +7,7 @@ optimization runs. Functions are organized by plot type:
 - basic: Single Pareto front plots
 - subplots: Grid layouts showing multiple generations
 - animation: Animated generation progression
+- rank_layers: A population's non-dominated rank layers
 - noisy: Comparing noisy vs clean fitness values
 - analysis: Hypervolume and distance analysis plots
 - correlation: Movement correlation and scatter plots
@@ -22,6 +23,7 @@ from .subplots import (
     plot_subplots_highlighted,
 )
 from .animation import plot_animation
+from .rank_layers import plot_rank_layers
 from .noisy import plot_noisy
 from .analysis import (
     plot_ind_vs_dist,
@@ -41,6 +43,7 @@ __all__ = [
     'plot_subplots_multi',
     'plot_subplots_highlighted',
     'plot_animation',
+    'plot_rank_layers',
     'plot_noisy',
     'plot_ind_vs_dist',
     'plot_igd_vs_dist',

@@ -792,66 +792,115 @@ def create_pareto_front_section():
                 {'label': 'Progress per Movement', 'value': 'PPM'},
                 {'label': 'Movement Correlation', 'value': 'MoveCorr'},
                 {'label': 'Histogram', 'value': 'Hist'},
-                {'label': 'Scatter', 'value': 'Scatter'}
+                {'label': 'Scatter', 'value': 'Scatter'},
+                {'label': 'Pareto Rank Layers', 'value': 'RankLayers'}
             ],
             value='Basic',
             clearable=False,
             style=DROPDOWN_STYLE
         ),
-        dcc.Dropdown(
-            # the front every plot type except the "Noisy (A vs B)" ones draws or measures
-            id='IndVsDist_IndType',
-            options=[{'label': label, 'value': front} for front, (*_, label) in FRONT_KEYS.items()],
-            value='noisy_population',
-            clearable=False,
-            style=DROPDOWN_STYLE
-        ),
-        dcc.Dropdown(
-            id='IndVsDist_DistType',
-            options=[
-                {'label': 'Cumulative', 'value': 'cumulative'},
-                {'label': 'Raw', 'value': 'raw'},
-                {'label': 'MDS', 'value': 'mds'},
-                {'label': 'tSNE', 'value': 'tsne'},
-                {'label': 'ISOMAP', 'value': 'isomap'}
-            ],
-            value='cumulative',
-            clearable=False,
-            style=DROPDOWN_STYLE
-        ),
-        html.Label(" Number of runs to show: "),
-        dcc.Input(
-            id='paretoPlotNumRuns',
-            type='number',
-            min=0,
-            max=1000,
-            step=1,
-            value=1
-        ),
-        html.Label(" Window size: "),
-        dcc.Input(
-            id='paretoPlotWindowSize',
-            type='number',
-            min=0,
-            max=1000,
-            step=1,
-            value=5
-        ),
-        dcc.Checklist(
-            id='paretoAttainmentSurface',
-            options=[{'label': ' Show attainment surface', 'value': 'on'}],
-            value=['on'],
-            style={'display': 'inline-block', 'marginLeft': '20px'},
-        ),
-        dcc.Checklist(
-            id='paretoInvalidGridlines',
-            options=[{'label': ' Show invalid solution gridlines', 'value': 'on'}],
-            value=[],
-            style={'display': 'inline-block', 'marginLeft': '20px'},
-        ),
+        # Pareto Rank Layers' own controls, shown only for that plot type (toggle_pareto_plot_options)
+        create_pareto_rank_layer_options(),
+        # The front plots' controls, hidden only for Pareto Rank Layers
+        html.Div(id='paretoFrontOptions', children=[
+            dcc.Dropdown(
+                # the front every plot type except the "Noisy (A vs B)" ones draws or measures
+                id='IndVsDist_IndType',
+                options=[{'label': label, 'value': front} for front, (*_, label) in FRONT_KEYS.items()],
+                value='noisy_population',
+                clearable=False,
+                style=DROPDOWN_STYLE
+            ),
+            dcc.Dropdown(
+                id='IndVsDist_DistType',
+                options=[
+                    {'label': 'Cumulative', 'value': 'cumulative'},
+                    {'label': 'Raw', 'value': 'raw'},
+                    {'label': 'MDS', 'value': 'mds'},
+                    {'label': 'tSNE', 'value': 'tsne'},
+                    {'label': 'ISOMAP', 'value': 'isomap'}
+                ],
+                value='cumulative',
+                clearable=False,
+                style=DROPDOWN_STYLE
+            ),
+            html.Label(" Number of runs to show: "),
+            dcc.Input(
+                id='paretoPlotNumRuns',
+                type='number',
+                min=0,
+                max=1000,
+                step=1,
+                value=1
+            ),
+            html.Label(" Window size: "),
+            dcc.Input(
+                id='paretoPlotWindowSize',
+                type='number',
+                min=0,
+                max=1000,
+                step=1,
+                value=5
+            ),
+            dcc.Checklist(
+                id='paretoAttainmentSurface',
+                options=[{'label': ' Show attainment surface', 'value': 'on'}],
+                value=['on'],
+                style={'display': 'inline-block', 'marginLeft': '20px'},
+            ),
+            dcc.Checklist(
+                id='paretoInvalidGridlines',
+                options=[{'label': ' Show invalid solution gridlines', 'value': 'on'}],
+                value=[],
+                style={'display': 'inline-block', 'marginLeft': '20px'},
+            ),
+        ]),
         dcc.Graph(id="plotParetoFront"),
         html.Hr(),
     ]
+
+
+def create_pareto_rank_layer_options():
+    """
+    Create the Pareto Rank Layers controls: the run, the rank basis, the population step (slider) and exact
+    generation (number box), and the highest rank shown. Their ranges follow the selected run
+    (update_rank_layer_controls).
+
+    Returns:
+        html.Div: The rank-layer controls, hidden until that plot type is selected.
+    """
+    return html.Div(id='paretoRankLayerOptions', style={'display': 'none'}, children=[
+        html.Div([
+            html.Label("Run: "),
+            html.Div(dcc.Dropdown(id='paretoRankRun', options=[], value=None, clearable=False),
+                     style={'width': '400px'}),
+            dcc.RadioItems(
+                id='paretoRankBasis',
+                options=[{'label': ' Noisy objectives', 'value': 'noisy'},
+                         {'label': ' True objectives', 'value': 'true'}],
+                value='noisy',
+                inline=True,
+                labelStyle={'marginRight': '10px'},
+            ),
+        ], style=FLEX_WITH_GAP_STYLE),
+        html.Div([
+            html.Label("Population step: "),
+            html.Button("First", id='paretoRankFirst', n_clicks=0),
+            html.Button("Final", id='paretoRankLast', n_clicks=0),
+            html.Label(" Generation: "),
+            dcc.Input(id='paretoRankGeneration', type='number', min=0, max=0, step=1, debounce=True,
+                      style=SMALL_INPUT_STYLE),
+        ], style=FLEX_WITH_GAP_STYLE),
+        dcc.Slider(id='paretoRankStep', min=0, max=0, step=1, value=0, marks={}, updatemode='mouseup'),
+        html.Div(id='paretoRankStepLabel', style={'marginBottom': '6px'}),
+        html.Label("Highest rank shown:"),
+        dcc.Slider(id='paretoRankMax', min=0, max=0, step=1, value=0, marks={}),
+        dcc.Checklist(
+            id='paretoRankStaircase',
+            options=[{'label': ' Join each shown rank by its attainment staircase', 'value': 'on'}],
+            value=[],
+        ),
+    ])
 
 
 def create_multiobjective_options_section():

@@ -380,3 +380,292 @@ def pareto_runs(df: pd.DataFrame, stn_rows, entries_of, group_cols=('algo_name',
         # plain Python values, as the STN series labels reach the plots through the browser store's JSON
         labels.append([v.item() if isinstance(v, np.generic) else v for v in (key if isinstance(key, tuple) else (key,))])
     return groups, labels
+
+
+# ------------------------------------------------------------------ Pareto tab (population rank layers)
+
+# The "Pareto Rank Layers" plot type: one run's whole population at one generation, by non-dominated rank
+RANK_LAYERS_PLOT = 'RankLayers'
+# The candidate pools a rank-layer plot can rank (historical evaluation pools would need their own steps
+# and a precomputed ranking: ranking 50k distinct noisy observations takes minutes)
+RANK_POOLS = ('population',)
+DEFAULT_RANK_BASIS = 'noisy'
+RANK_BASIS_LABELS = {'noisy': 'noisy objectives', 'true': 'true objectives'}
+NO_POPULATION_MESSAGE = ("Population not recorded (mo_record version {version}): "
+                         "regenerate this experiment to view rank layers")
+NO_RUNS_MESSAGE = "No multi-objective data"
+
+# Opened population snapshots, one per recorded history row, so their ranks are computed once
+_SNAPSHOTS = _IdentityCache(maxsize=1024)
+
+
+class PopulationSteps(NamedTuple):
+    """
+    The steps of a run's population (population_steps): step i is one population state, from generation
+    starts[i] to ends[i] inclusive.
+    """
+    starts: np.ndarray
+    ends: np.ndarray
+
+    def __len__(self) -> int:
+        return len(self.starts)
+
+    def step_of(self, gen: int) -> int:
+        """The step in force at generation gen."""
+        return int(np.searchsorted(self.starts, gen, side='right')) - 1
+
+
+def population_steps(view: MORunView) -> PopulationSteps:
+    """
+    The population's steps, by the STN rule (stn_state_items) applied to population states: the candidate
+    generations are the recorded population change points (generation 0 among them), and a step starts
+    only where the multiset of member eval_ids differs from the previous step's. A reorder alone draws the
+    same rank layers, so it starts no step (the recorded order is untouched: each generation still reads
+    its own row); a population that recurs later is a new step. Built once per view.
+    """
+    def build():
+        history = view.population_history()
+        starts, previous = [], None
+        for i in range(len(history)):
+            key = np.sort(history[i].eval_ids).tobytes()
+            if key != previous:
+                starts.append(int(history.starts[i]))
+                previous = key
+        starts = np.asarray(starts, dtype=np.int64)
+        ends = np.append(starts[1:] - 1, view.n_generations - 1)
+        return PopulationSteps(_readonly_array(starts), _readonly_array(ends))
+
+    return _SEQUENCES.get(view, ('population_steps',), build)
+
+
+def _readonly_array(array: np.ndarray) -> np.ndarray:
+    array.flags.writeable = False
+    return array
+
+
+def _population_at(view: MORunView, gen: int):
+    """The population at generation gen, from the recorded row in force there (cached per row)."""
+    history = view.population_history()
+    row = history.index_at(gen)
+    return _SNAPSHOTS.get(view, ('population', row), lambda: history[row])
+
+
+def _clamp(value, low: int, high: int, default: int) -> int:
+    """value as an int in low..high, or default when it is not a number."""
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        return default
+    return min(max(value, low), high)
+
+
+def rank_layer_runs(df: pd.DataFrame, stn_rows, group_cols=('algo_name', 'noise')) -> list:
+    """
+    The runs a rank-layer plot can show: one option per selected row with an MO record, in the order
+    pareto_runs visits them (series, then runs). Each option's value is the row id (`_row`); a run whose
+    record holds no population says so in its label.
+    """
+    frame = pd.DataFrame(stn_rows or [])
+    options = []
+    if frame.empty or '_row' not in frame.columns:
+        return options
+    for key, group_df in frame.groupby(list(group_cols)):
+        key = key if isinstance(key, tuple) else (key,)
+        label = ', '.join(f"{col}={v}" if col != 'algo_name' else str(v) for col, v in zip(group_cols, key))
+        run = 0
+        for _, row in group_df.iterrows():
+            if pd.isna(row['_row']):
+                continue
+            view = row_view(df, int(row['_row']))
+            if view is None:
+                continue
+            suffix = '' if view.has_population else ' (no population recorded)'
+            options.append({'label': f"{label}, run {run}{suffix}", 'value': int(row['_row'])})
+            run += 1
+    return options
+
+
+def _selected_run(options: list, run):
+    """(the selected option, whether it differs from the requested run): the requested run when it is
+    still an option, else the first."""
+    for option in options:
+        if option['value'] == run:
+            return option, False
+    return (options[0] if options else None), True
+
+
+def _marks(values: list, labels, limit: int) -> dict:
+    """Slider marks at up to `limit` evenly spaced positions of 0..len(values)-1, always the ends."""
+    if not values:
+        return {}
+    positions = np.unique(np.linspace(0, len(values) - 1, min(len(values), limit)).round().astype(int))
+    return {int(i): labels(i) for i in positions}
+
+
+# Triggering inputs, by priority (several may change in one request): a run or selection change first,
+# then the First/Final buttons, then an exact generation, then the step slider, then the basis
+RANK_TRIGGERS = (('STN_data', 'run'), ('paretoRankRun', 'run'), ('paretoRankLast', 'last'),
+                 ('paretoRankFirst', 'first'), ('paretoRankGeneration', 'generation'),
+                 ('paretoRankStep', 'step'), ('paretoRankBasis', 'basis'))
+
+
+def rank_layer_trigger(triggered_prop_ids) -> str | None:
+    """The trigger rank_layer_controls acts on, from the changed props ('<id>.<prop>'), or None."""
+    changed = {prop.split('.')[0] for prop in (triggered_prop_ids or ())}
+    return next((trigger for component, trigger in RANK_TRIGGERS if component in changed), None)
+
+
+def rank_layer_controls(df: pd.DataFrame, stn_rows, run=None, basis=DEFAULT_RANK_BASIS, step=None, gen=None,
+                        trigger=None, prev_max_value=None, prev_max=None, pool='population') -> dict:
+    """
+    The rank-layer controls for the selected rows and the current control values:
+        run_options, run                 the runs (rank_layer_runs) and the selected one (kept while it is
+                                         still selected, else the first)
+        step_max, step_marks, step       the population steps (population_steps) and the one in force
+        gen_max, gen                     the exact generation shown
+        nav_disabled                     no run, or a run without a recorded population
+        status                           the generation, its step's generations, members and ranks
+        rank_max, rank_marks, rank_value the ranks of the whole population under the basis; the value
+                                         stays "all" (rank_max) if it was, else is clamped to the new range
+        rank_disabled                    fewer than two ranks
+    The trigger (rank_layer_trigger) decides the generation: a different run, the initial call and Final go
+    to the final generation; First to 0; the generation box to its clamped value; the step slider to its
+    step's first generation; a basis change keeps it. The ranks are never recomputed on a filtered subset.
+    """
+    if pool not in RANK_POOLS:
+        raise ValueError(f"unknown rank pool {pool!r}; expected one of {RANK_POOLS}")
+    basis = basis if basis in RANK_BASIS_LABELS else DEFAULT_RANK_BASIS
+    options = rank_layer_runs(df, stn_rows)
+    option, changed = _selected_run(options, run)
+    state = {'run_options': options, 'run': None if option is None else option['value'],
+             'step_max': 0, 'step_marks': {}, 'step': 0, 'gen_max': 0, 'gen': None, 'nav_disabled': True,
+             'status': NO_RUNS_MESSAGE, 'rank_max': 0, 'rank_marks': {}, 'rank_value': 0, 'rank_disabled': True}
+    if option is None:
+        return state
+    view = row_view(df, option['value'])
+    if not view.has_population:
+        return {**state, 'status': NO_POPULATION_MESSAGE.format(version=view.version)}
+
+    steps = population_steps(view)
+    last = view.n_generations - 1
+    if changed or trigger in (None, 'run', 'last'):
+        gen = last
+    elif trigger == 'first':
+        gen = 0
+    elif trigger == 'step':
+        gen = int(steps.starts[_clamp(step, 0, len(steps) - 1, len(steps) - 1)])
+    else:  # the generation box, or a basis change: the exact generation (invalid: the step's first)
+        fallback = int(steps.starts[_clamp(step, 0, len(steps) - 1, len(steps) - 1)])
+        gen = _clamp(gen, 0, last, fallback)
+    step = steps.step_of(gen)
+
+    snapshot = _population_at(view, gen)
+    ranks = snapshot.rank(basis)
+    n_ranks = int(ranks.max()) + 1 if len(ranks) else 0
+    rank_max = max(n_ranks - 1, 0)
+    was_all = prev_max_value is None or prev_max is None or prev_max_value >= prev_max
+    rank_value = rank_max if was_all else _clamp(prev_max_value, 0, rank_max, rank_max)
+
+    start, end = int(steps.starts[step]), int(steps.ends[step])
+    unchanged = f"generation {start}" if start == end else f"generations {start}–{end}"
+    status = (f"Generation {gen} of {last} · population unchanged over {unchanged} · "
+              f"step {step + 1} of {len(steps)} · {_plural(len(snapshot), 'member')}, "
+              f"{_plural(n_ranks, 'rank')} "
+              f"({RANK_BASIS_LABELS[basis]})")
+    return {**state, 'step_max': len(steps) - 1,
+            'step_marks': _marks(list(steps.starts), lambda i: f"G{int(steps.starts[i])}", 8),
+            'step': step, 'gen_max': last, 'gen': int(gen), 'nav_disabled': False, 'status': status,
+            'rank_max': rank_max, 'rank_marks': _marks(list(range(n_ranks)), str, 11),
+            'rank_value': rank_value, 'rank_disabled': n_ranks < 2}
+
+
+def _plural(n: int, noun: str) -> str:
+    return f"{n} {noun}{'' if n == 1 else 's'}"
+
+
+def _distinct_counts(values) -> list:
+    """The distinct entries of a sequence (rows or scalars) with their counts, in first-appearance order."""
+    counts = OrderedDict()
+    for value in values:
+        key = tuple(float(v) for v in value) if np.ndim(value) else int(value)
+        counts[key] = counts.get(key, 0) + 1
+    return [[list(k) if isinstance(k, tuple) else k, n] for k, n in counts.items()]
+
+
+def rank_layer_data(view: MORunView, gen=None, basis=DEFAULT_RANK_BASIS, max_rank=None,
+                    pool='population') -> dict:
+    """
+    The rank layers of a run's population at the end of generation gen (default: the final one), as plain
+    data. Every member keeps its rank among the *whole* population (PopulationSnapshot.noisy_rank or
+    .true_rank, under the observed y or f(x)); max_rank only selects which ranks are shown. Members at the
+    same plotted point (equal vectors share a rank) form one point, which keeps all of them:
+        rank, x, y                  the rank and the recorded objective values, unchanged
+        count                       its members (clones and repeated observations included)
+        eval_ids, geno_ids, obs_ids every member's identities, in the population's recorded order
+        other_values, other_ranks   the other space's distinct values and ranks, with counts
+    The layers also carry generation (gen itself, never the recorded row's start), n_evals, the step and
+    its generations (population_steps), the member and rank counts and the extent of the whole population.
+    A record without a population, or without two objectives, gives {'unavailable': message}.
+    """
+    if pool not in RANK_POOLS:
+        raise ValueError(f"unknown rank pool {pool!r}; expected one of {RANK_POOLS}")
+    if basis not in RANK_BASIS_LABELS:
+        raise ValueError(f"unknown rank basis {basis!r}; expected one of {tuple(RANK_BASIS_LABELS)}")
+    if not view.has_population:
+        return {'unavailable': NO_POPULATION_MESSAGE.format(version=view.version)}
+    if view.n_obj != 2:
+        return {'unavailable': f"Rank layers draw two objectives; this run has {view.n_obj}"}
+
+    last = view.n_generations - 1
+    gen = _clamp(gen, 0, last, last)
+    steps = population_steps(view)
+    step = steps.step_of(gen)
+    snapshot = _population_at(view, gen)
+    other = 'true' if basis == 'noisy' else 'noisy'
+    ranks, other_ranks = snapshot.rank(basis), snapshot.rank(other)
+    values = snapshot.observed if basis == 'noisy' else snapshot.true_obj
+    other_values = snapshot.true_obj if basis == 'noisy' else snapshot.observed
+    n_ranks = int(ranks.max()) + 1 if len(ranks) else 0
+    max_rank = _clamp(max_rank, 0, max(n_ranks - 1, 0), max(n_ranks - 1, 0))
+    rows = snapshot.in_ranks(basis, max_rank)
+
+    points = []
+    if len(rows):
+        _, first, inverse = np.unique(values[rows], axis=0, return_index=True, return_inverse=True)
+        inverse = inverse.reshape(-1)
+        for j in np.argsort(first, kind='stable'):  # points in first-appearance order
+            members = rows[inverse == j]
+            points.append({
+                'rank': int(ranks[members[0]]), 'x': float(values[members[0], 0]), 'y': float(values[members[0], 1]),
+                'count': len(members),
+                'eval_ids': [int(e) for e in snapshot.eval_ids[members]],
+                'geno_ids': [int(g) for g in snapshot.geno_ids[members]],
+                'obs_ids': [int(o) for o in snapshot.obs_ids[members]],
+                'other_values': _distinct_counts(other_values[members]),
+                'other_ranks': sorted(_distinct_counts(other_ranks[members])),
+            })
+        points.sort(key=lambda p: p['rank'])  # stable: first-appearance order within each rank
+
+    extent = [[float(values[:, i].min()), float(values[:, i].max())] for i in range(2)] if len(values) else None
+    return {
+        'basis': basis, 'pool': pool, 'generation': int(gen), 'n_generations': view.n_generations,
+        'n_evals': view.evals_through(gen), 'step': step, 'n_steps': len(steps),
+        'step_range': [int(steps.starts[step]), int(steps.ends[step])],
+        'weights': [float(w) for w in view.weights], 'n_members': len(snapshot), 'n_shown': len(rows),
+        'n_ranks': n_ranks, 'max_rank_shown': max_rank,
+        'rank_counts': [int(n) for n in np.bincount(ranks, minlength=n_ranks)],
+        'axis_extent': extent, 'points': points,
+    }
+
+
+def rank_layer_selection(df: pd.DataFrame, stn_rows, run=None, basis=None, gen=None, max_rank=None,
+                         pool='population') -> tuple:
+    """
+    (layers, run label) for the Pareto tab's rank-layer plot: rank_layer_data of the selected run (the
+    first when run is not among the selected rows), or {'unavailable': ...} without one.
+    """
+    option, _ = _selected_run(rank_layer_runs(df, stn_rows), run)
+    if option is None:
+        return {'unavailable': NO_RUNS_MESSAGE}, None
+    layers = rank_layer_data(row_view(df, option['value']), gen, basis or DEFAULT_RANK_BASIS, max_rank, pool)
+    return layers, option['label']

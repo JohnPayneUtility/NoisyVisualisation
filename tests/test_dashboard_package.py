@@ -113,11 +113,14 @@ CALLBACK_ORDER = ['..schematic-graph.figure...schematic-legend.children..',
  'axis-values.data',
  '..annotation-options.value...axes-text-scale.value...annotation-text-scale.value..',
  '..trajectory-plot.figure...run-print-info.children...stn-stats-table.children...lon-stats-table.children...lon-feas-error-scatter.figure...lon-selected-correlation.children...lon-feas-error-correlations.children...plot-timing-info.children..',
- 'plotParetoFront.figure']
+ 'plotParetoFront.figure',
+ # Pareto rank layers (deliberate amendment): two new callbacks, registered after updateParetoPlot
+ '..paretoFrontOptions.style...paretoRankLayerOptions.style..',
+ '..paretoRankRun.options...paretoRankRun.value...paretoRankStep.max...paretoRankStep.marks...paretoRankStep.value...paretoRankStep.disabled...paretoRankGeneration.max...paretoRankGeneration.value...paretoRankGeneration.disabled...paretoRankStepLabel.children...paretoRankMax.max...paretoRankMax.marks...paretoRankMax.value...paretoRankMax.disabled..']
 
-CALLBACK_LIST_DIGEST = '33e561e122a1eecc48b38c24d2307dc50bd88a72d9c0657a0da85075a9e5082e'
+CALLBACK_LIST_DIGEST = '4e7457f57a360d068c7e491bffe180e853db7fbaf043f99b3e7d21df39ab48a1'
 
-DEPENDENCIES_DIGEST = '4168a5cddf8210b6ac778046664a0cc0fd5f78dd1f775b2cb8f4bd92d0294a7e'
+DEPENDENCIES_DIGEST = '3b0322ae17588b89302a673d87508196bed62b0bedb58143f46136c11fac669b'
 
 # Pareto tab options (deliberate amendment): updateParetoPlot gains the paretoHistoricalArchive and
 # paretoAttainmentSurface checklists (two new layout ids) and State STN_data, from which it builds any
@@ -153,6 +156,16 @@ DEPENDENCIES_DIGEST = '4168a5cddf8210b6ac778046664a0cc0fd5f78dd1f775b2cb8f4bd92d
 # The probe masks the wall-clock text (TIMING_RE) and records which props carried it. Re-captured: its
 # contract entry (key, ast, literals), free names (time), HTTP response and chain entry, the callback modules,
 # the dependency/callback-list/layout digests and the layout ids. row_view's pin stays as it was.
+# Pareto rank layers (deliberate amendment): the Pareto tab gains the 'Pareto Rank Layers' plot type. updateParetoPlot
+# gains five Inputs after PID (paretoRankRun, paretoRankBasis, paretoRankGeneration, paretoRankMax,
+# paretoRankStaircase) and a branch drawing mo_frames.rank_layer_selection; two new callbacks follow it (orders 42
+# and 43): toggle_pareto_plot_options shows the rank-layer controls instead of the front plots' (wrapped in the new
+# paretoFrontOptions Div) for that plot type only, and update_rank_layer_controls keeps the run, step, generation and
+# rank range in step (one circular callback). The new module viz.plots.pareto.rank_layers loads with the registry.
+# Re-captured: updateParetoPlot's contract entry and free names (rank_layer_selection), the two new callbacks'
+# entries, free names, HTTP responses and modules, the order, the dependency/callback-list/layout digests, the
+# layout ids and NEW_MODULES. updateParetoPlot's HTTP response and the chain are unchanged. row_view's pin stays as
+# it was.
 CALLBACKS = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_data.data...STN_MO_data.data...STN_MO_series_labels.data..': {'ast': 'd8e75dff20267c56fb721ea8aa0ddc16dc48df81b4e8bd1a3c3a40fb9b823386',
                                                                                                                                      'inputs': ['STN_data.data',
                                                                                                                                                 'mo_plot_type.value',
@@ -683,7 +696,7 @@ CALLBACKS = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitness
                                                    'sci_value'],
                                         'prevent_initial_call': False,
                                         'state': []},
- 'plotParetoFront.figure': {'ast': '33217672c62a93c9849a753189ebdcca5e317d6184f8b794b03725fb947efb2b',
+ 'plotParetoFront.figure': {'ast': '825dd1b0deb31c66553f33b9185e708528d0a43287d08983922636cbf40164c7',
                             'inputs': ['STN_data.data',
                                        'paretoFrontPlotType.value',
                                        'IndVsDist_IndType.value',
@@ -692,8 +705,13 @@ CALLBACKS = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitness
                                        'paretoPlotWindowSize.value',
                                        'paretoAttainmentSurface.value',
                                        'paretoInvalidGridlines.value',
-                                       'PID.data'],
-                            'literals': '607d132a990657f1b14ae481786879e074da5d3d1c753c4f17ff6888bd4f4641',
+                                       'PID.data',
+                                       'paretoRankRun.value',
+                                       'paretoRankBasis.value',
+                                       'paretoRankGeneration.value',
+                                       'paretoRankMax.value',
+                                       'paretoRankStaircase.value'],
+                            'literals': '58fdcc95c60c61005466e0252e6b152d083646e9d2c288b2c8e11f2ec8656b40',
                             'module': 'dashboard/callbacks/pareto.py',
                             'name': 'updateParetoPlot',
                             'order': 41,
@@ -705,7 +723,12 @@ CALLBACKS = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitness
                                        'windowSize',
                                        'attainment',
                                        'invalid_gridlines',
-                                       'pid'],
+                                       'pid',
+                                       'rank_run',
+                                       'rank_basis',
+                                       'rank_generation',
+                                       'rank_max',
+                                       'rank_staircase'],
                             'prevent_initial_call': False,
                             'state': []},
  'plot_2d_data.data': {'ast': 'ad7f46051502e6864be95a64817a6a4646cdcb1514afcfeb25e7ae1897fc1516',
@@ -790,6 +813,41 @@ CALLBACKS = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitness
                  'prevent_initial_call': False,
                  'state': []}}
 
+# Pareto rank layers (deliberate amendment): the two new callbacks.
+CALLBACKS.update({'..paretoFrontOptions.style...paretoRankLayerOptions.style..': {'ast': 'cc1f97382e974af93cde47d49a443377e9b3e0163bf0f04d16fb155c4814df98',
+                                                                 'inputs': ['paretoFrontPlotType.value'],
+                                                                 'literals': '4353813c71ec1400fe796ccd9f184976807c666f04fd1d75c8a822469545a6b1',
+                                                                 'module': 'dashboard/callbacks/pareto.py',
+                                                                 'name': 'toggle_pareto_plot_options',
+                                                                 'order': 42,
+                                                                 'params': ['paretoFrontPlotType'],
+                                                                 'prevent_initial_call': False,
+                                                                 'state': []},
+ '..paretoRankRun.options...paretoRankRun.value...paretoRankStep.max...paretoRankStep.marks...paretoRankStep.value...paretoRankStep.disabled...paretoRankGeneration.max...paretoRankGeneration.value...paretoRankGeneration.disabled...paretoRankStepLabel.children...paretoRankMax.max...paretoRankMax.marks...paretoRankMax.value...paretoRankMax.disabled..': {'ast': 'd60e40e4b405111c6aab9e1bb8eb7715a2c6a16e07dccc14b63cf43ba79dff77',
+                                                                                                                                                                                                                                                                                                                                                                  'inputs': ['STN_data.data',
+                                                                                                                                                                                                                                                                                                                                                                             'paretoRankRun.value',
+                                                                                                                                                                                                                                                                                                                                                                             'paretoRankBasis.value',
+                                                                                                                                                                                                                                                                                                                                                                             'paretoRankStep.value',
+                                                                                                                                                                                                                                                                                                                                                                             'paretoRankGeneration.value',
+                                                                                                                                                                                                                                                                                                                                                                             'paretoRankFirst.n_clicks',
+                                                                                                                                                                                                                                                                                                                                                                             'paretoRankLast.n_clicks'],
+                                                                                                                                                                                                                                                                                                                                                                  'literals': '4975130c3fd7833373c64e24d449372423071a56aba851be210cc8a3f056b9b0',
+                                                                                                                                                                                                                                                                                                                                                                  'module': 'dashboard/callbacks/pareto.py',
+                                                                                                                                                                                                                                                                                                                                                                  'name': 'update_rank_layer_controls',
+                                                                                                                                                                                                                                                                                                                                                                  'order': 43,
+                                                                                                                                                                                                                                                                                                                                                                  'params': ['stn_rows',
+                                                                                                                                                                                                                                                                                                                                                                             'rank_run',
+                                                                                                                                                                                                                                                                                                                                                                             'rank_basis',
+                                                                                                                                                                                                                                                                                                                                                                             'rank_step',
+                                                                                                                                                                                                                                                                                                                                                                             'rank_generation',
+                                                                                                                                                                                                                                                                                                                                                                             '_first',
+                                                                                                                                                                                                                                                                                                                                                                             '_last',
+                                                                                                                                                                                                                                                                                                                                                                             'rank_max_value',
+                                                                                                                                                                                                                                                                                                                                                                             'rank_max'],
+                                                                                                                                                                                                                                                                                                                                                                  'prevent_initial_call': False,
+                                                                                                                                                                                                                                                                                                                                                                  'state': ['paretoRankMax.value',
+                                                                                                                                                                                                                                                                                                                                                                            'paretoRankMax.max']}})
+
 B9_DUPLICATES = {'display_stored_data': ['2DBoxPlot.figure', '2DLinePlot.figure', 'plot_2d_data_table.data'],
  'update_filtered_view': ['LON_data.data', 'STN_data.data', 'plot_2d_data.data'],
  'update_table2': ['..optimum.data...PID.data...opt_goal.data...fit_func_store.data..',
@@ -808,7 +866,7 @@ CONFIG = {'assets_folder': 'src/noisyvis/dashboard/assets',
  'url_base_pathname': None,
  'use_pages': False}
 
-LAYOUT_DIGEST = 'fdc94d9835b71e74c609c7ba0fe1ed55b363a521704006e6a5cae23cfe6dab6b'
+LAYOUT_DIGEST = '4b3b029c9d51688c8257d0372302103874cfa9f7542bc0819865e721a2e5833c'
 
 LAYOUT_IDS = ['2DPlotTabContent',
  '2DPlotTabSelection',
@@ -890,10 +948,21 @@ LAYOUT_IDS = ['2DPlotTabContent',
  'optimum',
  'options',
  'paretoAttainmentSurface',
+ 'paretoFrontOptions',
  'paretoFrontPlotType',
  'paretoInvalidGridlines',
  'paretoPlotNumRuns',
  'paretoPlotWindowSize',
+ 'paretoRankBasis',
+ 'paretoRankFirst',
+ 'paretoRankGeneration',
+ 'paretoRankLast',
+ 'paretoRankLayerOptions',
+ 'paretoRankMax',
+ 'paretoRankRun',
+ 'paretoRankStaircase',
+ 'paretoRankStep',
+ 'paretoRankStepLabel',
  'penalty-filter-dropdown',
  'performance-summary-table',
  'plot-theme',
@@ -1420,6 +1489,9 @@ FREE_NAMES = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnes
                             'pareto_runs': {'ast': '72a5cdcf4ed9133f0b79de0b4a5c11f3c0c72f67916095ec717f817af3797fcf',
                                             'kind': 'callable',
                                             'name': 'pareto_runs'},
+                            'rank_layer_selection': {'ast': '9bd03fc6b4654e4b8c4f69f3e474666b71eebb9ad7a2d52acffa5fddaf2abb8c',
+                                                     'kind': 'callable',
+                                                     'name': 'rank_layer_selection'},
                             'selected_front': {'ast': '2359760573bc7df4d74fd0ded254a2149313bb2de3cd79e494d4f4e4af70d609',
                                                'kind': 'callable',
                                                'name': 'selected_front'}},
@@ -1449,6 +1521,65 @@ FREE_NAMES = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnes
  'table2-selected-output.children': {},
  'table2-selected-store.data': {},
  'table2.data': {'pd': {'kind': 'module', 'name': 'pandas'}}}
+
+# Pareto rank layers (deliberate amendment): the two new callbacks' globals.
+FREE_NAMES.update({'..paretoFrontOptions.style...paretoRankLayerOptions.style..': {'RANK_LAYERS_PLOT': {'canon': 'RankLayers',
+                                                                                      'kind': 'value'}},
+ '..paretoRankRun.options...paretoRankRun.value...paretoRankStep.max...paretoRankStep.marks...paretoRankStep.value...paretoRankStep.disabled...paretoRankGeneration.max...paretoRankGeneration.value...paretoRankGeneration.disabled...paretoRankStepLabel.children...paretoRankMax.max...paretoRankMax.marks...paretoRankMax.value...paretoRankMax.disabled..': {'RANK_CONTROL_OUTPUTS': {'canon': {'tuple': [{'tuple': ['paretoRankRun',
+                                                                                                                                                                                                                                                                                                                                                                                                                          'options',
+                                                                                                                                                                                                                                                                                                                                                                                                                          'run_options']},
+                                                                                                                                                                                                                                                                                                                                                                                                               {'tuple': ['paretoRankRun',
+                                                                                                                                                                                                                                                                                                                                                                                                                          'value',
+                                                                                                                                                                                                                                                                                                                                                                                                                          'run']},
+                                                                                                                                                                                                                                                                                                                                                                                                               {'tuple': ['paretoRankStep',
+                                                                                                                                                                                                                                                                                                                                                                                                                          'max',
+                                                                                                                                                                                                                                                                                                                                                                                                                          'step_max']},
+                                                                                                                                                                                                                                                                                                                                                                                                               {'tuple': ['paretoRankStep',
+                                                                                                                                                                                                                                                                                                                                                                                                                          'marks',
+                                                                                                                                                                                                                                                                                                                                                                                                                          'step_marks']},
+                                                                                                                                                                                                                                                                                                                                                                                                               {'tuple': ['paretoRankStep',
+                                                                                                                                                                                                                                                                                                                                                                                                                          'value',
+                                                                                                                                                                                                                                                                                                                                                                                                                          'step']},
+                                                                                                                                                                                                                                                                                                                                                                                                               {'tuple': ['paretoRankStep',
+                                                                                                                                                                                                                                                                                                                                                                                                                          'disabled',
+                                                                                                                                                                                                                                                                                                                                                                                                                          'nav_disabled']},
+                                                                                                                                                                                                                                                                                                                                                                                                               {'tuple': ['paretoRankGeneration',
+                                                                                                                                                                                                                                                                                                                                                                                                                          'max',
+                                                                                                                                                                                                                                                                                                                                                                                                                          'gen_max']},
+                                                                                                                                                                                                                                                                                                                                                                                                               {'tuple': ['paretoRankGeneration',
+                                                                                                                                                                                                                                                                                                                                                                                                                          'value',
+                                                                                                                                                                                                                                                                                                                                                                                                                          'gen']},
+                                                                                                                                                                                                                                                                                                                                                                                                               {'tuple': ['paretoRankGeneration',
+                                                                                                                                                                                                                                                                                                                                                                                                                          'disabled',
+                                                                                                                                                                                                                                                                                                                                                                                                                          'nav_disabled']},
+                                                                                                                                                                                                                                                                                                                                                                                                               {'tuple': ['paretoRankStepLabel',
+                                                                                                                                                                                                                                                                                                                                                                                                                          'children',
+                                                                                                                                                                                                                                                                                                                                                                                                                          'status']},
+                                                                                                                                                                                                                                                                                                                                                                                                               {'tuple': ['paretoRankMax',
+                                                                                                                                                                                                                                                                                                                                                                                                                          'max',
+                                                                                                                                                                                                                                                                                                                                                                                                                          'rank_max']},
+                                                                                                                                                                                                                                                                                                                                                                                                               {'tuple': ['paretoRankMax',
+                                                                                                                                                                                                                                                                                                                                                                                                                          'marks',
+                                                                                                                                                                                                                                                                                                                                                                                                                          'rank_marks']},
+                                                                                                                                                                                                                                                                                                                                                                                                               {'tuple': ['paretoRankMax',
+                                                                                                                                                                                                                                                                                                                                                                                                                          'value',
+                                                                                                                                                                                                                                                                                                                                                                                                                          'rank_value']},
+                                                                                                                                                                                                                                                                                                                                                                                                               {'tuple': ['paretoRankMax',
+                                                                                                                                                                                                                                                                                                                                                                                                                          'disabled',
+                                                                                                                                                                                                                                                                                                                                                                                                                          'rank_disabled']}]},
+                                                                                                                                                                                                                                                                                                                                                                                           'kind': 'value'},
+                                                                                                                                                                                                                                                                                                                                                                  'ctx': {'kind': 'object',
+                                                                                                                                                                                                                                                                                                                                                                          'type': 'dash._callback_context.CallbackContext'},
+                                                                                                                                                                                                                                                                                                                                                                  'df': {'attr': 'df',
+                                                                                                                                                                                                                                                                                                                                                                         'kind': 'data'},
+                                                                                                                                                                                                                                                                                                                                                                  'no_update': {'kind': 'object',
+                                                                                                                                                                                                                                                                                                                                                                                'type': 'dash._no_update.NoUpdate'},
+                                                                                                                                                                                                                                                                                                                                                                  'rank_layer_controls': {'ast': '1c571f2be551cf48425d3d74a8b96ddebdb370f5b77d8941b4d1c1d9f2a1c9f6',
+                                                                                                                                                                                                                                                                                                                                                                                          'kind': 'callable',
+                                                                                                                                                                                                                                                                                                                                                                                          'name': 'rank_layer_controls'},
+                                                                                                                                                                                                                                                                                                                                                                  'rank_layer_trigger': {'ast': '4b4255a5ed9e571fdc091b8a9d57fa83fbfa93cce198528f7d9a71f2c69d70e0',
+                                                                                                                                                                                                                                                                                                                                                                                         'kind': 'callable',
+                                                                                                                                                                                                                                                                                                                                                                                         'name': 'rank_layer_trigger'}}})
 
 HTTP = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_data.data...STN_MO_data.data...STN_MO_series_labels.data..': {'digest': '0c1e9c9d7f465048619c6db1c8e1e7426d438814730edc0b553ea58372f80350',
                                                                                                                                      'length': 2734,
@@ -1676,6 +1807,31 @@ HTTP = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_da
                  'props': ['table2.data'],
                  'status': 200,
                  'traces': {}}}
+
+# Pareto rank layers (deliberate amendment): the two new callbacks over the probe's layout values.
+HTTP.update({'..paretoFrontOptions.style...paretoRankLayerOptions.style..': {'digest': '3f92bca97283715e5554d9427a5788c96d786209c480ba943e045801b8e332c5',
+                                                                 'length': 115,
+                                                                 'props': ['paretoFrontOptions.style',
+                                                                           'paretoRankLayerOptions.style'],
+                                                                 'status': 200,
+                                                                 'traces': {}},
+ '..paretoRankRun.options...paretoRankRun.value...paretoRankStep.max...paretoRankStep.marks...paretoRankStep.value...paretoRankStep.disabled...paretoRankGeneration.max...paretoRankGeneration.value...paretoRankGeneration.disabled...paretoRankStepLabel.children...paretoRankMax.max...paretoRankMax.marks...paretoRankMax.value...paretoRankMax.disabled..': {'digest': '8dc604ed098c26ada9c0e52420735114d71b79f728e27b12cd608dec93b64235',
+                                                                                                                                                                                                                                                                                                                                                                  'length': 447,
+                                                                                                                                                                                                                                                                                                                                                                  'props': ['paretoRankGeneration.disabled',
+                                                                                                                                                                                                                                                                                                                                                                            'paretoRankGeneration.max',
+                                                                                                                                                                                                                                                                                                                                                                            'paretoRankMax.disabled',
+                                                                                                                                                                                                                                                                                                                                                                            'paretoRankMax.marks',
+                                                                                                                                                                                                                                                                                                                                                                            'paretoRankMax.max',
+                                                                                                                                                                                                                                                                                                                                                                            'paretoRankMax.value',
+                                                                                                                                                                                                                                                                                                                                                                            'paretoRankRun.options',
+                                                                                                                                                                                                                                                                                                                                                                            'paretoRankRun.value',
+                                                                                                                                                                                                                                                                                                                                                                            'paretoRankStep.disabled',
+                                                                                                                                                                                                                                                                                                                                                                            'paretoRankStep.marks',
+                                                                                                                                                                                                                                                                                                                                                                            'paretoRankStep.max',
+                                                                                                                                                                                                                                                                                                                                                                            'paretoRankStep.value',
+                                                                                                                                                                                                                                                                                                                                                                            'paretoRankStepLabel.children'],
+                                                                                                                                                                                                                                                                                                                                                                  'status': 200,
+                                                                                                                                                                                                                                                                                                                                                                  'traces': {}}})
 
 CHAIN = {'..STN_data_processed.data...STN_series_labels.data...noisy_fitnesses_data.data...STN_MO_data.data...STN_MO_series_labels.data..': {'digest': 'f64cab2f4ed7684649b5b6190fd7ce5145b94ba5528f9d63185e1691dac7f796',
                                                                                                                                      'length': 1259,
@@ -3527,6 +3683,10 @@ CALLBACK_MODULES = {'..STN_data_processed.data...STN_series_labels.data...noisy_
  'table2-selected-store.data': 'dashboard/callbacks/selection.py',
  'table2.data': 'dashboard/callbacks/selection.py'}
 
+# Pareto rank layers (deliberate amendment)
+CALLBACK_MODULES.update({'..paretoFrontOptions.style...paretoRankLayerOptions.style..': 'dashboard/callbacks/pareto.py',
+ '..paretoRankRun.options...paretoRankRun.value...paretoRankStep.max...paretoRankStep.marks...paretoRankStep.value...paretoRankStep.disabled...paretoRankGeneration.max...paretoRankGeneration.value...paretoRankGeneration.disabled...paretoRankStepLabel.children...paretoRankMax.max...paretoRankMax.marks...paretoRankMax.value...paretoRankMax.disabled..': 'dashboard/callbacks/pareto.py'})
+
 STATEMENT_DESTINATIONS = {'app/app.py': {'assign|app': 'mlflow_app/app.py',
                 'assign|app.layout': 'mlflow_app/app.py',
                 'main|': 'mlflow_app/app.py'},
@@ -3682,6 +3842,8 @@ NEW_MODULES = (
     # MO recording plan v6, Work Group 6 (deliberate amendment): the dashboard builds its multi-objective
     # plot data server-side (dashboard.mo_frames) through the read view (results.mo_view).
     "noisyvis.dashboard.mo_frames", "noisyvis.results.mo_view",
+    # Pareto rank layers (deliberate amendment): the Pareto plot registry loads the new rank-layer plot module.
+    "noisyvis.viz.plots.pareto.rank_layers",
 )
 
 # Where an import's module moves. The imported *names* never change (A1).
