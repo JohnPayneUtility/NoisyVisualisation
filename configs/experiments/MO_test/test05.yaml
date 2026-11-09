@@ -1,0 +1,24 @@
+# @package _global_
+# BASE SETTINGS
+defaults:
+  - /defaults/mlflow
+  - _self_   # ensures overrides below take precedence
+
+# EXPERIMENT SETTINGS
+experiment_name: "MO_test_COCZ_LOTZ_2_small"
+experiment_description: >
+  test of multiobjective algorithms
+
+hydra:
+  mode: MULTIRUN
+  sweeper:
+    params:
+      +defaults/multiobjective/run: run_mo_test_small
+      +defaults/multiobjective/problems: COCZ/COCZ10_noisyones, COCZ/COCZ10_noisyCOCZ, COCZ/COCZ10_noisyboth, LOTZ/LOTZ10_noisyLO, LOTZ/LOTZ10_noisyTZ, LOTZ/LOTZ10_noisyboth, COCZ/COCZ20_noisyones, COCZ/COCZ20_noisyCOCZ, COCZ/COCZ20_noisyboth, LOTZ/LOTZ20_noisyLO, LOTZ/LOTZ20_noisyTZ, LOTZ/LOTZ20_noisyboth
+      # +defaults/multiobjective/problems: COCZ/COCZ10_noisyones, COCZ/COCZ10_noisyCOCZ, COCZ/COCZ10_noisyboth
+      # +defaults/multiobjective/problems: kp10_mo_v1,kp10_mo_violation
+      +defaults/multiobjective/algos: semo,nsga2,moumda,moumda_noduplicates,moumda_paretoarchive,moumda_kmeans
+      # +defaults/multiobjective/algos: semo,nsga2,moumda
+      problem.fitness_params.noise_intensity: 0,1,2,4,8
+  sweep:
+    dir: data/outputs

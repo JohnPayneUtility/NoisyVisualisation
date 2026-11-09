@@ -25,7 +25,7 @@ import numpy as np
 import pandas as pd
 
 from ..common.pareto import nondominated_mask
-from ..results.mo_view import MORunView
+from ..results.mo_view import MORunView, PopulationSnapshot
 
 # The legacy recorder's per-row payload (removed in Work Group 6). Rows written before then carry it
 # instead of `mo_record`; the dashboard skips them (regenerate those experiments to see them).
@@ -382,27 +382,31 @@ def pareto_runs(df: pd.DataFrame, stn_rows, entries_of, group_cols=('algo_name',
     return groups, labels
 
 
-# ------------------------------------------------------------------ Pareto tab (population rank layers)
+# ------------------------------------------------------------------ Pareto tab (rank layers)
 
-# The "Pareto Rank Layers" plot type: one run's whole population at one generation, by non-dominated rank
+# The "Pareto Rank Layers" plot type: one run's candidate pool, by non-dominated rank
 RANK_LAYERS_PLOT = 'RankLayers'
-# The candidate pools a rank-layer plot can rank (historical evaluation pools would need their own steps
-# and a precomputed ranking: ranking 50k distinct noisy observations takes minutes)
-RANK_POOLS = ('population',)
+# The candidate pools (data sources) a rank-layer plot ranks, each at one generation or combined across
+# generations (rank_pool)
+RANK_POOLS = ('population', 'noisy_archive', 'clean_archive')
+RANK_POOL_LABELS = {'population': 'current population', 'noisy_archive': 'noisy passive archive',
+                    'clean_archive': 'clean passive archive'}
+DEFAULT_RANK_POOL = 'population'
 DEFAULT_RANK_BASIS = 'noisy'
 RANK_BASIS_LABELS = {'noisy': 'noisy objectives', 'true': 'true objectives'}
 NO_POPULATION_MESSAGE = ("Population not recorded (mo_record version {version}): "
                          "regenerate this experiment to view rank layers")
 NO_RUNS_MESSAGE = "No multi-objective data"
+NAVIGATION_HIDDEN = {'display': 'none'}
 
-# Opened population snapshots, one per recorded history row, so their ranks are computed once
+# Opened candidate pools (population rows, archive states, combined pools), so their ranks are computed once
 _SNAPSHOTS = _IdentityCache(maxsize=1024)
 
 
 class PopulationSteps(NamedTuple):
     """
-    The steps of a run's population (population_steps): step i is one population state, from generation
-    starts[i] to ends[i] inclusive.
+    The steps of a run's candidate pool (population_steps, archive_steps): step i is one membership state,
+    from generation starts[i] to ends[i] inclusive.
     """
     starts: np.ndarray
     ends: np.ndarray
@@ -415,27 +419,57 @@ class PopulationSteps(NamedTuple):
         return int(np.searchsorted(self.starts, gen, side='right')) - 1
 
 
+def _steps(candidates, key_of, n_generations: int) -> PopulationSteps:
+    """
+    The steps over recorded candidate generations, by the STN rule (stn_state_items) applied to a pool's
+    membership: a step starts only where key_of(gen) differs from the previous candidate's, so consecutive
+    equal states merge and a state that recurs later is a new step.
+    """
+    starts, previous = [], None
+    for gen in candidates:
+        key = key_of(gen)
+        if key != previous:
+            starts.append(int(gen))
+            previous = key
+    starts = np.asarray(starts, dtype=np.int64)
+    ends = np.append(starts[1:] - 1, n_generations - 1)
+    return PopulationSteps(_readonly_array(starts), _readonly_array(ends))
+
+
 def population_steps(view: MORunView) -> PopulationSteps:
     """
-    The population's steps, by the STN rule (stn_state_items) applied to population states: the candidate
-    generations are the recorded population change points (generation 0 among them), and a step starts
-    only where the multiset of member eval_ids differs from the previous step's. A reorder alone draws the
-    same rank layers, so it starts no step (the recorded order is untouched: each generation still reads
-    its own row); a population that recurs later is a new step. Built once per view.
+    The population's steps (_steps): the candidates are the recorded population change points (generation 0
+    among them), and the membership is the multiset of member eval_ids. A reorder alone draws the same rank
+    layers, so it starts no step (the recorded order is untouched: each generation still reads its own row).
+    Built once per view.
     """
     def build():
         history = view.population_history()
-        starts, previous = [], None
-        for i in range(len(history)):
-            key = np.sort(history[i].eval_ids).tobytes()
-            if key != previous:
-                starts.append(int(history.starts[i]))
-                previous = key
-        starts = np.asarray(starts, dtype=np.int64)
-        ends = np.append(starts[1:] - 1, view.n_generations - 1)
-        return PopulationSteps(_readonly_array(starts), _readonly_array(ends))
+        return _steps(history.starts, lambda gen: np.sort(history.at(int(gen)).eval_ids).tobytes(),
+                      view.n_generations)
 
     return _SEQUENCES.get(view, ('population_steps',), build)
+
+
+def archive_steps(view: MORunView, which: str) -> PopulationSteps:
+    """
+    A passive archive's steps (_steps): the candidates are the generations the 2D Pareto plots and the
+    MO-STN consider (stn_candidate_generations: generation 0 and the archive's recorded change points), and
+    the membership is the archive's member ids (observations for the noisy archive, genotypes for the
+    clean one). Built once per view.
+    """
+    snapshot_at = view.noisy_archive if which == 'noisy' else view.clean_archive
+
+    def build():
+        return _steps(stn_candidate_generations(view, f'{which}_archive'),
+                      lambda gen: snapshot_at(gen).members.tobytes(), view.n_generations)
+
+    return _SEQUENCES.get(view, ('archive_steps', which), build)
+
+
+def rank_steps(view: MORunView, pool: str) -> PopulationSteps:
+    """The steps of a candidate pool (RANK_POOLS)."""
+    return population_steps(view) if pool == 'population' else archive_steps(view, pool.split('_')[0])
 
 
 def _readonly_array(array: np.ndarray) -> np.ndarray:
@@ -448,6 +482,65 @@ def _population_at(view: MORunView, gen: int):
     history = view.population_history()
     row = history.index_at(gen)
     return _SNAPSHOTS.get(view, ('population', row), lambda: history[row])
+
+
+def _entry_pool(view: MORunView, eval_ids, generation: int, n_evals: int) -> PopulationSnapshot:
+    """
+    A candidate pool with one member per given evaluation (in the given order), each carrying that
+    evaluation's identities and recorded values (MORunView.events): its genotype x, observation, y and f(x).
+    """
+    events = view.events()
+    eval_ids = np.asarray(eval_ids, dtype=np.int64)
+    geno = events.orig_geno[eval_ids]
+    x = np.array([view.genotype(int(g)) for g in geno]).reshape(len(geno), view.sol_length)
+    return PopulationSnapshot(generation, n_evals, view.weights, *(_readonly_array(a) for a in (
+        eval_ids, geno, events.obs_id[eval_ids], x, events.observed[eval_ids], events.true_obj[eval_ids])))
+
+
+def _archive_entries(view: MORunView, which: str, snapshot) -> np.ndarray:
+    """The entry evaluation of each member of an archive snapshot: an observation's first event (noisy), or a
+    genotype's first evaluation as x (clean), in the snapshot's member order."""
+    return snapshot.eval_ids if which == 'noisy' else snapshot.first_generated_eval
+
+
+def rank_pool(view: MORunView, pool: str = DEFAULT_RANK_POOL, gen: int = None, combined: bool = False):
+    """
+    A run's candidate pool as a PopulationSnapshot, whose noisy_rank and true_rank rank the whole pool:
+        population      at generation gen: every member (PopulationSnapshot, unchanged); combined: every
+                        eval_id held by any recorded population, once each, in first-appearance order
+        noisy_archive   at gen: the noisy archive's observations; combined: every observation that ever
+                        entered it (evicted ones included), in entry order
+        clean_archive   at gen: the clean archive's genotypes; combined: every genotype that ever entered it
+    An archive member is its entry evaluation (the observation's first event; the genotype's first
+    evaluation as x), so a clean-archive genotype's y is the y of the evaluation that offered it to the
+    archive. Cached per membership state (a population row, an archive step, or the combined pool).
+    """
+    if pool not in RANK_POOLS:
+        raise ValueError(f"unknown rank pool {pool!r}; expected one of {RANK_POOLS}")
+    last = view.n_generations - 1
+    if pool == 'population':
+        if not combined:
+            return _population_at(view, gen)
+
+        def build():
+            history = view.population_history()
+            members = np.concatenate([history[i].eval_ids for i in range(len(history))])
+            _, first = np.unique(members, return_index=True)
+            return _entry_pool(view, members[np.sort(first)], last, view.n_evals)
+
+        return _SNAPSHOTS.get(view, ('combined', pool), build)
+
+    which = pool.split('_')[0]
+    if combined:
+        intervals = view.noisy_archive_intervals() if which == 'noisy' else view.clean_archive_intervals()
+        return _SNAPSHOTS.get(view, ('combined', pool),
+                              lambda: _entry_pool(view, intervals.enter_eval, last, view.n_evals))
+    steps = archive_steps(view, which)
+    step = steps.step_of(gen)
+    start = int(steps.starts[step])
+    snapshot_at = view.noisy_archive if which == 'noisy' else view.clean_archive
+    return _SNAPSHOTS.get(view, ('archive', which, step), lambda: _entry_pool(
+        view, _archive_entries(view, which, snapshot_at(start)), start, view.evals_through(start)))
 
 
 def _clamp(value, low: int, high: int, default: int) -> int:
@@ -503,10 +596,12 @@ def _marks(values: list, labels, limit: int) -> dict:
 
 
 # Triggering inputs, by priority (several may change in one request): a run or selection change first,
-# then the First/Final buttons, then an exact generation, then the step slider, then the basis
+# then the First/Final buttons, then an exact generation, then the step slider, then the data source, the
+# combine option and the basis (which all keep the generation)
 RANK_TRIGGERS = (('STN_data', 'run'), ('paretoRankRun', 'run'), ('paretoRankLast', 'last'),
                  ('paretoRankFirst', 'first'), ('paretoRankGeneration', 'generation'),
-                 ('paretoRankStep', 'step'), ('paretoRankBasis', 'basis'))
+                 ('paretoRankStep', 'step'), ('paretoRankSource', 'source'), ('paretoRankCombine', 'combine'),
+                 ('paretoRankBasis', 'basis'))
 
 
 def rank_layer_trigger(triggered_prop_ids) -> str | None:
@@ -515,22 +610,63 @@ def rank_layer_trigger(triggered_prop_ids) -> str | None:
     return next((trigger for component, trigger in RANK_TRIGGERS if component in changed), None)
 
 
+def _plural(n: int, noun: str) -> str:
+    return f"{n} {noun}{'' if n == 1 else 's'}"
+
+
+def _pool_summary(view: MORunView, pool: str, snapshot) -> str:
+    """A pool's members: observations (and genotypes) for the noisy archive, genotypes for the clean archive,
+    members for the population."""
+    if pool == 'noisy_archive':
+        return (f"{_plural(len(snapshot), 'observation')} "
+                f"({_plural(len(np.unique(snapshot.geno_ids)), 'genotype')})")
+    if pool == 'clean_archive':
+        return _plural(len(snapshot), 'genotype')
+    return _plural(len(snapshot), 'member')
+
+
+def _combined_status(view: MORunView, pool: str, snapshot, n_ranks: int, basis: str) -> str:
+    """The status line of a combined pool: what it holds and how many ranks it has under the basis."""
+    ranks = f"{_plural(n_ranks, 'rank')} ({RANK_BASIS_LABELS[basis]})"
+    genotypes = _plural(len(np.unique(snapshot.geno_ids)), 'genotype')
+    if pool == 'population':
+        return (f"Current population, combined across generations · "
+                f"{_plural(len(snapshot), 'evaluation')} ever in the population ({genotypes}) · {ranks}")
+    final = len(rank_final_members(view, pool))
+    if pool == 'noisy_archive':
+        return (f"Noisy passive archive, combined across generations · "
+                f"{_plural(len(snapshot), 'observation')} ever archived ({final} in the final archive) · "
+                f"{genotypes} · {ranks}")
+    return (f"Clean passive archive, combined across generations · {genotypes} ever archived "
+            f"({final} in the final archive) · {ranks}; noisy y: each genotype's entry evaluation")
+
+
+def rank_final_members(view: MORunView, pool: str) -> np.ndarray:
+    """The member ids of an archive pool's final archive (observations or genotypes), sorted."""
+    last = view.n_generations - 1
+    return (view.noisy_archive(last).obs_ids if pool == 'noisy_archive' else view.clean_archive(last).geno_ids)
+
+
 def rank_layer_controls(df: pd.DataFrame, stn_rows, run=None, basis=DEFAULT_RANK_BASIS, step=None, gen=None,
-                        trigger=None, prev_max_value=None, prev_max=None, pool='population') -> dict:
+                        trigger=None, prev_max_value=None, prev_max=None, pool=DEFAULT_RANK_POOL,
+                        combined=False) -> dict:
     """
     The rank-layer controls for the selected rows and the current control values:
         run_options, run                 the runs (rank_layer_runs) and the selected one (kept while it is
                                          still selected, else the first)
-        step_max, step_marks, step       the population steps (population_steps) and the one in force
+        step_max, step_marks, step       the pool's steps (rank_steps) and the one in force
         gen_max, gen                     the exact generation shown
-        nav_disabled                     no run, or a run without a recorded population
-        status                           the generation, its step's generations, members and ranks
-        rank_max, rank_marks, rank_value the ranks of the whole population under the basis; the value
-                                         stays "all" (rank_max) if it was, else is clamped to the new range
+        nav_disabled                     no run, or the population of a run without a recorded population
+        nav_style                        the navigation hidden when the pool is combined across generations
+        status                           the generation, its step's generations, members and ranks (or the
+                                         combined pool's summary)
+        rank_max, rank_marks, rank_value the ranks of the whole pool under the basis; the value stays "all"
+                                         (rank_max) if it was, else is clamped to the new range
         rank_disabled                    fewer than two ranks
     The trigger (rank_layer_trigger) decides the generation: a different run, the initial call and Final go
     to the final generation; First to 0; the generation box to its clamped value; the step slider to its
-    step's first generation; a basis change keeps it. The ranks are never recomputed on a filtered subset.
+    step's first generation; a source, combine or basis change keeps it. The ranks are never recomputed on
+    a filtered subset.
     """
     if pool not in RANK_POOLS:
         raise ValueError(f"unknown rank pool {pool!r}; expected one of {RANK_POOLS}")
@@ -539,14 +675,15 @@ def rank_layer_controls(df: pd.DataFrame, stn_rows, run=None, basis=DEFAULT_RANK
     option, changed = _selected_run(options, run)
     state = {'run_options': options, 'run': None if option is None else option['value'],
              'step_max': 0, 'step_marks': {}, 'step': 0, 'gen_max': 0, 'gen': None, 'nav_disabled': True,
-             'status': NO_RUNS_MESSAGE, 'rank_max': 0, 'rank_marks': {}, 'rank_value': 0, 'rank_disabled': True}
+             'status': NO_RUNS_MESSAGE, 'rank_max': 0, 'rank_marks': {}, 'rank_value': 0, 'rank_disabled': True,
+             'nav_style': NAVIGATION_HIDDEN if combined else {}}
     if option is None:
         return state
     view = row_view(df, option['value'])
-    if not view.has_population:
+    if pool == 'population' and not view.has_population:
         return {**state, 'status': NO_POPULATION_MESSAGE.format(version=view.version)}
 
-    steps = population_steps(view)
+    steps = rank_steps(view, pool)
     last = view.n_generations - 1
     if changed or trigger in (None, 'run', 'last'):
         gen = last
@@ -554,33 +691,33 @@ def rank_layer_controls(df: pd.DataFrame, stn_rows, run=None, basis=DEFAULT_RANK
         gen = 0
     elif trigger == 'step':
         gen = int(steps.starts[_clamp(step, 0, len(steps) - 1, len(steps) - 1)])
-    else:  # the generation box, or a basis change: the exact generation (invalid: the step's first)
+    else:  # the generation box, or a source, combine or basis change: the exact generation (invalid: the step's first)
         fallback = int(steps.starts[_clamp(step, 0, len(steps) - 1, len(steps) - 1)])
         gen = _clamp(gen, 0, last, fallback)
     step = steps.step_of(gen)
 
-    snapshot = _population_at(view, gen)
+    snapshot = rank_pool(view, pool, gen, combined)
     ranks = snapshot.rank(basis)
     n_ranks = int(ranks.max()) + 1 if len(ranks) else 0
     rank_max = max(n_ranks - 1, 0)
     was_all = prev_max_value is None or prev_max is None or prev_max_value >= prev_max
     rank_value = rank_max if was_all else _clamp(prev_max_value, 0, rank_max, rank_max)
 
-    start, end = int(steps.starts[step]), int(steps.ends[step])
-    unchanged = f"generation {start}" if start == end else f"generations {start}–{end}"
-    status = (f"Generation {gen} of {last} · population unchanged over {unchanged} · "
-              f"step {step + 1} of {len(steps)} · {_plural(len(snapshot), 'member')}, "
-              f"{_plural(n_ranks, 'rank')} "
-              f"({RANK_BASIS_LABELS[basis]})")
+    if combined:
+        status = _combined_status(view, pool, snapshot, n_ranks, basis)
+    else:
+        start, end = int(steps.starts[step]), int(steps.ends[step])
+        unchanged = f"generation {start}" if start == end else f"generations {start}–{end}"
+        what = 'population' if pool == 'population' else pool.split('_')[0] + ' archive'
+        status = (f"Generation {gen} of {last} · {what} unchanged over {unchanged} · "
+                  f"step {step + 1} of {len(steps)} · {_pool_summary(view, pool, snapshot)}, "
+                  f"{_plural(n_ranks, 'rank')} "
+                  f"({RANK_BASIS_LABELS[basis]})")
     return {**state, 'step_max': len(steps) - 1,
             'step_marks': _marks(list(steps.starts), lambda i: f"G{int(steps.starts[i])}", 8),
             'step': step, 'gen_max': last, 'gen': int(gen), 'nav_disabled': False, 'status': status,
             'rank_max': rank_max, 'rank_marks': _marks(list(range(n_ranks)), str, 11),
             'rank_value': rank_value, 'rank_disabled': n_ranks < 2}
-
-
-def _plural(n: int, noun: str) -> str:
-    return f"{n} {noun}{'' if n == 1 else 's'}"
 
 
 def _distinct_counts(values) -> list:
@@ -592,74 +729,117 @@ def _distinct_counts(values) -> list:
     return [[list(k) if isinstance(k, tuple) else k, n] for k, n in counts.items()]
 
 
-def rank_layer_data(view: MORunView, gen=None, basis=DEFAULT_RANK_BASIS, max_rank=None,
-                    pool='population') -> dict:
+def _rank_layer_points(snapshot, basis: str, rows: np.ndarray, extra=None) -> list:
     """
-    The rank layers of a run's population at the end of generation gen (default: the final one), as plain
-    data. Every member keeps its rank among the *whole* population (PopulationSnapshot.noisy_rank or
-    .true_rank, under the observed y or f(x)); max_rank only selects which ranks are shown. Members at the
-    same plotted point (equal vectors share a rank) form one point, which keeps all of them:
+    The points of a pool's rows (rank_layer_data): one per distinct vector under the basis, each holding all
+    its members in the pool's order, in first-appearance order and then stably by rank. extra(members), when
+    given, adds fields to each point.
+    """
+    if not len(rows):
+        return []
+    other = 'true' if basis == 'noisy' else 'noisy'
+    ranks, other_ranks = snapshot.rank(basis), snapshot.rank(other)
+    values = snapshot.observed if basis == 'noisy' else snapshot.true_obj
+    other_values = snapshot.true_obj if basis == 'noisy' else snapshot.observed
+    _, first, inverse = np.unique(values[rows], axis=0, return_index=True, return_inverse=True)
+    inverse = inverse.reshape(-1)
+    # each point's rows, in the pool's order: one stable grouping of the rows, not one scan per point
+    groups = np.split(rows[np.argsort(inverse, kind='stable')], np.cumsum(np.bincount(inverse))[:-1])
+    points = []
+    for j in np.argsort(first, kind='stable'):  # points in first-appearance order
+        members = groups[j]
+        point = {
+            'rank': int(ranks[members[0]]), 'x': float(values[members[0], 0]), 'y': float(values[members[0], 1]),
+            'count': len(members),
+            'eval_ids': [int(e) for e in snapshot.eval_ids[members]],
+            'geno_ids': [int(g) for g in snapshot.geno_ids[members]],
+            'obs_ids': [int(o) for o in snapshot.obs_ids[members]],
+            'other_values': _distinct_counts(other_values[members]),
+            'other_ranks': sorted(_distinct_counts(other_ranks[members])),
+        }
+        if extra is not None:
+            point.update(extra(members))
+        points.append(point)
+    points.sort(key=lambda p: p['rank'])  # stable: first-appearance order within each rank
+    return points
+
+
+def rank_layer_data(view: MORunView, gen=None, basis=DEFAULT_RANK_BASIS, max_rank=None,
+                    pool=DEFAULT_RANK_POOL, combined=False) -> dict:
+    """
+    The rank layers of a run's candidate pool (rank_pool) at the end of generation gen (default: the final
+    one), or combined across generations, as plain data. Every member keeps its rank among the *whole* pool
+    (PopulationSnapshot.noisy_rank or .true_rank, under the observed y or f(x)); max_rank only selects which
+    ranks are shown. Members at the same plotted point (equal vectors share a rank) form one point, which
+    keeps all of them:
         rank, x, y                  the rank and the recorded objective values, unchanged
         count                       its members (clones and repeated observations included)
-        eval_ids, geno_ids, obs_ids every member's identities, in the population's recorded order
+        eval_ids, geno_ids, obs_ids every member's identities, in the pool's order
         other_values, other_ranks   the other space's distinct values and ranks, with counts
-    The layers also carry generation (gen itself, never the recorded row's start), n_evals, the step and
-    its generations (population_steps), the member and rank counts and the extent of the whole population.
-    A record without a population, or without two objectives, gives {'unavailable': message}.
+        entry_generations           (archive pools) the generation each member entered the archive
+        in_final                    (combined archive pools) its members still in the final archive
+    The layers also carry generation (gen itself, never the recorded row's start; None when combined),
+    n_evals, the step and its generations (rank_steps; None when combined), the member and rank counts and
+    the extent of the whole pool; any pool but the population at one generation also carries pool_label,
+    combined and its genotype and observation counts (and n_final for combined archives). The population of
+    a record without one, or a record without two objectives, gives {'unavailable': message}.
     """
     if pool not in RANK_POOLS:
         raise ValueError(f"unknown rank pool {pool!r}; expected one of {RANK_POOLS}")
     if basis not in RANK_BASIS_LABELS:
         raise ValueError(f"unknown rank basis {basis!r}; expected one of {tuple(RANK_BASIS_LABELS)}")
-    if not view.has_population:
+    if pool == 'population' and not view.has_population:
         return {'unavailable': NO_POPULATION_MESSAGE.format(version=view.version)}
     if view.n_obj != 2:
         return {'unavailable': f"Rank layers draw two objectives; this run has {view.n_obj}"}
 
     last = view.n_generations - 1
-    gen = _clamp(gen, 0, last, last)
-    steps = population_steps(view)
-    step = steps.step_of(gen)
-    snapshot = _population_at(view, gen)
-    other = 'true' if basis == 'noisy' else 'noisy'
-    ranks, other_ranks = snapshot.rank(basis), snapshot.rank(other)
+    gen = None if combined else _clamp(gen, 0, last, last)
+    steps = None if combined else rank_steps(view, pool)
+    step = None if combined else steps.step_of(gen)
+    snapshot = rank_pool(view, pool, gen, combined)
     values = snapshot.observed if basis == 'noisy' else snapshot.true_obj
-    other_values = snapshot.true_obj if basis == 'noisy' else snapshot.observed
+    ranks = snapshot.rank(basis)
     n_ranks = int(ranks.max()) + 1 if len(ranks) else 0
     max_rank = _clamp(max_rank, 0, max(n_ranks - 1, 0), max(n_ranks - 1, 0))
     rows = snapshot.in_ranks(basis, max_rank)
 
-    points = []
-    if len(rows):
-        _, first, inverse = np.unique(values[rows], axis=0, return_index=True, return_inverse=True)
-        inverse = inverse.reshape(-1)
-        for j in np.argsort(first, kind='stable'):  # points in first-appearance order
-            members = rows[inverse == j]
-            points.append({
-                'rank': int(ranks[members[0]]), 'x': float(values[members[0], 0]), 'y': float(values[members[0], 1]),
-                'count': len(members),
-                'eval_ids': [int(e) for e in snapshot.eval_ids[members]],
-                'geno_ids': [int(g) for g in snapshot.geno_ids[members]],
-                'obs_ids': [int(o) for o in snapshot.obs_ids[members]],
-                'other_values': _distinct_counts(other_values[members]),
-                'other_ranks': sorted(_distinct_counts(other_ranks[members])),
-            })
-        points.sort(key=lambda p: p['rank'])  # stable: first-appearance order within each rank
+    extra, final = None, None
+    if pool != 'population':
+        entered = np.searchsorted(view.gen_last_eval, snapshot.eval_ids, side='right')
+        member_ids = snapshot.obs_ids if pool == 'noisy_archive' else snapshot.geno_ids
+        final = rank_final_members(view, pool)
+        in_final = np.isin(member_ids, final)
+
+        def extra(members):
+            fields = {'entry_generations': [int(g) for g in entered[members]]}
+            if combined:
+                fields['in_final'] = int(in_final[members].sum())
+            return fields
 
     extent = [[float(values[:, i].min()), float(values[:, i].max())] for i in range(2)] if len(values) else None
-    return {
-        'basis': basis, 'pool': pool, 'generation': int(gen), 'n_generations': view.n_generations,
-        'n_evals': view.evals_through(gen), 'step': step, 'n_steps': len(steps),
-        'step_range': [int(steps.starts[step]), int(steps.ends[step])],
+    layers = {
+        'basis': basis, 'pool': pool, 'generation': None if combined else int(gen),
+        'n_generations': view.n_generations,
+        'n_evals': view.n_evals if combined else view.evals_through(gen),
+        'step': step, 'n_steps': None if combined else len(steps),
+        'step_range': None if combined else [int(steps.starts[step]), int(steps.ends[step])],
         'weights': [float(w) for w in view.weights], 'n_members': len(snapshot), 'n_shown': len(rows),
         'n_ranks': n_ranks, 'max_rank_shown': max_rank,
         'rank_counts': [int(n) for n in np.bincount(ranks, minlength=n_ranks)],
-        'axis_extent': extent, 'points': points,
+        'axis_extent': extent, 'points': _rank_layer_points(snapshot, basis, rows, extra),
     }
+    if pool != 'population' or combined:
+        layers.update({'pool_label': RANK_POOL_LABELS[pool], 'combined': bool(combined),
+                       'n_genotypes': len(np.unique(snapshot.geno_ids)),
+                       'n_observations': len(np.unique(snapshot.obs_ids))})
+        if combined and final is not None:
+            layers['n_final'] = len(final)
+    return layers
 
 
 def rank_layer_selection(df: pd.DataFrame, stn_rows, run=None, basis=None, gen=None, max_rank=None,
-                         pool='population') -> tuple:
+                         pool=None, combined=False) -> tuple:
     """
     (layers, run label) for the Pareto tab's rank-layer plot: rank_layer_data of the selected run (the
     first when run is not among the selected rows), or {'unavailable': ...} without one.
@@ -667,5 +847,6 @@ def rank_layer_selection(df: pd.DataFrame, stn_rows, run=None, basis=None, gen=N
     option, _ = _selected_run(rank_layer_runs(df, stn_rows), run)
     if option is None:
         return {'unavailable': NO_RUNS_MESSAGE}, None
-    layers = rank_layer_data(row_view(df, option['value']), gen, basis or DEFAULT_RANK_BASIS, max_rank, pool)
+    layers = rank_layer_data(row_view(df, option['value']), gen, basis or DEFAULT_RANK_BASIS, max_rank,
+                             pool or DEFAULT_RANK_POOL, bool(combined))
     return layers, option['label']

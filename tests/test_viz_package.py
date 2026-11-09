@@ -668,6 +668,8 @@ DEFINITIONS = {'AXIS_LABELS': {'ast': '00451c08df9142812bfad4b670d56466a3ad5c898
 
 # Pareto rank layers (deliberate amendment): the new module viz/plots/pareto/rank_layers.py draws one
 # population's non-dominated rank layers (plot_rank_layers) from dashboard.mo_frames.rank_layer_data.
+# Rank Layers data sources (deliberate amendment): plot_rank_layers titles and summarises each data source and
+# mode (a passive archive, combined across generations) and _hover adds the archive lines; re-captured both.
 DEFINITIONS.update({'HOVER_ID_LIMIT': {'ast': '898af2af98ad9ddaf7b5f2179caf1c8b949d5994386628c197e175bc695ac03e',
                     'kind': 'const',
                     'literals': '6d355a642ffed28c2afbda550638c33deb10c7f463ea5f2ce79a5ee5a8e15a4c'},
@@ -693,10 +695,10 @@ DEFINITIONS.update({'HOVER_ID_LIMIT': {'ast': '898af2af98ad9ddaf7b5f2179caf1c8b9
                  'ast': '988070843500d7ddb536173f11dc8e142751551b38d738570eabfa6609377469',
                  'kind': 'def',
                  'literals': '6d355a642ffed28c2afbda550638c33deb10c7f463ea5f2ce79a5ee5a8e15a4c'},
- '_hover': {'args': ['point', 'basis'],
-            'ast': '27fdaab11579cc27f8167c8311ad05169221358fd37f5fa7f57e0a5b8dacd216',
+ '_hover': {'args': ['point', 'basis', 'pool'],
+            'ast': '1b636a728d6bc3e8e796b57cf0407e7704f5996481c29bdb6949f559c0581483',
             'kind': 'def',
-            'literals': 'da92462e0267998d7e78ef80f5c04bd9c60842c6b969dab65074805091d05847'},
+            'literals': '0200ea3558a4316c9e134e1b8c11bbbef3f85581510d9489f39c69b3530b99a5'},
  '_ids': {'args': ['ids'],
           'ast': 'cbd4a36d34ecddef119b6256b30fa4c2968d054da298f4fae68a43d80a668507',
           'kind': 'def',
@@ -718,9 +720,9 @@ DEFINITIONS.update({'HOVER_ID_LIMIT': {'ast': '898af2af98ad9ddaf7b5f2179caf1c8b9
              'kind': 'def',
              'literals': 'cae1ddb6494069fc22f68aca0bf4aee65d012a0079b492d85fa43d0e66cf8119'},
  'plot_rank_layers': {'args': ['layers', 'series_label', 'staircase', 'uirevision'],
-                      'ast': 'd022d934052a48fe8a6b5a4253160c4d88fcec518f0c2d42525537fe8bcf7256',
+                      'ast': '180857d4dd3ce443916dc29b002e28f6c0ec23f8ff5f55292b64728e07dd45b9',
                       'kind': 'def',
-                      'literals': '7d3e083c6c7e0a12cdb59d9dad76cb7aba57172268f161c9867f8c0c8cfaf638'},
+                      'literals': '1e28e1078f677ba9fa96d643970db1b3a1786f4e41b7f935f6a7487331f413de'},
  'rank_color': {'args': ['rank', 'n_ranks'],
                 'ast': '4ed0a909f592020538092998665cd6b0076a8b4d4e18e1b6d646748c3af84f4b',
                 'kind': 'def',
@@ -941,7 +943,7 @@ REGISTRY = {'alias_names_present': ['PlotparetoFrontSubplotsHighlighted',
                      'Scatter',
                      'RankLayers'],
  'monolith_present': True,
- 'pareto': {'RankLayers': {'ast': 'd022d934052a48fe8a6b5a4253160c4d88fcec518f0c2d42525537fe8bcf7256',
+ 'pareto': {'RankLayers': {'ast': '180857d4dd3ce443916dc29b002e28f6c0ec23f8ff5f55292b64728e07dd45b9',
                            'lookup_is_same': True,
                            'name': 'plot_rank_layers'},
             'Basic': {'ast': '763639f2199f23c6cbc5f8ccb3be509f0d81c26e9a1904e5d618742242f3fd3d',
@@ -1147,14 +1149,17 @@ LON_STATS = {'correlation_pairs': {'error|abs_error': {'dict': [['pearson', {'fl
 # in paretoFrontOptions), and callbacks/pareto.py gains its branch of updateParetoPlot, toggle_pareto_plot_options
 # and update_rank_layer_controls. Re-captured: PARETO_PLOTS, the registry keys and entry, the new module's
 # definitions and the dashboard-side bodies. Every existing figure is unchanged.
-BODIES = {'dashboard/Dashboard.py': {'ast': '6911942ea22e11938440425b3e3eedd45716fe90b5c94c44aba6326547d400b3',
-                            'literals': '60f403e3d0b19c62b23aa9cfc6b2fdde322236354787053b7d85f71ed335c866',
+# Rank Layers data sources (deliberate amendment): the rank-layer controls gain the data source, the combine option
+# and the paretoRankNavigation wrapper (components.py), and callbacks/pareto.py passes them on. Re-captured: the
+# dashboard-side bodies. Every existing figure is unchanged.
+BODIES = {'dashboard/Dashboard.py': {'ast': 'a4866653dec55490010e368e7cde8b9e4ba9be1a5b7cb934777ec047d5026908',
+                            'literals': '259ffded5315a0412f808545b070dc357ef5770ed2a36a007171793a10c19db1',
                             'statements': 75},
  'dashboard/DashboardHelpers.py': {'ast': 'a2f8637b5bc9b75f30cdfbe3954a31adffac64281b8bbcc355ebf87af53fa714',
                                    'literals': 'f5426899c41d6be7373fb1cd4227501d84bbe098001d77bc81064b2a55e73e09',
                                    'statements': 11},
- 'dashboard/layout/components.py': {'ast': 'e5e0b420593348ac652a5dc616ee414eddb40e1bd30dd85110ec2da9627654ff',
-                                    'literals': '36f5b8518f3cd7d0dec046958a78eb05ea3bbe057208ab7721a7b0fa8b624b66',
+ 'dashboard/layout/components.py': {'ast': '035e0e1a6fe560722a75e1370326485b3f1c5fb10c2970c828d9b6a41dce0e72',
+                                    'literals': '2318c5e455b37d87d7bd4b114ab7de6c44e01e169196940c296746897e0b65ca',
                                     'statements': 26}}
 
 IMPORTS = {'dashboard/Dashboard.py': {'modules': ['noisyvis.plotting',

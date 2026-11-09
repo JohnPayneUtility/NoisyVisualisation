@@ -9,6 +9,10 @@
     controls     mo_frames.rank_layer_controls / rank_layer_trigger: the run, step, generation and rank
                  range, and how they follow each other
     figure       viz.plots.pareto.plot_rank_layers: rank colours, draw order, legend, hover, axes
+    sources      mo_frames.rank_pool / archive_steps: the population or a passive archive, at one generation
+                 or combined across generations (every member that ever belonged, once each), ranked afresh
+                 over the whole pool; archive members carry their entry evaluation (a clean-archive
+                 genotype's y is that of the evaluation that offered it to the archive)
     callbacks    the Pareto callbacks exec'd from callbacks/pareto.py, and the real Dash callback chain
                  (harness/rank_layer_chain.py) over the HTTP protocol in an isolated temp root
 
@@ -33,7 +37,7 @@ import plotly.graph_objects as go
 import pytest
 from plotly.colors import sample_colorscale
 
-from harness.mo_runs import ALGORITHM_NAMES, A, B, C, Lab, build, step_run
+from harness.mo_runs import ALGORITHM_NAMES, A, B, C, KP_WEIGHTS, Lab, build, step_run
 from harness.run_isolated import HARNESS_DIR, child_env, make_temp_root
 from noisyvis.dashboard import mo_frames
 from noisyvis.dashboard.mo_frames import (
@@ -45,15 +49,21 @@ from noisyvis.dashboard.mo_frames import (
     pareto_pair_entries,
     pareto_runs,
     population_steps,
+    archive_steps,
     rank_layer_controls,
+    rank_pool,
+    rank_steps,
+    stn_candidate_generations,
     rank_layer_data,
     rank_layer_runs,
     rank_layer_selection,
     rank_layer_trigger,
 )
+from noisyvis.common.pareto import nondominated_ranks
 from noisyvis.problems.instances import get_knapsack_problem_stats
 from noisyvis.results.mo_view import MORunView
 from noisyvis.tracking.logger import clear_active_logger, get_active_logger
+from noisyvis.tracking.mo_logger import MOEvaluationLogger
 from noisyvis.viz.plots import get_pareto_plot
 from noisyvis.viz.plots.base import FRONT_KEYS, UNSUPPORTED_METRIC_TITLE, create_empty_figure, front_line, selected_front
 from noisyvis.viz.plots.pareto import plot_rank_layers
@@ -606,6 +616,366 @@ def test_real_runs_plot_for_every_algorithm():
                 assert sum(len(t.x) for t in fig.data if t.name) == len(layers["points"]), (name, prob, basis)
 
 
+# ------------------------------------------------------------------------------ data sources
+
+SOURCES = ("population", "noisy_archive", "clean_archive")
+ARCHIVES = ("noisy_archive", "clean_archive")
+SOURCE_RUNS = [(name, prob, False) for name in ALGORITHM_NAMES for prob in PROBLEMS] + [("SEMO", "cocz1", True)]
+
+
+def archive_at(view, pool, gen):
+    return view.noisy_archive(gen) if pool == "noisy_archive" else view.clean_archive(gen)
+
+
+def entry_evals(pool, snapshot):
+    """The independent reading of an archive member's evaluation: an observation's first event (noisy), a
+    genotype's first evaluation as x (clean)."""
+    return snapshot.eval_ids if pool == "noisy_archive" else snapshot.first_generated_eval
+
+
+def pool_ids(pool, snapshot):
+    """A pool's member identities: observations (noisy archive), genotypes (clean archive), evaluations."""
+    return {"noisy_archive": snapshot.obs_ids, "clean_archive": snapshot.geno_ids}.get(pool, snapshot.eval_ids)
+
+
+def assert_entry_values(view, snapshot, eval_ids):
+    """The pool's members are exactly these evaluations, in order, with their recorded identities and values."""
+    events = view.events()
+    assert snapshot.eval_ids.tolist() == list(eval_ids)
+    assert snapshot.geno_ids.tolist() == events.orig_geno[eval_ids].tolist()
+    assert snapshot.obs_ids.tolist() == events.obs_id[eval_ids].tolist()
+    assert np.array_equal(snapshot.observed, events.observed[eval_ids])
+    assert np.array_equal(snapshot.true_obj, events.true_obj[eval_ids])
+    assert all(np.array_equal(snapshot.x[i], view.genotype(int(g))) for i, g in enumerate(snapshot.geno_ids))
+
+
+def reference_points(snapshot, basis, rows):
+    """The per-point aggregation before the grouping change (one scan of the rows per point), kept here as
+    the reference the grouped _rank_layer_points must reproduce exactly."""
+    if not len(rows):
+        return []
+    other = "true" if basis == "noisy" else "noisy"
+    ranks, other_ranks = snapshot.rank(basis), snapshot.rank(other)
+    values = snapshot.observed if basis == "noisy" else snapshot.true_obj
+    other_values = snapshot.true_obj if basis == "noisy" else snapshot.observed
+    _, first, inverse = np.unique(values[rows], axis=0, return_index=True, return_inverse=True)
+    inverse = inverse.reshape(-1)
+    points = []
+    for j in np.argsort(first, kind="stable"):
+        members = rows[inverse == j]
+        points.append({
+            "rank": int(ranks[members[0]]), "x": float(values[members[0], 0]), "y": float(values[members[0], 1]),
+            "count": len(members),
+            "eval_ids": [int(e) for e in snapshot.eval_ids[members]],
+            "geno_ids": [int(g) for g in snapshot.geno_ids[members]],
+            "obs_ids": [int(o) for o in snapshot.obs_ids[members]],
+            "other_values": mo_frames._distinct_counts(other_values[members]),
+            "other_ranks": sorted(mo_frames._distinct_counts(other_ranks[members])),
+        })
+    points.sort(key=lambda p: p["rank"])
+    return points
+
+
+def assert_grouping_is_the_reference(snapshot, label):
+    for basis in BASES:
+        ranks = snapshot.rank(basis)
+        for top in sorted({0, 1, int(ranks.max()) if len(ranks) else 0}):
+            rows = snapshot.in_ranks(basis, top)
+            assert mo_frames._rank_layer_points(snapshot, basis, rows) == reference_points(snapshot, basis, rows), \
+                (label, basis, top)
+
+
+@pytest.mark.parametrize("name,prob,long", SOURCE_RUNS)
+def test_grouped_points_are_the_per_point_reference(name, prob, long):
+    """The grouped aggregation equals the previous per-point scan for every source, mode, generation and
+    basis: the same points, counts, member identities and member order."""
+    view = view_of(name, prob, long)
+    for source in SOURCES:
+        assert_grouping_is_the_reference(rank_pool(view, source, combined=True), (source, "combined"))
+        for g in range(view.n_generations):
+            assert_grouping_is_the_reference(rank_pool(view, source, g), (source, g))
+
+
+def test_grouping_keeps_repeated_vectors_clones_and_twins():
+    """Repeated objective vectors across genotypes, one eval_id held twice (a clone) and twin evaluations of
+    one observation, under both bases: the grouped points are the reference's, multiplicities included."""
+    lab = Lab()
+    a = lab.evaluate(A, (100, 50), (80.0, 50.0))
+    twin = lab.evaluate(A, (100, 50), (80.0, 50.0))                     # same observation, own eval_id
+    b = lab.evaluate(B, (100, 50), (80.0, 50.0))                        # another genotype, the same vectors
+    c = lab.evaluate(C, (90, 60), (70.0, 60.0))
+    lab.observe([a, a, twin, b, c, c])
+    view = MORunView(lab.log.finalise())
+    clear_active_logger()
+    snapshot = view.population(0)
+    assert_grouping_is_the_reference(snapshot, "lab")
+    noisy = mo_frames._rank_layer_points(snapshot, "noisy", snapshot.in_ranks("noisy", 9))
+    assert [(p["count"], Counter(p["eval_ids"])) for p in noisy] == [
+        (4, Counter({lab.log.resolve(a): 2, lab.log.resolve(twin): 1, lab.log.resolve(b): 1})),
+        (2, Counter({lab.log.resolve(c): 2}))]
+
+
+@pytest.mark.parametrize("name,prob,long", RUNS)
+def test_population_is_the_default_source_and_unchanged(name, prob, long):
+    view = view_of(name, prob, long)
+    for g in range(view.n_generations):
+        for basis in BASES:
+            default = rank_layer_data(view, g, basis)
+            assert default == rank_layer_data(view, g, basis, pool="population", combined=False)
+            assert not {"pool_label", "combined", "n_genotypes", "n_final"} & set(default)
+    assert rank_steps(view, "population") is population_steps(view)
+
+
+@pytest.mark.parametrize("pool", ARCHIVES)
+@pytest.mark.parametrize("name,prob,long", SOURCE_RUNS)
+def test_archive_at_a_generation_is_its_snapshot(name, prob, long, pool):
+    """At every generation the archive pool holds exactly that generation's archive members, each as its entry
+    evaluation (so a clean genotype carries the y of the evaluation that offered it), and the layers show
+    that exact generation."""
+    view = view_of(name, prob, long)
+    for g in list(range(view.n_generations)) + list(range(view.n_generations - 1, -1, -1)):
+        snapshot = archive_at(view, pool, g)
+        pool_snapshot = rank_pool(view, pool, g)
+        assert Counter(pool_ids(pool, pool_snapshot).tolist()) == Counter(snapshot.members.tolist()), (pool, g)
+        assert_entry_values(view, pool_snapshot, entry_evals(pool, snapshot))
+        layers = rank_layer_data(view, g, "noisy", pool=pool)
+        assert layers["generation"] == g and layers["n_evals"] == view.evals_through(g) and not layers["combined"]
+        assert layers["pool_label"] == mo_frames.RANK_POOL_LABELS[pool] and layers["n_members"] == len(snapshot)
+        entered = Counter(int(view.generation_of(int(e))) for e in entry_evals(pool, snapshot))
+        assert Counter(gen for p in layers["points"] for gen in p["entry_generations"]) == entered
+
+
+@pytest.mark.parametrize("pool", ARCHIVES)
+@pytest.mark.parametrize("name,prob,long", SOURCE_RUNS)
+def test_archive_steps_are_its_membership_changes(name, prob, long, pool):
+    """A step starts exactly where the archive's members differ from the previous generation's, at one of the
+    candidate generations the 2D Pareto plots and the MO-STN use; recurrences are new steps."""
+    view = view_of(name, prob, long)
+    keys = [tuple(archive_at(view, pool, g).members.tolist()) for g in range(view.n_generations)]
+    expected = [g for g in range(view.n_generations) if g == 0 or keys[g] != keys[g - 1]]
+    steps = archive_steps(view, pool.split("_")[0])
+    assert steps.starts.tolist() == expected and steps is rank_steps(view, pool)
+    assert set(expected) <= set(stn_candidate_generations(view, pool))
+    assert steps.ends.tolist() == [s - 1 for s in expected[1:]] + [view.n_generations - 1]
+    for g in range(view.n_generations):
+        assert keys[g] == keys[steps.starts[steps.step_of(g)]]
+
+
+def test_an_observation_swap_is_an_archive_step_the_stn_rule_merges():
+    """Without a reference point every HV is NaN, so an observation of A replaced by a better observation of A
+    keeps the STN state key (genotypes, HV): one STN state, but two noisy-archive steps."""
+    lab = Lab()
+    lab.log = log = MOEvaluationLogger(KP_WEIGHTS, None)
+    first = lab.evaluate(A, (100, 50), (80.0, 50.0))
+    lab.observe([first])
+    better = lab.evaluate(A, (100, 50), (90.0, 40.0))
+    lab.observe([better])
+    view = MORunView(log.finalise())
+    clear_active_logger()
+    assert [e["gen_idx"] for e in pareto_front_entries(view, "noisy_archive")] == [0]
+    assert archive_steps(view, "noisy").starts.tolist() == [0, 1]
+    assert [rank_pool(view, "noisy_archive", g).obs_ids.tolist() for g in (0, 1)] == \
+        [[log.obs_id[log.resolve(first)]], [log.obs_id[log.resolve(better)]]]
+
+
+def test_own_basis_archives_are_all_rank_0_and_cross_bases_are_ranked_over_the_snapshot():
+    """At every generation of every run: the noisy archive under noisy objectives and the clean archive under
+    true objectives are rank 0 throughout; under the other basis, ranks are those of one sort of that
+    snapshot alone, and several ranks do occur."""
+    deepest = {pool: 0 for pool in ARCHIVES}
+    for name, prob, long in SOURCE_RUNS:
+        view = view_of(name, prob, long)
+        for g in range(view.n_generations):
+            for pool, own, cross in (("noisy_archive", "noisy", "true"), ("clean_archive", "true", "noisy")):
+                snapshot = rank_pool(view, pool, g)
+                assert not snapshot.rank(own).any(), (name, prob, pool, g)
+                values = snapshot.true_obj if cross == "true" else snapshot.observed
+                assert snapshot.rank(cross).tolist() == nondominated_ranks(values, view.weights).tolist()
+                deepest[pool] = max(deepest[pool], int(snapshot.rank(cross).max(initial=0)) + 1)
+    assert min(deepest.values()) > 1, deepest
+
+
+def archive_union(view, pool):
+    """Every member ever present, read from each evaluation-resolution archive state (the oracle)."""
+    history = view.noisy_archive_history("evaluation") if pool == "noisy_archive" else view.clean_archive_history("evaluation")
+    return {int(m) for state in history for m in state.members}
+
+
+def test_combined_archives_hold_every_member_that_ever_entered():
+    """Each combined archive holds every member of every state, once each, evicted ones included, as its entry
+    evaluation; under its own basis its rank 0 is the final archive, and the evicted members are ranked below."""
+    removed = {pool: 0 for pool in ARCHIVES}
+    for name, prob, long in SOURCE_RUNS:
+        view = view_of(name, prob, long)
+        last = view.n_generations - 1
+        for pool, own in (("noisy_archive", "noisy"), ("clean_archive", "true")):
+            combined = rank_pool(view, pool, combined=True)
+            ids = pool_ids(pool, combined).tolist()
+            assert Counter(ids) == Counter(archive_union(view, pool)) and len(ids) == len(set(ids)), (name, pool)
+            intervals = view.noisy_archive_intervals() if pool == "noisy_archive" else view.clean_archive_intervals()
+            assert_entry_values(view, combined, intervals.enter_eval)
+            final = archive_at(view, pool, last).members
+            assert sorted(np.asarray(ids)[combined.rank(own) == 0].tolist()) == final.tolist(), (name, pool)
+            removed[pool] += len(ids) - len(final)
+            layers = rank_layer_data(view, None, own, pool=pool, combined=True)
+            assert layers["generation"] is None and layers["combined"] and layers["n_final"] == len(final)
+            assert sum(p["in_final"] for p in layers["points"]) == len(final)
+    assert min(removed.values()) > 0, removed
+
+
+def test_combined_population_counts_each_evaluation_once():
+    """Every eval_id ever held by a recorded population, once each and in first-appearance order: a member
+    persisting over generations counts once, as does a clone held twice in one population (twice in that
+    generation's own pool); different evaluations with equal y stay separate."""
+    for name, prob, long in RUNS:
+        view = view_of(name, prob, long)
+        history = view.population_history()
+        seen = list(dict.fromkeys(int(e) for i in range(len(history)) for e in history[i].eval_ids))
+        assert_entry_values(view, rank_pool(view, "population", combined=True), seen)
+    lab = Lab()
+    a = lab.evaluate(A, (100, 50), (80.0, 50.0))
+    twin = lab.evaluate(A, (100, 50), (80.0, 50.0))
+    b = lab.evaluate(B, (90, 60), (70.0, 60.0))
+    lab.observe([a, a, b])
+    lab.observe([a, twin])
+    view = MORunView(lab.log.finalise())
+    clear_active_logger()
+    ids = [lab.log.resolve(i) for i in (a, twin, b)]
+    assert rank_pool(view, "population", 0).eval_ids.tolist() == [ids[0], ids[0], ids[2]]
+    assert rank_pool(view, "population", combined=True).eval_ids.tolist() == [ids[0], ids[2], ids[1]]
+    layers = rank_layer_data(view, None, "noisy", pool="population", combined=True)
+    assert [(p["count"], sorted(p["eval_ids"])) for p in layers["points"]][0] == (2, sorted([ids[0], ids[1]]))
+
+
+def test_archive_members_are_observations_or_entry_genotypes():
+    """Two incomparable observations of one genotype are two noisy-archive members of one genotype; an exact
+    repeat (same x, x~ and y) is one member, its first evaluation; a genotype evaluated again after entering
+    the clean archive keeps the y of its entry evaluation."""
+    lab = Lab()
+    first = lab.evaluate(A, (100, 50), (80.0, 50.0))
+    repeat = lab.evaluate(A, (100, 50), (80.0, 50.0))
+    other = lab.evaluate(A, (100, 50), (70.0, 40.0))                    # incomparable with (80, 50)
+    lab.observe([first, repeat, other])
+    view = MORunView(lab.log.finalise())
+    clear_active_logger()
+    noisy = rank_pool(view, "noisy_archive", combined=True)
+    assert noisy.eval_ids.tolist() == [lab.log.resolve(first), lab.log.resolve(other)]
+    assert noisy.geno_ids.tolist() == [lab.geno(A)] * 2 and len(set(noisy.obs_ids.tolist())) == 2
+    clean = rank_pool(view, "clean_archive", combined=True)
+    assert clean.geno_ids.tolist() == [lab.geno(A)] and clean.observed.tolist() == [[80.0, 50.0]]
+    assert clean.eval_ids.tolist() == [lab.log.resolve(first)]
+    hover = plot_rank_layers(rank_layer_data(view, None, "noisy", pool="clean_archive", combined=True)).data[-1].text[0]
+    assert "noisy y (entry evaluation): (80, 50)" in hover and "in the final archive: 1 of 1" in hover
+
+
+@pytest.mark.parametrize("name,prob,long", [("MoUMDA", "kp1", False), ("NSGA2", "kp1", True), ("SEMO", "cocz1", True)])
+def test_every_pool_is_ranked_whole_and_filtering_never_reranks(name, prob, long):
+    view = view_of(name, prob, long)
+    for source in SOURCES:
+        for combined, gens in ((True, [None]), (False, range(0, view.n_generations, 3))):
+            for g in gens:
+                pool = rank_pool(view, source, g, combined)
+                for basis in BASES:
+                    values = pool.observed if basis == "noisy" else pool.true_obj
+                    assert pool.rank(basis).tolist() == nondominated_ranks(values, view.weights).tolist()
+                    full = rank_layer_data(view, g, basis, None, source, combined)
+                    for k in range(full["n_ranks"]):
+                        layers = rank_layer_data(view, g, basis, k, source, combined)
+                        assert shown_members(layers) == snapshot_members(pool, basis, pool.in_ranks(basis, k))
+                        assert layers["points"] == [p for p in full["points"] if p["rank"] <= k]
+
+
+def test_a_large_combined_population_is_ranked_whole_without_any_limit():
+    """More than 5,000 distinct noisy vectors (a real MoUMDA run): every evaluation is ranked, by one sort of
+    the whole pool, every rank can be selected and every point is plotted."""
+    clear_active_logger()
+    algo = build("MoUMDA", prob="kp1", pop_size=60, select_size=30, gen_limit=95,
+                 stop_without_improvement_in_gens=None)
+    step_run(algo)
+    record = algo.eval_log.finalise()
+    clear_active_logger()
+    df = pd.DataFrame([{"mo_record": record}])
+    view = mo_frames.row_view(df, 0)
+    pool = rank_pool(view, "population", combined=True)
+    assert len(np.unique(pool.observed, axis=0)) > 5000
+    history = view.population_history()
+    assert Counter(pool.eval_ids.tolist()) == Counter({int(e): 1 for i in range(len(history)) for e in history[i].eval_ids})
+    layers = rank_layer_data(view, None, "noisy", pool="population", combined=True)
+    n_ranks = int(nondominated_ranks(pool.observed, view.weights).max()) + 1
+    assert layers["n_ranks"] == n_ranks > LEGEND_MAX_RANKS and layers["max_rank_shown"] == n_ranks - 1
+    assert layers["n_members"] == layers["n_shown"] == len(pool) == sum(p["count"] for p in layers["points"])
+    assert Counter(e for p in layers["points"] for e in p["eval_ids"]) == Counter(pool.eval_ids.tolist())
+    controls = rank_layer_controls(df, [{"algo_name": "MoUMDA", "noise": 1.0, "_row": 0}], 0, "noisy",
+                                   pool="population", combined=True)
+    assert controls["rank_max"] == controls["rank_value"] == n_ranks - 1 and not controls["rank_disabled"]
+    assert {0, n_ranks - 1} <= set(controls["rank_marks"])
+    fig = plot_rank_layers(layers)
+    markers = [t for t in fig.data if t.name]
+    assert len(markers) == n_ranks and sum(len(t.x) for t in markers) == len(layers["points"])
+
+
+def test_version_1_archives_work_and_its_population_explains():
+    df, rows = control_frame()
+    view = mo_frames.row_view(df, 3)                                          # the v1 NSGA-II record
+    assert not view.has_population
+    message = NO_POPULATION_MESSAGE.format(version=1)
+    for pool in ARCHIVES:
+        for combined in (False, True):
+            layers = rank_layer_data(view, 5, "true", pool=pool, combined=combined)
+            assert layers["points"] and layers["n_members"] > 0, (pool, combined)
+            c = rank_layer_controls(df, rows, 3, "true", pool=pool, combined=combined)
+            assert not c["nav_disabled"] and c["gen"] == view.n_generations - 1 and c["status"] != message
+            assert c["step_max"] == len(archive_steps(view, pool.split("_")[0])) - 1
+    for combined in (False, True):
+        assert rank_layer_data(view, 5, "noisy", combined=combined) == {"unavailable": message}
+        c = rank_layer_controls(df, rows, 3, "noisy", combined=combined)
+        assert c["nav_disabled"] and c["status"] == message and c["gen"] is None
+
+
+def test_controls_keep_the_generation_across_sources_and_combining():
+    df, rows = control_frame()
+    view = mo_frames.row_view(df, 0)                                          # NSGA-II, 41 generations
+    g = 23
+    for source in SOURCES:
+        steps = rank_steps(view, source)
+        c = rank_layer_controls(df, rows, 0, "noisy", step=0, gen=g, trigger="source", pool=source)
+        assert (c["gen"], c["step"], c["step_max"], c["nav_style"]) == (g, steps.step_of(g), len(steps) - 1, {})
+        what = "population" if source == "population" else source.split("_")[0] + " archive"
+        assert c["status"].startswith(f"Generation {g} of 40 · {what} unchanged over")
+        c = rank_layer_controls(df, rows, 0, "true", step=steps.step_of(g), gen=g, trigger="combine", pool=source,
+                                combined=True)
+        assert (c["gen"], c["step"], c["nav_style"]) == (g, steps.step_of(g), {"display": "none"})
+        assert "combined across generations" in c["status"] and "(true objectives)" in c["status"]
+        pool = rank_pool(view, source, combined=True)
+        assert c["rank_max"] == int(pool.true_rank.max()) and c["rank_value"] == c["rank_max"]
+        c = rank_layer_controls(df, rows, 0, "true", gen=g, trigger="combine", pool=source)
+        assert (c["gen"], c["nav_style"]) == (g, {})
+        for trigger in ("run", None, "last"):                                 # a run change: the final generation
+            assert rank_layer_controls(df, rows, 0, "noisy", gen=g, trigger=trigger, pool=source,
+                                       combined=True)["gen"] == 40
+    assert rank_layer_trigger(["paretoRankSource.value", "paretoRankGeneration.value"]) == "generation"
+    assert rank_layer_trigger(["paretoRankCombine.value", "paretoRankStep.value"]) == "step"
+    assert rank_layer_trigger(["paretoRankBasis.value", "paretoRankSource.value"]) == "source"
+    assert rank_layer_trigger(["paretoRankBasis.value", "paretoRankCombine.value"]) == "combine"
+
+
+def test_archive_and_combined_figures_name_their_source_and_scope():
+    view = view_of("NSGA2", "kp1", True)
+    single = plot_rank_layers(rank_layer_data(view, 12, "true", pool="noisy_archive"), "N, run 0")
+    assert single.layout.title.text.startswith("Pareto rank layers (true objectives) - N, run 0, noisy passive archive, Gen 12<br>")
+    assert "archive unchanged over" in single.layout.title.text and "genotypes" in single.layout.title.text
+    assert "entered the archive at gen:" in single.data[-1].text[0] and "in the final archive" not in single.data[-1].text[0]
+    combined = plot_rank_layers(rank_layer_data(view, None, "noisy", pool="clean_archive", combined=True), "N, run 0")
+    title = combined.layout.title.text
+    assert title.startswith("Pareto rank layers (noisy objectives) - N, run 0, clean passive archive, all generations combined<br>")
+    assert "in the final archive" in title and "Gen" not in title.split("<br>")[0]
+    population = plot_rank_layers(rank_layer_data(view, None, "true", pool="population", combined=True))
+    assert "current population, all generations combined" in population.layout.title.text
+    empty = dict(synthetic_layers(1), points=[], pool="noisy_archive", pool_label="noisy passive archive", combined=False)
+    assert plot_rank_layers(empty).layout.title.text == "The noisy passive archive at generation 4 is empty"
+    assert plot_rank_layers(dict(empty, combined=True)).layout.title.text == "The combined noisy passive archive is empty"
+
+
 # ------------------------------------------------------------------------------ the callbacks (exec'd)
 
 def _pareto_functions(names, namespace):
@@ -643,7 +1013,7 @@ def callbacks():
                  "selected_front": selected_front, "FRONT_PLOTS": FRONT_PLOTS, "GRIDLINE_PLOTS": ("Basic",),
                  "get_knapsack_problem_stats": get_knapsack_problem_stats, "rank_layer_selection": rank_layer_selection,
                  "rank_layer_controls": rank_layer_controls, "rank_layer_trigger": rank_layer_trigger,
-                 "ctx": ctx, "no_update": NO_UPDATE}
+                 "ctx": ctx, "no_update": NO_UPDATE, "DEFAULT_RANK_POOL": mo_frames.DEFAULT_RANK_POOL}
     decorators = _pareto_functions({"updateParetoPlot", "toggle_pareto_plot_options", "update_rank_layer_controls",
                                     "RANK_CONTROL_OUTPUTS", "knapsack_gridlines"}, namespace)
     return namespace, decorators, ctx, df, rows
@@ -657,9 +1027,10 @@ def _ids(decorator_arg):
 def test_callback_wiring_is_pinned(callbacks):
     namespace, decorators, *_ = callbacks
     plot = decorators["updateParetoPlot"]
-    assert _ids(plot.args[1])[-5:] == [("paretoRankRun", "value"), ("paretoRankBasis", "value"),
+    assert _ids(plot.args[1])[-7:] == [("paretoRankRun", "value"), ("paretoRankBasis", "value"),
                                        ("paretoRankGeneration", "value"), ("paretoRankMax", "value"),
-                                       ("paretoRankStaircase", "value")]
+                                       ("paretoRankStaircase", "value"), ("paretoRankSource", "value"),
+                                       ("paretoRankCombine", "value")]
     toggle = decorators["toggle_pareto_plot_options"]
     assert _ids(toggle.args[0]) == [("paretoFrontOptions", "style"), ("paretoRankLayerOptions", "style")]
     assert _ids(toggle.args[1]) == [("paretoFrontPlotType", "value")]
@@ -667,7 +1038,9 @@ def test_callback_wiring_is_pinned(callbacks):
     assert _ids(controls.args[0]) == [(c, p) for c, p, _ in namespace["RANK_CONTROL_OUTPUTS"]]
     assert _ids(controls.args[1]) == [("STN_data", "data"), ("paretoRankRun", "value"), ("paretoRankBasis", "value"),
                                       ("paretoRankStep", "value"), ("paretoRankGeneration", "value"),
-                                      ("paretoRankFirst", "n_clicks"), ("paretoRankLast", "n_clicks")]
+                                      ("paretoRankFirst", "n_clicks"), ("paretoRankLast", "n_clicks"),
+                                      ("paretoRankSource", "value"), ("paretoRankCombine", "value")]
+    assert _ids(controls.args[0])[-1] == ("paretoRankNavigation", "style")
     assert _ids(controls.args[2]) == [("paretoRankMax", "value"), ("paretoRankMax", "max")]
     # every changing input is a trigger rank_layer_trigger knows
     assert {c for c, _ in _ids(controls.args[1])} == {c for c, _ in mo_frames.RANK_TRIGGERS}
@@ -692,11 +1065,19 @@ def test_plot_callback_draws_the_selected_run_and_leaves_other_types_unchanged(c
         expected = plot_rank_layers(layers, label, staircase=bool(stairs), uirevision=f"{run}-{layers.get('basis')}")
         assert fig.to_json() == expected.to_json(), (run, basis, gen)
     assert update([], "RankLayers", None, None, 1, 5, [], [], None).layout.title.text == NO_RUNS_MESSAGE
+    # the data sources, at a generation and combined (a non-default source has its own ui revision)
+    for run, source, combine, basis in ((1, "noisy_archive", [], "true"), (0, "clean_archive", ["on"], "noisy"),
+                                        (3, "noisy_archive", ["on"], "noisy"), (2, "population", ["on"], "true"),
+                                        (3, "population", ["on"], "noisy")):
+        fig = update(rows, "RankLayers", None, None, 1, 5, [], [], None, run, basis, 4, None, [], source, combine)
+        layers, label = rank_layer_selection(df, rows, run, basis, 4, None, source, bool(combine))
+        expected = plot_rank_layers(layers, label, uirevision=f"{run}-{basis}-{source}-{bool(combine)}")
+        assert fig.to_json() == expected.to_json(), (run, source, combine)
     # the existing plot types ignore the rank-layer inputs
     for plot_type in FRONT_PLOTS + ("NoisyPopulationVsClean", "IndVsDist", "MoveCorr", "Scatter"):
         before = update(rows, plot_type, "noisy_population", "cumulative", 2, 5, ["on"]).to_json()
         after = update(rows, plot_type, "noisy_population", "cumulative", 2, 5, ["on"], [], None,
-                       1, "true", 3, 0, ["on"]).to_json()
+                       1, "true", 3, 0, ["on"], "clean_archive", ["on"]).to_json()
         assert before == after, plot_type
 
 
@@ -710,15 +1091,25 @@ def test_controls_callback_sends_only_changed_navigation_values(callbacks):
     s = int(steps.starts[k])
 
     ctx.triggered_prop_ids = {"paretoRankGeneration.value": "paretoRankGeneration"}
-    out = dict(zip(keys, update(rows, 1, "noisy", 0, s + 1, 0, 0, 0, 0)))
+    out = dict(zip(keys, update(rows, 1, "noisy", 0, s + 1, 0, 0, "population", [], 0, 0)))
     assert out[("paretoRankGeneration", "value")] is NO_UPDATE               # the typed value stays
     assert out[("paretoRankStep", "value")] == k and out[("paretoRankRun", "value")] is NO_UPDATE
     ctx.triggered_prop_ids = {"paretoRankStep.value": "paretoRankStep"}
-    out = dict(zip(keys, update(rows, 1, "noisy", k, s + 1, 0, 0, 0, 0)))
+    out = dict(zip(keys, update(rows, 1, "noisy", k, s + 1, 0, 0, "population", [], 0, 0)))
     assert out[("paretoRankStep", "value")] is NO_UPDATE and out[("paretoRankGeneration", "value")] == s
     ctx.triggered_prop_ids = {"STN_data.data": "STN_data"}
-    out = dict(zip(keys, update(rows[2:], 0, "noisy", k, s + 1, 0, 0, 0, 0)))
+    out = dict(zip(keys, update(rows[2:], 0, "noisy", k, s + 1, 0, 0, "population", [], 0, 0)))
     assert out[("paretoRankRun", "value")] == 2 and out[("paretoRankRun", "options")] == rank_layer_runs(df, rows[2:])
+    # a source or combine change keeps the generation (not sent back); combining hides the navigation
+    ctx.triggered_prop_ids = {"paretoRankSource.value": "paretoRankSource"}
+    out = dict(zip(keys, update(rows, 1, "noisy", k, s + 1, 0, 0, "noisy_archive", [], 0, 0)))
+    archive = archive_steps(view, "noisy")
+    assert out[("paretoRankGeneration", "value")] is NO_UPDATE and out[("paretoRankNavigation", "style")] == {}
+    assert out[("paretoRankStep", "value")] in (NO_UPDATE, archive.step_of(s + 1))
+    ctx.triggered_prop_ids = {"paretoRankCombine.value": "paretoRankCombine"}
+    out = dict(zip(keys, update(rows, 1, "noisy", archive.step_of(s + 1), s + 1, 0, 0, "noisy_archive", ["on"], 0, 0)))
+    assert out[("paretoRankGeneration", "value")] is NO_UPDATE and out[("paretoRankStep", "value")] is NO_UPDATE
+    assert out[("paretoRankNavigation", "style")] == {"display": "none"}
     ctx.triggered_prop_ids = {}
 
 
@@ -750,9 +1141,10 @@ def _series(report, row):
 
 
 def test_chain_every_request_succeeds_and_figure_matches_the_controls(chain):
-    """Throughout the chain: every callback answers 200, the figure shows the box's exact generation and
-    step, ranks 0..the slider's value of the whole population (rank 0 drawn last), and the rank range
-    follows the documented rule from the previous controls."""
+    """Throughout the chain: every callback answers 200, and for the selected data source the figure shows
+    the box's exact generation and that source's step (or the pool combined across generations, with the
+    navigation hidden), ranks 0..the slider's value of the whole pool (rank 0 drawn last), and the rank
+    range follows the documented rule from the previous controls."""
     previous = None
     for event in chain["events"]:
         name, c, fig = event["name"], event["controls"], event["figure"]
@@ -761,24 +1153,35 @@ def test_chain_every_request_succeeds_and_figure_matches_the_controls(chain):
         run, gen = c["paretoRankRun.value"], c["paretoRankGeneration.value"]
         if name == "basic_plot":
             continue
+        source, combined = c["paretoRankSource.value"] or "population", bool(c["paretoRankCombine.value"])
+        assert c["paretoRankNavigation.style"] == ({"display": "none"} if combined else {}), name
         truth = chain["truth"][_series(chain, run)] if run is not None else None
-        if truth is None or truth["version"] == 1:
+        pool = None if truth is None else truth["pools"].get(source)
+        if pool is None:  # no run, or the population of a run without one
             assert gen is None and c["paretoRankGeneration.disabled"] and c["paretoRankMax.disabled"], name
             assert fig["ranks"] == [] and fig["gen"] is None, name
             previous = c
             continue
         basis = c["paretoRankBasis.value"]
-        n_ranks = truth[f"{basis}_ranks"][gen]
-        assert fig["gen"] == gen, (name, fig["title"])
-        assert c["paretoRankStep.value"] == _step_of(truth["starts"], gen), name
-        assert c["paretoRankStep.max"] == len(truth["starts"]) - 1 and c["paretoRankGeneration.max"] == truth["n_generations"] - 1
+        assert gen is not None and not c["paretoRankGeneration.disabled"], name
+        assert c["paretoRankStep.value"] == _step_of(pool["starts"], gen), name
+        assert c["paretoRankStep.max"] == len(pool["starts"]) - 1 and c["paretoRankGeneration.max"] == truth["n_generations"] - 1
+        status = c["paretoRankStepLabel.children"]
+        if combined:
+            n_ranks = pool["combined"][basis]
+            assert fig["gen"] is None and "all generations combined" in fig["title"], (name, fig["title"])
+            assert "combined across generations" in status, (name, status)
+        else:
+            n_ranks = pool[f"{basis}_ranks"][gen]
+            assert fig["gen"] == gen, (name, fig["title"])
+            assert status.startswith(f"Generation {gen} of {truth['n_generations'] - 1} ·"), (name, status)
+            assert f"step {c['paretoRankStep.value'] + 1} of {len(pool['starts'])}" in status, name
+        if source != "population":
+            assert mo_frames.RANK_POOL_LABELS[source] in fig["title"], (name, fig["title"])
         assert c["paretoRankMax.max"] == n_ranks - 1 and c["paretoRankMax.disabled"] == (n_ranks < 2), name
         assert fig["ranks"] == list(range(c["paretoRankMax.value"] + 1)), (name, fig)
         assert fig["marker_order"] == sorted(fig["marker_order"], reverse=True), name
         assert f"({basis} objectives)" in fig["title"], name
-        status = c["paretoRankStepLabel.children"]
-        assert status.startswith(f"Generation {gen} of {truth['n_generations'] - 1} ·"), (name, status)
-        assert f"step {c['paretoRankStep.value'] + 1} of {len(truth['starts'])}" in status, name
         if event.get("controls_status") and previous is not None and previous["paretoRankRun.value"] is not None:
             assert c["paretoRankMax.value"] == expected_rank_value(previous["paretoRankMax.value"],
                                                                    previous["paretoRankMax.max"], n_ranks), name
@@ -843,3 +1246,51 @@ def test_chain_existing_plot_types_still_render(chain):
     assert {status for status, _ in counts.values()} == {200}
     for plot_type in ("Basic", "paretoAnimation", "NoisyPopulationVsClean", "IndVsDist", "Scatter"):
         assert counts[plot_type][1] > 0, plot_type
+
+
+def test_chain_data_sources_and_combining_follow_each_user_action(chain):
+    e, rows, truth = chain["by_name"], chain["rows"], chain["truth"]
+    c = lambda name, key: e[name]["controls"][key]
+    gen = lambda name: c(name, "paretoRankGeneration.value")
+    title = lambda name: e[name]["figure"]["title"]
+    semo, nsga = (truth[s]["pools"] for s in ("SEMO", "NSGA2"))
+    # the reselection keeps the run the previous selection left (still selected), at its final generation
+    first = truth[_series(chain, c("src_select", "paretoRankRun.value"))]["pools"]
+    hidden = {"display": "none"}
+    # a source change keeps the exact generation (not echoed back) and takes that source's step
+    assert gen("src_noisy_archive") == gen("src_select") and "paretoRankGeneration.value" not in e["src_noisy_archive"]["returned"]
+    assert c("src_noisy_archive", "paretoRankStep.value") == _step_of(first["noisy_archive"]["starts"], gen("src_select"))
+    assert ", noisy passive archive, Gen " in title("src_noisy_archive")
+    assert gen("src_generation") == 5 and e["src_generation"]["figure"]["ranks"] == [0]       # own basis: rank 0
+    assert gen("src_step") == first["noisy_archive"]["starts"][1]
+    assert gen("src_clean_archive") == gen("src_step") and ", clean passive archive, Gen " in title("src_clean_archive")
+    assert e["src_clean_archive"]["figure"]["ranks"] == [0]                                   # true basis: rank 0
+    # combining hides the navigation and leaves the generation and step where they were
+    assert c("src_combine_on", "paretoRankNavigation.style") == hidden
+    assert not {"paretoRankGeneration.value", "paretoRankStep.value"} & set(e["src_combine_on"]["returned"])
+    assert "clean passive archive, all generations combined" in title("src_combine_on")
+    # the combined clean archive under true objectives: rank 0 is the final archive, the evicted rank below it
+    assert e["src_combined_true"]["figure"]["ranks"] == list(range(first["clean_archive"]["combined"]["true"]))
+    # a run change while combined: still combined, at the new run's final generation (hidden)
+    assert c("src_combine_run", "paretoRankRun.value") == rows["SEMO"]
+    assert c("src_combine_run", "paretoRankNavigation.style") == hidden
+    assert gen("src_combine_run") == truth["SEMO"]["n_generations"] - 1
+    assert c("src_combine_off", "paretoRankNavigation.style") == {} and gen("src_combine_off") == gen("src_combine_run")
+    assert ", Gen " in title("src_population") and "passive archive" not in title("src_population")
+    assert "current population, all generations combined" in title("src_population_combined")
+    assert e["src_population_combined"]["figure"]["ranks"] == list(range(semo["population"]["combined"]["true"]))
+    assert e["src_population_combined_noisy"]["figure"]["ranks"] == list(range(semo["population"]["combined"]["noisy"]))
+    # a version-1 run: archives plotted in both modes; its population explains
+    v1 = NO_POPULATION_MESSAGE.format(version=1)
+    assert c("src_v1_archive_combined", "paretoRankRun.value") == rows["NSGA2-v1"]
+    assert e["src_v1_archive_combined"]["figure"]["points"] > 0 and "noisy passive archive, all generations" in title("src_v1_archive_combined")
+    assert e["src_v1_archive"]["figure"]["points"] > 0 and not c("src_v1_archive", "paretoRankGeneration.disabled")
+    assert gen("src_v1_archive") == truth["NSGA2-v1"]["n_generations"] - 1
+    for name in ("src_v1_population", "src_v1_population_combined"):
+        assert title(name) == v1 and c(name, "paretoRankStepLabel.children") == v1, name
+    # several inputs in one request: the generation beats the source; the step beats the combine option
+    assert gen("src_source_and_generation") == 9
+    assert c("src_source_and_generation", "paretoRankStep.value") == _step_of(nsga["noisy_archive"]["starts"], 9)
+    assert gen("src_combine_and_step") == nsga["noisy_archive"]["starts"][2]
+    assert c("src_combine_and_step", "paretoRankNavigation.style") == hidden
+    assert gen("src_uncombine") == gen("src_combine_and_step") and c("src_uncombine", "paretoRankNavigation.style") == {}

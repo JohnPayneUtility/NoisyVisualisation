@@ -862,9 +862,10 @@ def create_pareto_front_section():
 
 def create_pareto_rank_layer_options():
     """
-    Create the Pareto Rank Layers controls: the run, the rank basis, the population step (slider) and exact
-    generation (number box), and the highest rank shown. Their ranges follow the selected run
-    (update_rank_layer_controls).
+    Create the Pareto Rank Layers controls: the run, the data source (the population or a passive archive),
+    combining it across generations, the rank basis, the step (slider) and exact generation (number box) of
+    the source, and the highest rank shown. Their ranges follow the selected run and source
+    (update_rank_layer_controls); the step and generation are hidden while the source is combined.
 
     Returns:
         html.Div: The rank-layer controls, hidden until that plot type is selected.
@@ -874,6 +875,20 @@ def create_pareto_rank_layer_options():
             html.Label("Run: "),
             html.Div(dcc.Dropdown(id='paretoRankRun', options=[], value=None, clearable=False),
                      style={'width': '400px'}),
+            html.Label("Data source: "),
+            html.Div(dcc.Dropdown(
+                id='paretoRankSource',
+                options=[{'label': 'Current population', 'value': 'population'},
+                         {'label': 'Noisy passive archive', 'value': 'noisy_archive'},
+                         {'label': 'Clean passive archive', 'value': 'clean_archive'}],
+                value='population',
+                clearable=False,
+            ), style={'width': '220px'}),
+            dcc.Checklist(
+                id='paretoRankCombine',
+                options=[{'label': ' Combine across generations', 'value': 'on'}],
+                value=[],
+            ),
             dcc.RadioItems(
                 id='paretoRankBasis',
                 options=[{'label': ' Noisy objectives', 'value': 'noisy'},
@@ -883,15 +898,18 @@ def create_pareto_rank_layer_options():
                 labelStyle={'marginRight': '10px'},
             ),
         ], style=FLEX_WITH_GAP_STYLE),
-        html.Div([
-            html.Label("Population step: "),
-            html.Button("First", id='paretoRankFirst', n_clicks=0),
-            html.Button("Final", id='paretoRankLast', n_clicks=0),
-            html.Label(" Generation: "),
-            dcc.Input(id='paretoRankGeneration', type='number', min=0, max=0, step=1, debounce=True,
-                      style=SMALL_INPUT_STYLE),
-        ], style=FLEX_WITH_GAP_STYLE),
-        dcc.Slider(id='paretoRankStep', min=0, max=0, step=1, value=0, marks={}, updatemode='mouseup'),
+        # The source's generation navigation, hidden while it is combined across generations
+        html.Div(id='paretoRankNavigation', children=[
+            html.Div([
+                html.Label("Step: "),
+                html.Button("First", id='paretoRankFirst', n_clicks=0),
+                html.Button("Final", id='paretoRankLast', n_clicks=0),
+                html.Label(" Generation: "),
+                dcc.Input(id='paretoRankGeneration', type='number', min=0, max=0, step=1, debounce=True,
+                          style=SMALL_INPUT_STYLE),
+            ], style=FLEX_WITH_GAP_STYLE),
+            dcc.Slider(id='paretoRankStep', min=0, max=0, step=1, value=0, marks={}, updatemode='mouseup'),
+        ]),
         html.Div(id='paretoRankStepLabel', style={'marginBottom': '6px'}),
         html.Label("Highest rank shown:"),
         dcc.Slider(id='paretoRankMax', min=0, max=0, step=1, value=0, marks={}),

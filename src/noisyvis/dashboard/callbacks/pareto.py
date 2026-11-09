@@ -7,6 +7,7 @@ from dash import Input, Output, State, ctx, no_update
 from ..instance import app
 from ..data import df
 from ..mo_frames import (
+    DEFAULT_RANK_POOL,
     PARETO_NOISY_PAIRS,
     RANK_LAYERS_PLOT,
     pareto_front_entries,
@@ -57,11 +58,14 @@ def knapsack_gridlines(pid):
      Input('paretoRankBasis', 'value'),
      Input('paretoRankGeneration', 'value'),
      Input('paretoRankMax', 'value'),
-     Input('paretoRankStaircase', 'value')],
+     Input('paretoRankStaircase', 'value'),
+     Input('paretoRankSource', 'value'),
+     Input('paretoRankCombine', 'value')],
 )
 def updateParetoPlot(stn_rows, paretoFrontPlotType, IndVsDist_IndType, IndVsDist_DistType, nruns, windowSize,
                      attainment, invalid_gridlines=None, pid=None, rank_run=None, rank_basis=None,
-                     rank_generation=None, rank_max=None, rank_staircase=None):
+                     rank_generation=None, rank_max=None, rank_staircase=None, rank_source=None,
+                     rank_combine=None):
     """
     Update the Pareto front plot based on the selected plot type.
     Uses the plotting registry for dynamic dispatch.
@@ -70,17 +74,22 @@ def updateParetoPlot(stn_rows, paretoFrontPlotType, IndVsDist_IndType, IndVsDist
     draw their own two fronts (mo_frames.PARETO_NOISY_PAIRS); every other type draws or measures the front
     type selected in IndVsDist_IndType. The GRIDLINE_PLOTS also draw the selected problem's invalid-solution
     gridlines (knapsack_gridlines) when that option is ticked. Pareto Rank Layers draws the selected run's
-    population at the exact generation, under the rank basis, up to the highest rank shown
-    (mo_frames.rank_layer_selection); it reads only its own controls.
+    data source (its population or a passive archive) at the exact generation or combined across
+    generations, under the rank basis, up to the highest rank shown (mo_frames.rank_layer_selection); it
+    reads only its own controls.
     """
     plot_func = get_pareto_plot(paretoFrontPlotType)
     if plot_func is None:
         return go.Figure()
 
     if paretoFrontPlotType == 'RankLayers':
-        layers, run_label = rank_layer_selection(df, stn_rows, rank_run, rank_basis, rank_generation, rank_max)
-        return plot_func(layers, run_label, staircase=bool(rank_staircase),
-                         uirevision=f"{rank_run}-{layers.get('basis')}")
+        combined = bool(rank_combine)
+        layers, run_label = rank_layer_selection(df, stn_rows, rank_run, rank_basis, rank_generation, rank_max,
+                                                 rank_source, combined)
+        revision = f"{rank_run}-{layers.get('basis')}"
+        if (rank_source or 'population') != 'population' or combined:  # the population keeps its revision
+            revision += f"-{rank_source}-{combined}"
+        return plot_func(layers, run_label, staircase=bool(rank_staircase), uirevision=revision)
 
     attainment = bool(attainment)
     if paretoFrontPlotType in PARETO_NOISY_PAIRS:
@@ -137,6 +146,7 @@ RANK_CONTROL_OUTPUTS = (
     ('paretoRankGeneration', 'disabled', 'nav_disabled'), ('paretoRankStepLabel', 'children', 'status'),
     ('paretoRankMax', 'max', 'rank_max'), ('paretoRankMax', 'marks', 'rank_marks'),
     ('paretoRankMax', 'value', 'rank_value'), ('paretoRankMax', 'disabled', 'rank_disabled'),
+    ('paretoRankNavigation', 'style', 'nav_style'),
 )
 
 
@@ -154,27 +164,32 @@ RANK_CONTROL_OUTPUTS = (
      Output('paretoRankMax', 'max'),
      Output('paretoRankMax', 'marks'),
      Output('paretoRankMax', 'value'),
-     Output('paretoRankMax', 'disabled')],
+     Output('paretoRankMax', 'disabled'),
+     Output('paretoRankNavigation', 'style')],
     [Input('STN_data', 'data'),
      Input('paretoRankRun', 'value'),
      Input('paretoRankBasis', 'value'),
      Input('paretoRankStep', 'value'),
      Input('paretoRankGeneration', 'value'),
      Input('paretoRankFirst', 'n_clicks'),
-     Input('paretoRankLast', 'n_clicks')],
+     Input('paretoRankLast', 'n_clicks'),
+     Input('paretoRankSource', 'value'),
+     Input('paretoRankCombine', 'value')],
     [State('paretoRankMax', 'value'),
      State('paretoRankMax', 'max')],
 )
 def update_rank_layer_controls(stn_rows, rank_run, rank_basis, rank_step, rank_generation, _first, _last,
-                               rank_max_value, rank_max):
+                               rank_source, rank_combine, rank_max_value, rank_max):
     """
     Keep the rank-layer controls in step with the selected rows and with each other (one circular callback:
     the run, step and generation are both its inputs and its outputs). The changed inputs pick the trigger
-    (mo_frames.rank_layer_trigger, by priority), and mo_frames.rank_layer_controls the new values; a prop
-    whose value does not change is not sent.
+    (mo_frames.rank_layer_trigger, by priority), and mo_frames.rank_layer_controls the new values for the
+    data source, combined across generations or not; a prop whose value does not change is not sent (so the
+    generation hidden while combined is the one shown again).
     """
     state = rank_layer_controls(df, stn_rows, rank_run, rank_basis, rank_step, rank_generation,
-                                rank_layer_trigger(ctx.triggered_prop_ids), rank_max_value, rank_max)
+                                rank_layer_trigger(ctx.triggered_prop_ids), rank_max_value, rank_max,
+                                rank_source or DEFAULT_RANK_POOL, bool(rank_combine))
     current = {('paretoRankRun', 'value'): rank_run, ('paretoRankStep', 'value'): rank_step,
                ('paretoRankGeneration', 'value'): rank_generation}
     return tuple(no_update if (component, prop) in current and current[(component, prop)] == state[key]

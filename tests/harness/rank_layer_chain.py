@@ -7,7 +7,8 @@ imports the real dashboard application, and drives
 
     update_stn_data -> update_rank_layer_controls -> updateParetoPlot
 
-over Dash's HTTP protocol (`/_dash-update-component`, as the browser makes the requests), starting from the
+for every data source (the population and both passive archives, at one generation and combined across
+generations) over Dash's HTTP protocol (`/_dash-update-component`, as the browser makes the requests), starting from the
 served layout's values and feeding each response into the next request. It asserts nothing: it prints one
 JSON report, the events (what changed, what each callback returned, what the figure shows) and each run's
 ground truth read independently from MORunView, for the test to check.
@@ -90,17 +91,51 @@ def write_warehouse(root, mo_records):
     pd.DataFrame(lon).to_pickle(warehouse / "lon_results.pkl")
 
 
-def truth(view):
-    """A run's steps and ranks, read independently: the generations where the member multiset changes."""
-    if not view.has_population:
-        return {"version": view.version, "n_generations": view.n_generations}
-    counters = [collections.Counter(view.population(g).eval_ids.tolist()) for g in range(view.n_generations)]
-    starts = [g for g in range(view.n_generations) if g == 0 or counters[g] != counters[g - 1]]
+def n_ranks(values, weights):
+    from noisyvis.common.pareto import nondominated_ranks
+
+    return int(nondominated_ranks(values, weights).max()) + 1 if len(values) else 0
+
+
+def pool_truth(view, keys, entries):
+    """
+    A pool's steps and rank counts, read independently: keys[g] its membership at generation g, entries[g]
+    the evaluations whose y and f(x) its members carry, and entries[None] the combined pool's.
+    """
+    events, w, n = view.events(), view.weights, view.n_generations
     return {
-        "version": view.version, "n_generations": view.n_generations, "starts": starts,
-        "noisy_ranks": [int(view.population(g).noisy_rank.max()) + 1 for g in range(view.n_generations)],
-        "true_ranks": [int(view.population(g).true_rank.max()) + 1 for g in range(view.n_generations)],
+        "starts": [g for g in range(n) if g == 0 or keys[g] != keys[g - 1]],
+        "noisy_ranks": [n_ranks(events.observed[entries[g]], w) for g in range(n)],
+        "true_ranks": [n_ranks(events.true_obj[entries[g]], w) for g in range(n)],
+        "combined": {"noisy": n_ranks(events.observed[entries[None]], w),
+                     "true": n_ranks(events.true_obj[entries[None]], w)},
     }
+
+
+def truth(view):
+    """
+    A run's steps and ranks for each data source, read independently from MORunView: the generations where
+    the pool's membership changes (the population's eval-id multiset, an archive's member ids), and the
+    number of ranks of each pool under each basis. The population's are also at the top level.
+    """
+    import numpy as np
+
+    n = view.n_generations
+    pools = {}
+    for which in ("noisy", "clean"):
+        at = [view.noisy_archive(g) if which == "noisy" else view.clean_archive(g) for g in range(n)]
+        intervals = view.noisy_archive_intervals() if which == "noisy" else view.clean_archive_intervals()
+        entries = {g: (s.eval_ids if which == "noisy" else s.first_generated_eval) for g, s in enumerate(at)}
+        entries[None] = intervals.enter_eval
+        pools[f"{which}_archive"] = pool_truth(view, [tuple(s.members.tolist()) for s in at], entries)
+    if not view.has_population:
+        return {"version": view.version, "n_generations": n, "pools": pools}
+    populations = [view.population(g).eval_ids for g in range(n)]
+    entries = dict(enumerate(populations))
+    entries[None] = np.unique(np.concatenate(populations))
+    pools["population"] = pool_truth(view, [collections.Counter(p.tolist()) for p in populations], entries)
+    return {"version": view.version, "n_generations": n, "pools": pools,
+            **{key: pools["population"][key] for key in ("starts", "noisy_ranks", "true_ranks")}}
 
 
 def layout_values(node, values):
@@ -164,7 +199,8 @@ class Browser:
 RANK_RE = re.compile(r"^Rank (\d+) ")
 GEN_RE = re.compile(r", Gen (\d+)<br>")
 
-CONTROL_KEYS = ("paretoRankRun.value", "paretoRankBasis.value", "paretoRankStep.value", "paretoRankStep.max", "paretoRankGeneration.value",
+CONTROL_KEYS = ("paretoRankRun.value", "paretoRankBasis.value", "paretoRankSource.value", "paretoRankCombine.value",
+                "paretoRankNavigation.style", "paretoRankStep.value", "paretoRankStep.max", "paretoRankGeneration.value",
                 "paretoRankGeneration.max", "paretoRankGeneration.disabled", "paretoRankStepLabel.children",
                 "paretoRankMax.value", "paretoRankMax.max", "paretoRankMax.disabled")
 
@@ -287,6 +323,36 @@ def main():
         figure = browser.call("plotParetoFront.figure", ["paretoFrontPlotType.value"])
         data = browser.values.get("plotParetoFront.figure", {}).get("data", [])
         report["basic_trace_counts"][plot_type] = [figure["status"], len(data)]
+
+    # the data sources: each archive at the exact generation, then every source combined across generations
+    event("src_select", select=[0, 1, 2, 3])
+    event("src_noisy_archive", ["paretoRankSource.value"], set_values={"paretoRankSource.value": "noisy_archive"})
+    event("src_generation", ["paretoRankGeneration.value"], set_values={"paretoRankGeneration.value": 5})
+    event("src_noisy_true", ["paretoRankBasis.value"], set_values={"paretoRankBasis.value": "true"})
+    event("src_step", ["paretoRankStep.value"], set_values={"paretoRankStep.value": 1})
+    event("src_clean_archive", ["paretoRankSource.value"], set_values={"paretoRankSource.value": "clean_archive"})
+    event("src_clean_noisy", ["paretoRankBasis.value"], set_values={"paretoRankBasis.value": "noisy"})
+    event("src_combine_on", ["paretoRankCombine.value"], set_values={"paretoRankCombine.value": ["on"]})
+    event("src_combined_true", ["paretoRankBasis.value"], set_values={"paretoRankBasis.value": "true"})
+    event("src_combine_run", ["paretoRankRun.value"], set_values={"paretoRankRun.value": row_of["SEMO"]})
+    event("src_combine_off", ["paretoRankCombine.value"], set_values={"paretoRankCombine.value": []})
+    event("src_population", ["paretoRankSource.value"], set_values={"paretoRankSource.value": "population"})
+    event("src_population_combined", ["paretoRankCombine.value"], set_values={"paretoRankCombine.value": ["on"]})
+    event("src_population_combined_noisy", ["paretoRankBasis.value"], set_values={"paretoRankBasis.value": "noisy"})
+    # a version-1 run: both archives work (combined and at a generation); its population does not
+    event("src_v1_archive_combined", ["paretoRankRun.value", "paretoRankSource.value"],
+          set_values={"paretoRankRun.value": row_of["NSGA2-v1"], "paretoRankSource.value": "noisy_archive"})
+    event("src_v1_archive", ["paretoRankCombine.value"], set_values={"paretoRankCombine.value": []})
+    event("src_v1_population", ["paretoRankSource.value"], set_values={"paretoRankSource.value": "population"})
+    event("src_v1_population_combined", ["paretoRankCombine.value"], set_values={"paretoRankCombine.value": ["on"]})
+    # several inputs in one request: the generation beats the source, the step beats the combine option
+    event("src_nsga", ["paretoRankRun.value", "paretoRankCombine.value"],
+          set_values={"paretoRankRun.value": row_of["NSGA2"], "paretoRankCombine.value": []})
+    event("src_source_and_generation", ["paretoRankSource.value", "paretoRankGeneration.value"],
+          set_values={"paretoRankSource.value": "noisy_archive", "paretoRankGeneration.value": 9})
+    event("src_combine_and_step", ["paretoRankCombine.value", "paretoRankStep.value"],
+          set_values={"paretoRankCombine.value": ["on"], "paretoRankStep.value": 2})
+    event("src_uncombine", ["paretoRankCombine.value"], set_values={"paretoRankCombine.value": []})
 
     print(json.dumps(report, sort_keys=True, default=str))
 

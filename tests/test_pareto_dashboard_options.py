@@ -401,7 +401,8 @@ def test_callback_reacts_to_the_rows_and_every_control(pareto_callback):
                       ('paretoInvalidGridlines', 'value'), ('PID', 'data'),
                       # Pareto Rank Layers' own controls (tests/test_pareto_rank_layers.py)
                       ('paretoRankRun', 'value'), ('paretoRankBasis', 'value'), ('paretoRankGeneration', 'value'),
-                      ('paretoRankMax', 'value'), ('paretoRankStaircase', 'value')]
+                      ('paretoRankMax', 'value'), ('paretoRankStaircase', 'value'),
+                      ('paretoRankSource', 'value'), ('paretoRankCombine', 'value')]
     assert len(decorator.args) == 2 and not decorator.keywords                  # no State
 
 
