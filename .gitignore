@@ -2,13 +2,13 @@
 __pycache__/
 
 # data
-fast_storage/
-data/
+/fast_storage/
+/data/
 /data_nvme
-plots/
-outputs/
-notes/
+/plots/
+/outputs/
+/notes/
 
 # additional
 temp/
-ReferenceArchive/
+/ReferenceArchive/
